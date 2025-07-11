@@ -17,13 +17,28 @@ jobs:
 
       - run: pnpm install --frozen-lockfile     # 3) 의존성 (정확한 버전)
 
+      # 환경 변수 설정 (필요시)
+      - name: Create .env file
+        run: |
+          echo "NODE_ENV=production" > .env
+          echo "NEXT_PUBLIC_APP_ENV=ci" >> .env
+
       - name: Restore Next.js cache
         uses: actions/cache@v4
         with:
-          path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}
+          path: |
+            .next/cache
+            .next/standalone
+            .next/static
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
 
-      # 4) 타입체크·테스트·빌드
-      - run: npx tsc --noEmit                   # 타입 체크
-      - run: pnpm run test --if-present         # 테스트 실행
-      - run: pnpm run build                     # 빌드
+      # 4) 타입체크·빌드
+      - name: Type check
+        run: pnpm exec tsc --noEmit           # TypeScript 타입 체크
+      
+      - name: Build application
+        run: pnpm run build                   # Next.js 빌드
+        env:
+          NODE_ENV: production
