@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { motion } from "framer-motion"
-import { Brain, Eye, EyeOff, Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react"
+import { Brain, Eye, EyeOff, Mail, Lock, User, ArrowRight, Sparkles, AlertCircle, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { signUp } from "@/lib/auth/auth"
+import { validateSignUpForm } from "@/lib/auth/validation"
+import type { SignUpFormData } from "@/types/user"
 
 export default function SignUpPage() {
   
@@ -25,18 +28,43 @@ export default function SignUpPage() {
     agreeTerms: false,
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [successMessage, setSuccessMessage] = useState("")
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setErrors({})
+    setSuccessMessage("")
 
+    // 폼 유효성 검사
+    const validation = validateSignUpForm(formData)
     
-    setTimeout(() => {
+    if (!validation.isValid) {
+      setErrors(validation.errors)
       setIsLoading(false)
-      alert("회원가입이 완료되었습니다! 로그인 페이지로 이동합니다.")
-      router.push("/login")
-    }, 2000)
+      return
+    }
+
+    try {
+      // Supabase 회원가입 실행
+      const result = await signUp(formData as SignUpFormData)
+
+      if (result.success) {
+        setSuccessMessage(result.message || "메일이 발송되었습니다! 메일을 통해 회원가입을 완료하세요")
+
+        setTimeout(() => {
+          router.push("/login")
+        }, 3000)
+      } else {
+        setErrors({ general: result.error || "회원가입 중 오류가 발생했습니다." })
+      }
+    } catch (error) {
+      setErrors({ general: "네트워크 오류가 발생했습니다. 다시 시도해주세요." })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -108,6 +136,30 @@ export default function SignUpPage() {
           >
             <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl rounded-2xl overflow-hidden">
               <CardContent className="p-8">
+                {/* Success Message */}
+                {successMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3"
+                  >
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <p className="text-green-700 text-sm">{successMessage}</p>
+                  </motion.div>
+                )}
+
+                {/* General Error Message */}
+                {errors.general && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3"
+                  >
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                    <p className="text-red-700 text-sm">{errors.general}</p>
+                  </motion.div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Name Field */}
                   <div className="space-y-2">
@@ -122,10 +174,18 @@ export default function SignUpPage() {
                         placeholder="홍길동"
                         value={formData.name}
                         onChange={(e) => handleInputChange("name", e.target.value)}
-                        className="pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base"
+                        className={`pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
+                          errors.name ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
+                        }`}
                         required
                       />
                     </div>
+                    {errors.name && (
+                      <p className="text-red-600 text-sm flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.name}
+                      </p>
+                    )}
                   </div>
 
                   {/* Email Field */}
@@ -141,10 +201,18 @@ export default function SignUpPage() {
                         placeholder="your@email.com"
                         value={formData.email}
                         onChange={(e) => handleInputChange("email", e.target.value)}
-                        className="pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base"
+                        className={`pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
+                          errors.email ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
+                        }`}
                         required
                       />
                     </div>
+                    {errors.email && (
+                      <p className="text-red-600 text-sm flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.email}
+                      </p>
+                    )}
                   </div>
 
                   {/* Password Field */}
@@ -157,10 +225,12 @@ export default function SignUpPage() {
                       <Input
                         id="password"
                         type={showPassword ? "text" : "password"}
-                        placeholder="8자 이상 입력하세요"
+                        placeholder="8자 이상, 대소문자, 숫자 포함"
                         value={formData.password}
                         onChange={(e) => handleInputChange("password", e.target.value)}
-                        className="pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base"
+                        className={`pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
+                          errors.password ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
+                        }`}
                         required
                       />
                       <button
@@ -171,6 +241,12 @@ export default function SignUpPage() {
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
+                    {errors.password && (
+                      <p className="text-red-600 text-sm flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.password}
+                      </p>
+                    )}
                   </div>
 
                   {/* Confirm Password Field */}
@@ -186,7 +262,9 @@ export default function SignUpPage() {
                         placeholder="비밀번호를 다시 입력하세요"
                         value={formData.confirmPassword}
                         onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                        className="pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base"
+                        className={`pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
+                          errors.confirmPassword ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
+                        }`}
                         required
                       />
                       <button
@@ -197,36 +275,55 @@ export default function SignUpPage() {
                         {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
+                    {errors.confirmPassword && (
+                      <p className="text-red-600 text-sm flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.confirmPassword}
+                      </p>
+                    )}
                   </div>
 
                   {/* Terms Agreement */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="terms"
-                      checked={formData.agreeTerms}
-                      onChange={(e) => handleInputChange("agreeTerms", e.target.checked)}
-                      className="w-4 h-4 text-green-600 bg-white border-slate-300 rounded focus:ring-green-500 focus:ring-2 mt-1"
-                    />
-                    <Label htmlFor="terms" className="text-sm text-slate-600 leading-relaxed">
-                      <Link href="/terms" className="text-green-600 hover:text-green-700 transition-colors">
-                        이용약관
-                      </Link>{" "}
-                      및{" "}
-                      <Link href="/privacy" className="text-green-600 hover:text-green-700 transition-colors">
-                        개인정보처리방침
-                      </Link>
-                      에 동의합니다.
-                    </Label>
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="terms"
+                        checked={formData.agreeTerms}
+                        onChange={(e) => handleInputChange("agreeTerms", e.target.checked)}
+                        className="w-4 h-4 text-green-600 bg-white border-slate-300 rounded focus:ring-green-500 focus:ring-2 mt-1"
+                      />
+                      <Label htmlFor="terms" className="text-sm text-slate-600 leading-relaxed">
+                        <Link href="/terms" className="text-green-600 hover:text-green-700 transition-colors">
+                          이용약관
+                        </Link>{" "}
+                        및{" "}
+                        <Link href="/privacy" className="text-green-600 hover:text-green-700 transition-colors">
+                          개인정보처리방침
+                        </Link>
+                        에 동의합니다.
+                      </Label>
+                    </div>
+                    {errors.agreeTerms && (
+                      <p className="text-red-600 text-sm flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.agreeTerms}
+                      </p>
+                    )}
                   </div>
 
                   {/* Sign Up Button */}
                   <Button
                     type="submit"
-                    disabled={isLoading || !formData.agreeTerms}
+                    disabled={isLoading || !formData.agreeTerms || !!successMessage}
                     className="w-full h-14 bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50"
                   >
-                    {isLoading ? (
+                    {successMessage ? (
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="w-5 h-5" />
+                        완료! 로그인 페이지로 이동중...
+                      </div>
+                    ) : isLoading ? (
                       <div className="flex items-center gap-3">
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                         계정 생성 중...
