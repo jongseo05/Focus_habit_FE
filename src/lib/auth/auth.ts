@@ -223,3 +223,70 @@ export const confirmEmail = async (token: string): Promise<AuthResponse> => {
     }
   }
 }
+
+// Google 로그인
+export const signInWithGoogle = async (): Promise<AuthResponse> => {
+  try {
+    const supabase = supabaseBrowser()
+    
+    // 개발 환경과 프로덕션 환경에 따른 리디렉션 URL 설정
+    const redirectTo = process.env.NODE_ENV === 'development' 
+      ? `${window.location.origin}/auth/callback`
+      : `${window.location.origin}/auth/callback`
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo
+      }
+    })
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Google 로그인을 진행합니다.'
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Google 로그인 중 오류가 발생했습니다.'
+    }
+  }
+}
+
+// Apple 로그인
+export const signInWithApple = async (): Promise<AuthResponse> => {
+  try {
+    const supabase = supabaseBrowser()
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`
+      }
+    })
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Apple 로그인을 진행합니다.'
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Apple 로그인 중 오류가 발생했습니다.'
+    }
+  }
+}

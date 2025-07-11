@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { motion } from "framer-motion"
-import { Brain, Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles } from "lucide-react"
+import { Brain, Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { signIn, signInWithGoogle, signInWithApple } from "@/lib/auth/auth"
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
@@ -22,18 +23,54 @@ export default function LoginPage() {
     rememberMe: false,
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
 
-    // Simulate login process
-    setTimeout(() => {
+    try {
+      const result = await signIn({
+        email: formData.email,
+        password: formData.password,
+      })
+
+      if (result.success) {
+        // 로그인 성공 시 대시보드로 리다이렉트
+        router.push("/dashboard")
+      } else {
+        // 에러 메시지 표시
+        setError(result.error || "로그인에 실패했습니다.")
+      }
+    } catch (err) {
+      setError("로그인 중 오류가 발생했습니다. 다시 시도해주세요.")
+    } finally {
       setIsLoading(false)
-      // Redirect to dashboard on successful login
-      router.push("/dashboard")
-    }, 1500)
+    }
+  }
+
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await signInWithGoogle()
+      if (!result.success) {
+        setError(result.error || "Google 로그인에 실패했습니다.")
+      }
+    } catch (err) {
+      setError("Google 로그인 중 오류가 발생했습니다.")
+    }
+  }
+
+  const handleAppleLogin = async () => {
+    try {
+      const result = await signInWithApple()
+      if (!result.success) {
+        setError(result.error || "Apple 로그인에 실패했습니다.")
+      }
+    } catch (err) {
+      setError("Apple 로그인 중 오류가 발생했습니다.")
+    }
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -113,6 +150,18 @@ export default function LoginPage() {
           >
             <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl rounded-2xl overflow-hidden">
               <CardContent className="p-8">
+                {/* Error Message */}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700"
+                  >
+                    <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                    <span className="text-sm">{error}</span>
+                  </motion.div>
+                )}
+
                 <form onSubmit={handleLogin} className="space-y-6">
                   {/* Email Field */}
                   <div className="space-y-2">
@@ -212,6 +261,7 @@ export default function LoginPage() {
                   <Button
                     type="button"
                     variant="outline"
+                    onClick={handleGoogleLogin}
                     className="w-full h-12 border-slate-200 rounded-xl hover:bg-slate-50 transition-all duration-200 bg-white"
                   >
                     <div className="flex items-center gap-3">
@@ -229,6 +279,7 @@ export default function LoginPage() {
                   <Button
                     type="button"
                     variant="outline"
+                    onClick={handleAppleLogin}
                     className="w-full h-12 border-slate-200 rounded-xl hover:bg-slate-50 transition-all duration-200 bg-white"
                   >
                     <div className="flex items-center gap-3">
