@@ -10,13 +10,13 @@ jobs:
       - uses: actions/checkout@v4               # 1) 코드 가져오기
 
       - uses: pnpm/action-setup@v4              # 2) PNPM 설치 + 캐시
-        with: { version: 8 }
+        with: { version: latest }
       - uses: actions/setup-node@v4             #    Node 20 + pnpm 캐시
         with:
           node-version: 20
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile     # 3) 의존성
+      - run: pnpm install --frozen-lockfile     # 3) 의존성 (정확한 버전)
 
       - name: Restore Next.js cache
         uses: actions/cache@v4
