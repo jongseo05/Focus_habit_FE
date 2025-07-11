@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import { Brain, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
 import { supabaseBrowser } from "@/lib/supabase/client"
 
-export default function ConfirmPage() {
+function ConfirmContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [message, setMessage] = useState('')
   const router = useRouter()
@@ -142,5 +142,50 @@ export default function ConfirmPage() {
         </Card>
       </motion.div>
     </div>
+  )
+}
+
+// Loading fallback component
+function ConfirmFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="w-full max-w-md"
+      >
+        <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl rounded-2xl overflow-hidden">
+          <CardContent className="p-8 text-center">
+            <div className="mb-6">
+              <Link href="/" className="inline-flex items-center gap-3 mb-8">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-lg">
+                  <Brain className="w-7 h-7 text-white" />
+                </div>
+                <span className="text-2xl font-bold text-slate-900">FocusAI</span>
+              </Link>
+            </div>
+
+            <div className="space-y-4">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900 mb-2">로딩 중...</h2>
+                <p className="text-slate-600">잠시만 기다려주세요.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  )
+}
+
+export default function ConfirmPage() {
+  return (
+    <Suspense fallback={<ConfirmFallback />}>
+      <ConfirmContent />
+    </Suspense>
   )
 }
