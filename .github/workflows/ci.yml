@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4               # 1) 코드 가져오기
+
+      - uses: pnpm/action-setup@v4              # 2) PNPM 설치 + 캐시
+        with: { version: 8 }
+      - uses: actions/setup-node@v4             #    Node 20 + pnpm 캐시
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile     # 3) 의존성
+
+      - name: Restore Next.js cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # 4) 타입체크·테스트·빌드
+      - run: npx tsc --noEmit                   # 타입 체크
+      - run: pnpm run test --if-present         # 테스트 실행
+      - run: pnpm run build                     # 빌드
