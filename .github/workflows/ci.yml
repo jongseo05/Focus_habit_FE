@@ -9,8 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4               # 1) 코드 가져오기
 
-      - uses: pnpm/action-setup@v4              # 2) PNPM 설치 + 캐시
-        with: { version: latest }
+      - uses: pnpm/action-setup@v4              # 2) PNPM 설치 (package.json의 packageManager 사용)
       - uses: actions/setup-node@v4             #    Node 20 + pnpm 캐시
         with:
           node-version: 20
