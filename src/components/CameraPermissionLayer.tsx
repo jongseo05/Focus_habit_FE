@@ -76,6 +76,8 @@ const CameraPermissionLayer = ({
     return { browserName, instructions }
   }
 
+  const { browserName, instructions } = renderBrowserInstructions();
+
   return (
     <AnimatePresence>
       {isVisible && (
@@ -192,12 +194,12 @@ const CameraPermissionLayer = ({
                               <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                   <Badge variant="secondary" className="text-xs">
-                                    {renderBrowserInstructions().browserName}
+                                    {browserName}
                                   </Badge>
                                   <span className="text-sm font-medium text-slate-700">설정 방법</span>
                                 </div>
                                 <ol className="space-y-2 text-sm text-slate-600">
-                                  {renderBrowserInstructions().instructions.map((instruction, index) => (
+                                  {instructions.map((instruction, index) => (
                                     <li key={index} className="flex gap-2">
                                       <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full text-xs flex items-center justify-center font-medium">
                                         {index + 1}
