@@ -700,49 +700,27 @@ export default function DashboardPage() {
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
   ])
 
-  // showWebcam 상태 변화 추적
-  useEffect(() => {
-    console.log('📹 [showWebcam] State changed:', showWebcam)
-  }, [showWebcam])
-
-  // showPermissionLayer 상태 변화 추적
-  useEffect(() => {
-    console.log('🔐 [showPermissionLayer] State changed:', showPermissionLayer)
-  }, [showPermissionLayer])
-
   const handleStartSession = async () => {
-    console.log('🚀 [handleStartSession] Starting...', {
-      isPermissionGranted: mediaStream.isPermissionGranted,
-      isSessionRunning: session.isRunning,
-      showWebcam: showWebcam
-    })
-    
     try {
       // 세션 먼저 시작 (카메라와 독립적으로)
       session.startSession()
-      console.log('🚀 [handleStartSession] Session started')
       
       // 권한 상태 확인
       if (!mediaStream.isPermissionGranted) {
-        console.log('🚀 [handleStartSession] No permission, showing permission layer')
         setShowPermissionLayer(true)
         return
       }
 
       // 이미 권한이 있다면 스트림 시작 시도
-      console.log('🚀 [handleStartSession] Permission granted, starting stream...')
       const success = await mediaStream.startStream()
       if (success) {
-        console.log('🚀 [handleStartSession] Stream started successfully, showing webcam')
         setShowWebcam(true)
       } else {
         // 카메라 실패해도 세션은 계속 진행
-        console.warn('🚀 [handleStartSession] Camera failed but session continues')
         setShowPermissionLayer(true)
       }
     } catch (error) {
       // 에러가 발생해도 세션은 이미 시작된 상태
-      console.error('🚀 [handleStartSession] Failed to start camera, but session is running:', error)
       setShowPermissionLayer(true)
     }
   }
@@ -771,79 +749,44 @@ export default function DashboardPage() {
           }
         }
       } catch (error) {
-        console.error('Failed to toggle webcam:', error)
         setShowPermissionLayer(true)
       }
     }
   }
 
   const handlePermissionGranted = async () => {
-    console.log('✅ [handlePermissionGranted] Permission granted, starting stream...', {
-      isSessionRunning: session.isRunning,
-      currentShowWebcam: showWebcam,
-      mediaStreamState: {
-        isPermissionGranted: mediaStream.isPermissionGranted,
-        hasStream: !!mediaStream.stream,
-        isLoading: mediaStream.isLoading,
-        error: mediaStream.error
-      }
-    })
-    
     // 권한이 부여되면 카메라 스트림 시작 시도
     const success = await mediaStream.startStream()
-    console.log('✅ [handlePermissionGranted] Stream start result:', success)
     
     if (success) {
-      console.log('✅ [handlePermissionGranted] Success - showing webcam and closing permission layer')
       setShowWebcam(true)
       setShowPermissionLayer(false)
       
       // 세션이 아직 시작되지 않았다면 시작
       if (!session.isRunning) {
-        console.log('✅ [handlePermissionGranted] Starting session as it was not running')
         session.startSession()
       }
     } else {
       // 스트림 시작 실패해도 권한 레이어는 닫고 세션은 유지
-      console.warn('✅ [handlePermissionGranted] Stream failed even after permission granted')
       setShowPermissionLayer(false)
     }
   }
 
   const handlePermissionLayerClose = () => {
-    console.log('❌ [handlePermissionLayerClose] Closing permission layer...', {
-      isPermissionGranted: mediaStream.isPermissionGranted,
-      currentShowWebcam: showWebcam,
-      isSessionRunning: session.isRunning,
-      hasStream: !!mediaStream.stream
-    })
-    
     setShowPermissionLayer(false)
     
     // 권한이 확실히 부여되지 않았고, 스트림도 없는 경우에만 웹캠을 끔
     // 스트림이 있으면 권한이 부여된 것으로 간주
     if (!mediaStream.isPermissionGranted && !mediaStream.stream && !showWebcam) {
-      console.log('❌ [handlePermissionLayerClose] No permission and no stream, stopping stream and hiding webcam')
       mediaStream.stopStream()
       setShowWebcam(false)
       // 세션은 계속 유지 - 카메라 없이도 집중 세션은 가능
-    } else {
-      console.log('❌ [handlePermissionLayerClose] Permission granted or stream exists, keeping current state')
     }
   }
 
   // 미디어 스트림 상태가 변경될 때마다 권한 레이어 표시 여부 결정
   useEffect(() => {
-    console.log('🔄 [useEffect] MediaStream state changed:', {
-      isPermissionGranted: mediaStream.isPermissionGranted,
-      showPermissionLayer: showPermissionLayer,
-      hasStream: !!mediaStream.stream,
-      error: mediaStream.error,
-      isLoading: mediaStream.isLoading
-    })
-    
     if (mediaStream.isPermissionGranted && showPermissionLayer) {
-      console.log('🔄 [useEffect] Permission granted while layer is showing, calling handlePermissionGranted')
       handlePermissionGranted()
     }
   }, [mediaStream.isPermissionGranted, showPermissionLayer])
