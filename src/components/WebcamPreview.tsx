@@ -23,14 +23,19 @@ const WebcamPreview = ({ stream, onClose }: WebcamPreviewProps) => {
   const [isVideoReady, setIsVideoReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [size, setSize] = useState(DEFAULT_SIZE)
-  const [position, setPosition] = useState({ x: window.innerWidth - DEFAULT_SIZE.width - 24, y: 80 })
+  const [position, setPosition] = useState({ 
+    x: typeof window !== 'undefined' ? window.innerWidth - DEFAULT_SIZE.width - 24 : 100, 
+    y: 80 
+  })
   const [showControls, setShowControls] = useState(false)
   const [dragMode, setDragMode] = useState<DragMode>(null)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, startX: 0, startY: 0, startWidth: 0, startHeight: 0 })
 
   // 위치 초기화 (화면 크기 변경 시)
   const resetPosition = useCallback(() => {
-    setPosition({ x: window.innerWidth - size.width - 24, y: 80 })
+    if (typeof window !== 'undefined') {
+      setPosition({ x: window.innerWidth - size.width - 24, y: 80 })
+    }
   }, [size.width])
 
   // 마우스 다운 핸들러 (이동)
@@ -64,7 +69,7 @@ const WebcamPreview = ({ stream, onClose }: WebcamPreviewProps) => {
 
   // 마우스 이동 핸들러
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!dragMode) return
+    if (!dragMode || typeof window === 'undefined') return
 
     if (dragMode === 'move') {
       const newX = e.clientX - dragStart.x
@@ -123,7 +128,7 @@ const WebcamPreview = ({ stream, onClose }: WebcamPreviewProps) => {
 
   // 이벤트 리스너 등록/해제
   useEffect(() => {
-    if (dragMode) {
+    if (dragMode && typeof window !== 'undefined') {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
       return () => {
@@ -135,6 +140,8 @@ const WebcamPreview = ({ stream, onClose }: WebcamPreviewProps) => {
 
   // 화면 크기 변경 시 위치 조정
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
     const handleResize = () => {
       const maxX = window.innerWidth - size.width
       const maxY = window.innerHeight - size.height
