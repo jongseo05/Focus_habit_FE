@@ -11,6 +11,12 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { supabaseBrowser } from "@/lib/supabase/client"
 
+const FORM_CONSTRAINTS = {
+  PASSWORD: {
+    MIN_LENGTH: 8,
+  },
+}
+
 function ResetPasswordContent() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -31,8 +37,8 @@ function ResetPasswordContent() {
       return
     }
 
-    if (password.length < 6) {
-      setMessage("비밀번호는 최소 6자 이상이어야 합니다.")
+    if (password.length < FORM_CONSTRAINTS.PASSWORD.MIN_LENGTH) {
+      setMessage(`비밀번호는 최소 ${FORM_CONSTRAINTS.PASSWORD.MIN_LENGTH}자 이상이어야 합니다.`)
       setMessageType('error')
       return
     }
