@@ -32,7 +32,8 @@ export const useMediaStream = () => {
   // 권한 상태 확인
   const checkPermissionStatus = useCallback(async () => {
     try {
-      if (!navigator.mediaDevices || !navigator.permissions) {
+      // 브라우저 환경에서만 실행
+      if (typeof window === 'undefined' || !navigator.mediaDevices || !navigator.permissions) {
         return 'unsupported'
       }
 
@@ -47,6 +48,11 @@ export const useMediaStream = () => {
   // 미디어 스트림 요청
   const requestMediaStream = useCallback(async (constraints: MediaStreamConstraints = { video: true }) => {
     try {
+      // 브라우저 환경에서만 실행
+      if (typeof window === 'undefined' || !navigator.mediaDevices) {
+        throw new Error('브라우저 환경이 아니거나 미디어 디바이스를 지원하지 않습니다.')
+      }
+
       // 이미 유효한 스트림이 있다면 재사용
       if (streamRef.current) {
         const tracks = streamRef.current.getTracks()

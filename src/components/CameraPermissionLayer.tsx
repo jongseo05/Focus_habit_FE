@@ -39,6 +39,11 @@ const CameraPermissionLayer = ({
   }
 
   const renderBrowserInstructions = () => {
+    // 브라우저 환경에서만 실행
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return { browserName: 'browser', instructions: [] }
+    }
+    
     const userAgent = navigator.userAgent.toLowerCase()
     let browserName = 'browser'
     let instructions: string[] = []
