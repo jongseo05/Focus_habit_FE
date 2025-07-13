@@ -46,11 +46,15 @@ export const useMediaStream = () => {
 
   // 미디어 스트림 요청
   const requestMediaStream = useCallback(async (constraints: MediaStreamConstraints = { video: true }) => {
+    console.log('🎥 [requestMediaStream] Starting...', { constraints })
+    
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }))
+      console.log('🎥 [requestMediaStream] State set to loading')
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
+      console.log('🎥 [requestMediaStream] Stream obtained successfully', { streamId: stream.id, tracks: stream.getTracks().length })
 
       setState(prev => ({
         ...prev,
@@ -60,10 +64,11 @@ export const useMediaStream = () => {
         isPermissionDenied: false,
         error: null,
       }))
+      console.log('🎥 [requestMediaStream] State updated: permission granted, stream set')
 
       return stream
     } catch (error: any) {
-      console.error('Media stream request failed:', error)
+      console.error('🎥 [requestMediaStream] FAILED:', error)
       
       let errorMessage = '카메라 접근에 실패했습니다.'
       let isPermissionDenied = false
@@ -114,6 +119,7 @@ export const useMediaStream = () => {
         isPermissionGranted: false,
         isPermissionDenied,
       }))
+      console.log('🎥 [requestMediaStream] Error state set:', { errorMessage, isPermissionDenied })
 
       return null
     }
@@ -121,43 +127,110 @@ export const useMediaStream = () => {
 
   // 권한 요청
   const requestPermission = useCallback(async (): Promise<boolean> => {
-    const permissionStatus = await checkPermissionStatus()
+    console.log('🔐 [requestPermission] Starting permission check...')
     
-    if (permissionStatus === 'granted') {
-      setState(prev => ({ ...prev, isPermissionGranted: true, isPermissionDenied: false }))
-      return true
-    }
+    try {
+      const permissionStatus = await checkPermissionStatus()
+      console.log('🔐 [requestPermission] Permission status:', permissionStatus)
+      
+      if (permissionStatus === 'granted') {
+        setState(prev => ({ ...prev, isPermissionGranted: true, isPermissionDenied: false, error: null }))
+        console.log('🔐 [requestPermission] Permission already granted')
+        return true
+      }
 
-    if (permissionStatus === 'denied') {
+      if (permissionStatus === 'denied') {
+        setState(prev => ({
+          ...prev,
+          isPermissionGranted: false,
+          isPermissionDenied: true,
+          error: '카메라 권한이 거부되었습니다. 브라우저 설정에서 권한을 허용해주세요.',
+        }))
+        console.log('🔐 [requestPermission] Permission denied')
+        return false
+      }
+
+      console.log('🔐 [requestPermission] Requesting stream to get permission...')
+      // 'prompt' 또는 'unknown' 상태에서는 실제 미디어 요청을 통해 권한 확인
+      const stream = await requestMediaStream()
+      const success = stream !== null
+      console.log('🔐 [requestPermission] Stream request result:', success)
+      return success
+    } catch (error) {
+      console.error('🔐 [requestPermission] Permission request failed:', error)
       setState(prev => ({
         ...prev,
         isPermissionGranted: false,
         isPermissionDenied: true,
-        error: '카메라 권한이 거부되었습니다. 브라우저 설정에서 권한을 허용해주세요.',
+        error: '권한 요청 중 오류가 발생했습니다.',
       }))
       return false
     }
-
-    // 'prompt' 또는 'unknown' 상태에서는 실제 미디어 요청을 통해 권한 확인
-    const stream = await requestMediaStream()
-    return stream !== null
   }, [checkPermissionStatus, requestMediaStream])
 
   // 스트림 시작
   const startStream = useCallback(async (): Promise<boolean> => {
-    if (streamRef.current) {
-      setState(prev => ({ ...prev, stream: streamRef.current }))
-      return true
-    }
+    console.log('▶️ [startStream] Starting stream...', { 
+      hasExistingStream: !!streamRef.current,
+      currentState: { 
+        isPermissionGranted: state.isPermissionGranted,
+        hasStream: !!state.stream,
+        isLoading: state.isLoading 
+      }
+    })
+    
+    try {
+      // 기존 스트림이 있고 유효한지 확인
+      if (streamRef.current) {
+        const tracks = streamRef.current.getTracks()
+        console.log('▶️ [startStream] Checking existing stream:', { 
+          trackCount: tracks.length, 
+          readyState: tracks[0]?.readyState 
+        })
+        
+        if (tracks.length > 0 && tracks[0].readyState === 'live') {
+          setState(prev => ({ ...prev, stream: streamRef.current, error: null }))
+          console.log('▶️ [startStream] Using existing valid stream')
+          return true
+        } else {
+          // 기존 스트림이 무효하면 정리
+          console.log('▶️ [startStream] Cleaning up invalid existing stream')
+          streamRef.current.getTracks().forEach(track => track.stop())
+          streamRef.current = null
+        }
+      }
 
-    const stream = await requestMediaStream()
-    return stream !== null
-  }, [requestMediaStream])
+      console.log('▶️ [startStream] Requesting new stream...')
+      // 새 스트림 요청
+      const stream = await requestMediaStream()
+      if (stream) {
+        setState(prev => ({ ...prev, stream, error: null }))
+        console.log('▶️ [startStream] New stream obtained successfully')
+        return true
+      }
+      console.log('▶️ [startStream] Failed to get new stream')
+      return false
+    } catch (error) {
+      console.error('▶️ [startStream] Failed to start stream:', error)
+      setState(prev => ({ 
+        ...prev, 
+        stream: null, 
+        error: '스트림 시작에 실패했습니다.' 
+      }))
+      return false
+    }
+  }, [requestMediaStream, state.isPermissionGranted, state.stream, state.isLoading])
 
   // 스트림 중지
   const stopStream = useCallback(() => {
+    console.log('⏹️ [stopStream] Stopping stream...', { 
+      hasStream: !!streamRef.current,
+      currentState: { hasStream: !!state.stream }
+    })
+    
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
+        console.log('⏹️ [stopStream] Stopping track:', track.kind, track.readyState)
         track.stop()
       })
       streamRef.current = null
@@ -167,7 +240,8 @@ export const useMediaStream = () => {
       ...prev,
       stream: null,
     }))
-  }, [])
+    console.log('⏹️ [stopStream] Stream stopped and state cleared')
+  }, [state.stream])
 
   // 에러 리셋
   const resetError = useCallback(() => {
@@ -180,8 +254,21 @@ export const useMediaStream = () => {
       ...prev,
       error: null,
       isPermissionDenied: false,
+      isLoading: true, // 재시도 중임을 표시
     }))
-    return await requestPermission()
+    
+    try {
+      const result = await requestPermission()
+      return result
+    } catch (error) {
+      console.error('Permission retry failed:', error)
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: '권한 재요청에 실패했습니다.',
+      }))
+      return false
+    }
   }, [requestPermission])
 
   // 컴포넌트 언마운트 시 스트림 정리
@@ -199,11 +286,15 @@ export const useMediaStream = () => {
       const tracks = streamRef.current.getTracks()
       
       const handleTrackEnded = () => {
+        console.warn('Camera track ended unexpectedly')
         setState(prev => ({
           ...prev,
           stream: null,
-          error: '카메라 연결이 끊어졌습니다.',
+          // 트랙 종료는 에러가 아닌 정상적인 상황일 수 있으므로 에러 메시지를 부드럽게 변경
+          error: null, // 에러로 처리하지 않음
         }))
+        // 스트림 레퍼런스도 정리
+        streamRef.current = null
       }
 
       tracks.forEach(track => {
