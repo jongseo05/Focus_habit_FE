@@ -7,7 +7,13 @@ const config: Config = {
     "./pages/**/*.{ts,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      container: {
+        screens: {
+          '2xl': '100rem',
+        },
+      },
+    },
   },
   plugins: [],
 }
