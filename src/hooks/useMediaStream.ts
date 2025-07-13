@@ -47,6 +47,22 @@ export const useMediaStream = () => {
   // 미디어 스트림 요청
   const requestMediaStream = useCallback(async (constraints: MediaStreamConstraints = { video: true }) => {
     try {
+      // 이미 유효한 스트림이 있다면 재사용
+      if (streamRef.current) {
+        const tracks = streamRef.current.getTracks()
+        if (tracks.length > 0 && tracks[0].readyState === 'live') {
+          setState(prev => ({
+            ...prev,
+            stream: streamRef.current,
+            isLoading: false,
+            isPermissionGranted: true,
+            isPermissionDenied: false,
+            error: null,
+          }))
+          return streamRef.current
+        }
+      }
+
       setState(prev => ({ ...prev, isLoading: true, error: null }))
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
@@ -121,6 +137,21 @@ export const useMediaStream = () => {
   // 권한 요청
   const requestPermission = useCallback(async (): Promise<boolean> => {
     try {
+      // 이미 권한이 부여되어 있고 스트림이 활성화된 경우 추가 요청 불필요
+      if (streamRef.current) {
+        const tracks = streamRef.current.getTracks()
+        if (tracks.length > 0 && tracks[0].readyState === 'live') {
+          setState(prev => ({ 
+            ...prev, 
+            isPermissionGranted: true, 
+            isPermissionDenied: false, 
+            error: null,
+            stream: streamRef.current 
+          }))
+          return true
+        }
+      }
+
       const permissionStatus = await checkPermissionStatus()
       
       if (permissionStatus === 'granted') {
@@ -138,7 +169,7 @@ export const useMediaStream = () => {
         return false
       }
 
-      // 'prompt' 또는 'unknown' 상태에서는 실제 미디어 요청을 통해 권한 확인
+      // 'prompt' 또는 'unknown' 상태에서만 실제 미디어 요청을 통해 권한 확인
       const stream = await requestMediaStream()
       const success = stream !== null
       return success
@@ -161,7 +192,13 @@ export const useMediaStream = () => {
         const tracks = streamRef.current.getTracks()
         
         if (tracks.length > 0 && tracks[0].readyState === 'live') {
-          setState(prev => ({ ...prev, stream: streamRef.current, error: null }))
+          // 이미 유효한 스트림이 있고 상태가 동일하면 불필요한 업데이트 방지
+          setState(prev => {
+            if (prev.stream === streamRef.current && !prev.error) {
+              return prev // 상태 변경하지 않음
+            }
+            return { ...prev, stream: streamRef.current, error: null }
+          })
           return true
         } else {
           // 기존 스트림이 무효하면 정리
@@ -185,7 +222,7 @@ export const useMediaStream = () => {
       }))
       return false
     }
-  }, [requestMediaStream, state.isPermissionGranted, state.stream, state.isLoading])
+  }, [requestMediaStream])
 
   // 스트림 중지
   const stopStream = useCallback(() => {
@@ -200,7 +237,7 @@ export const useMediaStream = () => {
       ...prev,
       stream: null,
     }))
-  }, [state.stream])
+  }, [])
 
   // 에러 리셋
   const resetError = useCallback(() => {
