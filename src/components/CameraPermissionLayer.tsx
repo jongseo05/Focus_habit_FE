@@ -35,10 +35,7 @@ const CameraPermissionLayer = ({
 
   const handlePermissionRequest = async () => {
     const success = await onRequestPermission()
-    if (success) {
-      // 권한이 성공적으로 부여되면 레이어를 자동으로 닫습니다
-      setTimeout(onClose, 1000)
-    }
+    // 자동으로 닫지 않음 - Dashboard의 useEffect에서 상태 변화를 감지하여 처리
   }
 
   const renderBrowserInstructions = () => {
