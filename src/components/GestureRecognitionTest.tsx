@@ -75,7 +75,11 @@ export default function GestureRecognitionTest() {
               playsInline
               muted
               className="max-w-full h-auto border rounded-lg"
-              style={{ maxWidth: '640px', maxHeight: '480px' }}
+              style={{ 
+                maxWidth: '640px', 
+                maxHeight: '480px',
+                transform: 'scaleX(-1)' // 화면 표시도 좌우반전
+              }}
             />
           </div>
           
