@@ -21,7 +21,11 @@ export const captureFrameAsJpegBase64 = (
   canvas.width = width
   canvas.height = height
   
-  // 비디오 프레임을 캔버스에 그리기
+  // 좌우반전을 위한 변환 적용
+  ctx.scale(-1, 1)
+  ctx.translate(-width, 0)
+  
+  // 비디오 프레임을 캔버스에 그리기 (반전된 상태로)
   ctx.drawImage(video, 0, 0, width, height)
   
   // JPEG로 변환하고 Base64 추출
