@@ -176,7 +176,13 @@ export const useMediaStream = () => {
       }
 
       // 'prompt' 또는 'unknown' 상태에서만 실제 미디어 요청을 통해 권한 확인
-      const stream = await requestMediaStream()
+      const stream = await requestMediaStream({
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 15 }
+        }
+      })
       const success = stream !== null
       return success
     } catch (error) {
@@ -213,8 +219,14 @@ export const useMediaStream = () => {
         }
       }
 
-      // 새 스트림 요청
-      const stream = await requestMediaStream()
+      // 새 스트림 요청 (고해상도로)
+      const stream = await requestMediaStream({
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 15 }
+        }
+      })
       if (stream) {
         setState(prev => ({ ...prev, stream, error: null }))
         return true

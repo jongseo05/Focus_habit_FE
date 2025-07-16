@@ -53,6 +53,9 @@ export function useWebSocket(
         eventHandlers?.onOpen?.(event)
       },
       onMessage: (message) => {
+        // 원시 응답값을 콘솔에 출력
+        console.log('📨 WebSocket Raw Response:', message)
+        
         setLastMessage(message)
         eventHandlers?.onMessage?.(message)
       },
@@ -83,7 +86,7 @@ export function useWebSocket(
   // WebSocket 연결
   const connect = useCallback(async () => {
     if (wsClientRef.current?.isConnected()) {
-      console.warn('WebSocket is already connected')
+      // 이미 연결되어 있으면 리턴 (경고 로그 제거)
       return
     }
 
@@ -155,20 +158,20 @@ export function useWebSocket(
   // 사용자 로그인 상태 변경 시 처리
   useEffect(() => {
     if (user) {
-      // 사용자가 로그인했을 때 자동 연결
+      // 사용자가 로그인했을 때 자동 연결 (이미 연결되어 있으면 connect에서 리턴)
       connect()
     } else {
       // 사용자가 로그아웃했을 때 연결 해제
       disconnect()
     }
-  }, [user, connect, disconnect])
+  }, [user]) // connect, disconnect 의존성 제거하여 무한 루프 방지
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       disconnect()
     }
-  }, [disconnect])
+  }, []) // 의존성 배열을 비워서 언마운트 시에만 실행
 
   // 상태 계산
   const isConnected = status === WebSocketStatus.CONNECTED
