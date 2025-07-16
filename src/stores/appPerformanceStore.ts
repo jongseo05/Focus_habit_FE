@@ -224,17 +224,19 @@ export function usePerformanceMonitor() {
     
     measureMemory: () => {
       if ('memory' in performance) {
-        const memory = (performance as any).memory
-        const usedMB = memory.usedJSHeapSize / 1048576
-        updateMemoryUsage(usedMB)
-        
-        // 메모리 사용량 경고 (100MB 이상)
-        if (usedMB > 100) {
-          addError({
-            message: `High memory usage: ${usedMB.toFixed(2)}MB`,
-            severity: usedMB > 200 ? 'high' : 'medium',
-            context: 'memory-monitor'
-          })
+        const memory = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } }).memory
+        if (memory) {
+          const usedMB = memory.usedJSHeapSize / 1048576
+          updateMemoryUsage(usedMB)
+          
+          // 메모리 사용량 경고 (100MB 이상)
+          if (usedMB > 100) {
+            addError({
+              message: `High memory usage: ${usedMB.toFixed(2)}MB`,
+              severity: usedMB > 200 ? 'high' : 'medium',
+              context: 'memory-monitor'
+            })
+          }
         }
       }
     },
@@ -302,19 +304,27 @@ export function useNetworkMonitor() {
       
       // 연결 품질 모니터링
       if ('connection' in navigator) {
-        const connection = (navigator as any).connection
+        interface NetworkConnection extends EventTarget {
+          effectiveType: string
+          addEventListener(type: 'change', listener: () => void): void
+          removeEventListener(type: 'change', listener: () => void): void
+        }
+        
+        const connection = (navigator as unknown as { connection?: NetworkConnection }).connection
         const updateConnectionQuality = () => {
-          if (connection.effectiveType === '4g') {
+          if (connection && connection.effectiveType === '4g') {
             updateQuality('good')
-          } else if (connection.effectiveType === '3g') {
+          } else if (connection && connection.effectiveType === '3g') {
             updateQuality('medium')
           } else {
             updateQuality('poor')
           }
         }
         
-        connection.addEventListener('change', updateConnectionQuality)
-        updateConnectionQuality()
+        if (connection) {
+          connection.addEventListener('change', updateConnectionQuality)
+          updateConnectionQuality()
+        }
       }
       
       return () => {
