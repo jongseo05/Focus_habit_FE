@@ -17,6 +17,7 @@ export class WebSocketClient {
   private pingIntervalId: NodeJS.Timeout | null = null
   private status: WebSocketStatus = WebSocketStatus.DISCONNECTED
   private messageQueue: WebSocketMessage[] = []
+  private readonly maxQueueSize = 100 // 메시지 큐 크기 제한
   private isAuthenticated = false
 
   constructor(config: WebSocketConfig, eventHandlers: WebSocketEventHandlers = {}) {
@@ -60,11 +61,14 @@ export class WebSocketClient {
     }
   }
 
-  // WebSocket 연결 해제
+  // WebSocket 연결 해제 (메모리 정리 포함)
   disconnect(): void {
     this.isAuthenticated = false
     this.clearReconnectTimeout()
     this.clearPingInterval()
+    
+    // 메시지 큐 정리
+    this.messageQueue = []
     
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect')
@@ -72,11 +76,18 @@ export class WebSocketClient {
     }
     
     this.setStatus(WebSocketStatus.DISCONNECTED)
+    console.log('WebSocket disconnected and memory cleaned')
   }
 
-  // 메시지 전송
+  // 메시지 전송 (메모리 관리 개선)
   sendMessage(message: WebSocketMessage): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      // 메시지 큐 크기 제한
+      if (this.messageQueue.length >= this.maxQueueSize) {
+        console.warn('Message queue is full. Removing oldest message.')
+        this.messageQueue.shift() // 가장 오래된 메시지 제거
+      }
+      
       console.warn('WebSocket is not connected. Message queued.')
       this.messageQueue.push(message)
       return
