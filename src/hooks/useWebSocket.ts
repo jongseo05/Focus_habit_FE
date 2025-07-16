@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { WebSocketClient } from '@/lib/websocket/client'
 import { useUser } from '@/hooks/useAuth'
 import { supabaseBrowser } from '@/lib/supabase/client'
+import { useFocusSessionErrorHandler } from '@/hooks/useFocusSessionErrorHandler'
+import { FocusSessionErrorType } from '@/types/focusSession'
 import {
   WebSocketStatus,
   WebSocketMessage,
@@ -27,9 +29,31 @@ export function useWebSocket(
   const [status, setStatus] = useState<WebSocketStatus>(WebSocketStatus.DISCONNECTED)
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const [connectionStable, setConnectionStable] = useState(false)
   
   const wsClientRef = useRef<WebSocketClient | null>(null)
   const configRef = useRef<WebSocketConfig>({ ...defaultConfig, ...customConfig })
+  const connectionStartTime = useRef<number | null>(null)
+  const lastDisconnectionTime = useRef<number | null>(null)
+
+  // 집중 세션 에러 핸들러
+  const { handleError, classifyError } = useFocusSessionErrorHandler({
+    onError: (error) => {
+      console.error('[WEBSOCKET] WebSocket 세션 오류:', error)
+    },
+    onRecoveryStart: (errorType) => {
+      console.log('[WEBSOCKET] WebSocket 복구 시작:', errorType)
+      setStatus(WebSocketStatus.RECONNECTING)
+    },
+    onRecoverySuccess: (errorType) => {
+      console.log('[WEBSOCKET] WebSocket 복구 성공:', errorType)
+      setConnectionStable(true)
+    },
+    onRecoveryFailed: (error) => {
+      console.error('[WEBSOCKET] WebSocket 복구 실패:', error)
+      setStatus(WebSocketStatus.ERROR)
+    }
+  })
 
   // JWT 토큰 가져오기
   const getAuthToken = useCallback(async (): Promise<string | null> => {
@@ -50,11 +74,29 @@ export function useWebSocket(
         console.log('WebSocket connected')
         setStatus(WebSocketStatus.CONNECTED)
         setReconnectAttempts(0)
+        connectionStartTime.current = Date.now()
+        
+        // 연결 안정성 확인 (5초 후)
+        setTimeout(() => {
+          if (status === WebSocketStatus.CONNECTED) {
+            setConnectionStable(true)
+          }
+        }, 5000)
+        
         eventHandlers?.onOpen?.(event)
       },
       onMessage: (message) => {
         // 원시 응답값을 콘솔에 출력
         console.log('📨 WebSocket Raw Response:', message)
+        
+        // 제스처 인식 서버 오류 체크
+        if (message.type === 'error' || (message.data && message.data.error)) {
+          const gestureError = classifyError(
+            new Error(message.data?.error || 'Gesture server error'), 
+            'gesture'
+          )
+          handleError(gestureError)
+        }
         
         setLastMessage(message)
         eventHandlers?.onMessage?.(message)
@@ -62,11 +104,29 @@ export function useWebSocket(
       onClose: (event) => {
         console.log('WebSocket disconnected')
         setStatus(WebSocketStatus.DISCONNECTED)
+        setConnectionStable(false)
+        lastDisconnectionTime.current = Date.now()
+        
+        // 예기치 않은 연결 끊김인지 확인
+        const isUnexpected = event.code !== 1000 && event.code !== 1001
+        if (isUnexpected) {
+          const wsError = classifyError(
+            { code: event.code, reason: event.reason, type: 'close' }, 
+            'websocket'
+          )
+          handleError(wsError)
+        }
+        
         eventHandlers?.onClose?.(event)
       },
       onError: (error) => {
         console.error('WebSocket error:', error)
         setStatus(WebSocketStatus.ERROR)
+        setConnectionStable(false)
+        
+        const wsError = classifyError(error, 'websocket')
+        handleError(wsError)
+        
         eventHandlers?.onError?.(error)
       },
       onReconnect: (attempt) => {
@@ -78,10 +138,17 @@ export function useWebSocket(
       onMaxReconnectAttemptsReached: () => {
         console.error('WebSocket max reconnect attempts reached')
         setStatus(WebSocketStatus.ERROR)
+        
+        const wsError = classifyError(
+          new Error('Max reconnect attempts reached'), 
+          'websocket'
+        )
+        handleError(wsError)
+        
         eventHandlers?.onMaxReconnectAttemptsReached?.()
       }
     }
-  }, [eventHandlers])
+  }, [eventHandlers, classifyError, handleError, status])
 
   // WebSocket 연결
   const connect = useCallback(async () => {

@@ -153,7 +153,7 @@ const CameraPermissionLayer = ({
                       error.toLowerCase().includes('device in use')) && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <div className="text-sm text-blue-800 font-medium mb-2">
-                          💡 해결 방법:
+                          해결 방법:
                         </div>
                         <ul className="text-sm text-blue-700 space-y-1 pl-4">
                           <li>• 다른 화상통화 앱 (Zoom, Teams, Skype 등)을 종료하세요</li>

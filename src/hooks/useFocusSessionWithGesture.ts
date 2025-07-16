@@ -2,6 +2,8 @@ import { useCallback, useRef, useEffect, useState } from 'react'
 import useMediaStream from '@/hooks/useMediaStream'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { FrameStreamer } from '@/lib/websocket/utils'
+import { useFocusSessionErrorHandler } from '@/hooks/useFocusSessionErrorHandler'
+import { FocusSessionErrorType, FocusSessionStatus } from '@/types/focusSession'
 
 interface FocusSessionWithGestureOptions {
   frameRate?: number
@@ -26,6 +28,13 @@ interface FocusSessionWithGestureReturn {
   isGestureRecognitionActive: boolean
   gestureWebSocketConnected: boolean
   gestureFramesSent: number
+  
+  // 집중 세션 에러 처리
+  sessionStatus: FocusSessionStatus
+  sessionErrors: any[]
+  lastSessionError: any | null
+  canRecoverFromError: boolean
+  retrySessionRecovery: () => Promise<boolean>
 }
 
 export function useFocusSessionWithGesture(
@@ -44,17 +53,72 @@ export function useFocusSessionWithGesture(
   // 제스처 인식 상태
   const [gestureFramesSent, setGestureFramesSent] = useState(0)
   const [isGestureActive, setIsGestureActive] = useState(false)
+
+  // 집중 세션 통합 에러 핸들러
+  const { 
+    state: errorHandlerState, 
+    handleError, 
+    classifyError, 
+    retryRecovery,
+    clearErrors 
+  } = useFocusSessionErrorHandler({
+    config: {
+      autoRecovery: true,
+      maxRecoveryAttempts: 3,
+      gracefulDegradation: true,
+      fallbackMode: true
+    },
+    onError: (error) => {
+      console.error('[FOCUS_SESSION] 집중 세션 오류:', error)
+      
+      // 특정 에러 타입에 따른 처리
+      switch (error.type) {
+        case FocusSessionErrorType.CAMERA_DISCONNECTED:
+          setIsGestureActive(false)
+          break
+        case FocusSessionErrorType.WEBSOCKET_FAILED:
+        case FocusSessionErrorType.GESTURE_SERVER_ERROR:
+          setIsGestureActive(false)
+          break
+      }
+    },
+    onRecoveryStart: (errorType) => {
+      console.log('[FOCUS_SESSION] 집중 세션 복구 시작:', errorType)
+    },
+    onRecoverySuccess: (errorType) => {
+      console.log('[FOCUS_SESSION] 집중 세션 복구 성공:', errorType)
+      
+      // 복구 성공 시 제스처 인식 재시작
+      if (isSessionRunning && mediaStream.stream && mediaStream.isPermissionGranted) {
+        setTimeout(() => {
+          startGestureRecognition()
+        }, 1000)
+      }
+    },
+    onRecoveryFailed: (error) => {
+      console.error('[FOCUS_SESSION] 집중 세션 복구 실패:', error)
+      setIsGestureActive(false)
+    },
+    onSessionInterrupted: () => {
+      console.warn('[FOCUS_SESSION] 집중 세션이 중단되었습니다')
+      setIsGestureActive(false)
+    },
+    onFallbackMode: () => {
+      console.log('[FOCUS_SESSION] 대체 모드로 전환됩니다')
+      // 카메라 없이 기본 집중 세션 유지
+    }
+  })
   
   // 제스처 인식을 위한 WebSocket
   const { sendRawText, isConnected } = useWebSocket({}, {
     onMessage: (rawData) => {
       // 원시 응답 데이터를 먼저 로그로 출력
-      console.log('🔍 제스처 인식 원시 응답:', rawData)
+      console.log('[GESTURE] 제스처 인식 원시 응답:', rawData)
       
       try {
         // rawData의 타입 확인
-        console.log('📊 응답 데이터 타입:', typeof rawData)
-        console.log('📋 응답 데이터 구조:', Object.keys(rawData as any))
+        console.log('[GESTURE] 응답 데이터 타입:', typeof rawData)
+        console.log('[GESTURE] 응답 데이터 구조:', Object.keys(rawData as any))
         
         // 실제 응답 구조에 맞게 파싱
         const data = rawData as any
@@ -74,28 +138,35 @@ export function useFocusSessionWithGesture(
             }
           }
           
-          console.log('🎯 [제스처 분석 결과]')
-          console.log('  👁️  눈 상태:', analysis.eyeStatus, `(값: ${analysis.eyeValue})`)
-          console.log('  ✋  손 동작:', analysis.handAction, `(신뢰도: ${analysis.handConfidence})`)
-          console.log('  📐  머리 자세:', `pitch:${analysis.headPose.pitch}, roll:${analysis.headPose.roll}, yaw:${analysis.headPose.yaw}`)
-          console.log('  ⏰  타임스탬프:', analysis.timestamp)
-          console.log('  📸  전송된 프레임:', gestureFramesSent)
+          console.log('[GESTURE] 제스처 분석 결과')
+          console.log('  눈 상태:', analysis.eyeStatus, `(값: ${analysis.eyeValue})`)
+          console.log('  손 동작:', analysis.handAction, `(신뢰도: ${analysis.handConfidence})`)
+          console.log('  머리 자세:', `pitch:${analysis.headPose.pitch}, roll:${analysis.headPose.roll}, yaw:${analysis.headPose.yaw}`)
+          console.log('  타임스탬프:', analysis.timestamp)
+          console.log('  전송된 프레임:', gestureFramesSent)
           
         } else {
-          console.log('⚠️ 예상하지 못한 응답 형식:', data)
+          console.log('[GESTURE] 예상하지 못한 응답 형식:', data)
+        }        } catch (error) {
+          console.error('[GESTURE] 제스처 응답 파싱 오류:', error, '| 원시 데이터:', rawData)
+          
+          // 응답 파싱 오류를 제스처 서버 오류로 분류
+          const gestureError = classifyError(error, 'gesture')
+          handleError(gestureError)
         }
-      } catch (error) {
-        console.error('❌ 제스처 응답 파싱 오류:', error, '| 원시 데이터:', rawData)
-      }
     },
     onOpen: () => {
       console.log('🔗 제스처 인식 WebSocket 연결됨')
     },
     onClose: () => {
-      console.log('🔌 제스처 인식 WebSocket 연결 해제됨')
+      console.log('[GESTURE] 제스처 인식 WebSocket 연결 해제됨')
     },
     onError: (error) => {
-      console.error('🚨 제스처 인식 WebSocket 오류:', error)
+      console.error('[GESTURE] 제스처 인식 WebSocket 오류:', error)
+      
+      // WebSocket 오류를 에러 핸들러에 전달
+      const wsError = classifyError(error, 'websocket')
+      handleError(wsError)
     }
   })
   
@@ -169,11 +240,15 @@ export function useFocusSessionWithGesture(
             setGestureFramesSent(prev => prev + 1)
             
             // 서버 전송 시에만 간단한 로그
-            console.log(`📤 제스처 분석용 이미지 전송됨 (${gestureFramesSent + 1}번째)`)
+            console.log(`[GESTURE] 제스처 분석용 이미지 전송됨 (${gestureFramesSent + 1}번째)`)
           },
           (error) => {
-            console.error('❌ 프레임 스트리밍 오류:', error)
+            console.error('[GESTURE] 프레임 스트리밍 오류:', error)
             setIsGestureActive(false)
+            
+            // 제스처 서버 오류로 분류하여 에러 핸들러에 전달
+            const gestureError = classifyError(error, 'gesture')
+            handleError(gestureError)
           },
           gestureJpegQuality
         )
@@ -194,8 +269,12 @@ export function useFocusSessionWithGesture(
     }
     
     hiddenVideoRef.current.onerror = (error) => {
-      console.error('❌ 숨겨진 비디오 엘리먼트 오류:', error)
+      console.error('[VIDEO] 숨겨진 비디오 엘리먼트 오류:', error)
       setIsGestureActive(false)
+      
+      // 비디오 엘리먼트 오류를 카메라 오류로 분류
+      const cameraError = classifyError(error, 'camera')
+      handleError(cameraError)
     }
   }, [
     mediaStream.stream, 
@@ -254,7 +333,6 @@ export function useFocusSessionWithGesture(
   
   // MediaStream의 모든 기능을 그대로 노출하면서 제스처 관련 기능 추가
   return {
-    // MediaStream 기능들 그대로 전달
     stream: mediaStream.stream,
     isLoading: mediaStream.isLoading,
     error: mediaStream.error,
@@ -269,6 +347,13 @@ export function useFocusSessionWithGesture(
     // 제스처 인식 추가 기능
     isGestureRecognitionActive: isGestureActive,
     gestureWebSocketConnected: isConnected,
-    gestureFramesSent
+    gestureFramesSent,
+    
+    // 집중 세션 에러 처리
+    sessionStatus: errorHandlerState.status,
+    sessionErrors: errorHandlerState.errors,
+    lastSessionError: errorHandlerState.lastError,
+    canRecoverFromError: errorHandlerState.lastError?.recoverable || false,
+    retrySessionRecovery: retryRecovery
   }
 }

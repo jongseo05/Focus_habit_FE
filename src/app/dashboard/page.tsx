@@ -34,6 +34,8 @@ import Link from "next/link"
 import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
 import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
+import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
+import { FocusSessionStatus } from "@/types/focusSession"
 
 // Mock data and state management
 const useFocusSession = () => {
@@ -699,10 +701,24 @@ export default function DashboardPage() {
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
   const [showPermissionLayer, setShowPermissionLayer] = useState(false)
+  const [showErrorDisplay, setShowErrorDisplay] = useState(false)
   const [notifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
   ])
+
+  // 에러 상태 모니터링
+  useEffect(() => {
+    if (mediaStream.lastSessionError && mediaStream.sessionStatus === FocusSessionStatus.ERROR) {
+      setShowErrorDisplay(true)
+    } else if (mediaStream.sessionStatus === FocusSessionStatus.ACTIVE) {
+      // 성공적으로 복구된 경우 3초 후 에러 표시 해제
+      const timer = setTimeout(() => {
+        setShowErrorDisplay(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [mediaStream.lastSessionError, mediaStream.sessionStatus])
 
   const handleStartSession = async () => {
     try {
@@ -824,9 +840,9 @@ export default function DashboardPage() {
   ]
 
   const friends = [
-    { name: "김민수", hours: "24:30", avatar: "🧑‍💻" },
-    { name: "이지은", hours: "22:15", avatar: "👩‍🎓" },
-    { name: "박준호", hours: "20:45", avatar: "👨‍🔬" },
+    { name: "김민수", hours: "24:30", avatar: "KM" },
+    { name: "이지은", hours: "22:15", avatar: "LJ" },
+    { name: "박준호", hours: "20:45", avatar: "PJ" },
   ]
 
   const recentFrames = [
@@ -1328,6 +1344,17 @@ export default function DashboardPage() {
           </Card>
         </div>
       </main>
+
+      {/* 집중 세션 에러 표시 */}
+      <FocusSessionErrorDisplay
+        sessionStatus={mediaStream.sessionStatus}
+        sessionErrors={mediaStream.sessionErrors}
+        lastSessionError={mediaStream.lastSessionError}
+        canRecoverFromError={mediaStream.canRecoverFromError}
+        onRetryRecovery={mediaStream.retrySessionRecovery}
+        onDismissError={() => setShowErrorDisplay(false)}
+        isVisible={showErrorDisplay}
+      />
     </div>
   )
 }
