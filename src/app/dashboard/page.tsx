@@ -31,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import Link from "next/link"
-import useMediaStream from "@/hooks/useMediaStream"
+import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
 import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
 
@@ -690,7 +690,11 @@ const EnhancedFocusTrendChart = () => {
 
 export default function DashboardPage() {
   const session = useFocusSession()
-  const mediaStream = useMediaStream()
+  const mediaStream = useFocusSessionWithGesture(session.isRunning, {
+    frameRate: 10, // 1초에 10번 (10fps)
+    enableGestureRecognition: true,
+    gestureJpegQuality: 0.95
+  })
   
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
@@ -852,6 +856,23 @@ export default function DashboardPage() {
                   <span className="text-slate-600 hidden sm:inline">
                     {showWebcam ? '카메라 활성' : '카메라 비활성'}
                   </span>
+                </div>
+              )}
+
+              {/* 제스처 인식 상태 표시 (세션 중일 때만) */}
+              {session.isRunning && mediaStream.isPermissionGranted && (
+                <div className="flex items-center gap-2 text-sm">
+                  <div className={`w-2 h-2 rounded-full ${
+                    mediaStream.isGestureRecognitionActive ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
+                  }`}></div>
+                  <span className="text-slate-600 hidden sm:inline">
+                    {mediaStream.isGestureRecognitionActive ? '제스처 분석' : '제스처 대기'}
+                  </span>
+                  {mediaStream.gestureFramesSent > 0 && (
+                    <span className="text-xs text-slate-400">
+                      ({mediaStream.gestureFramesSent}프레임)
+                    </span>
+                  )}
                 </div>
               )}
 
