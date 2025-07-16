@@ -351,7 +351,7 @@ export class FrameStreamer {
   // 스트리밍 시작 (고급 최적화 버전)
   start(): void {
     if (this.isStreaming) {
-      console.warn('Frame streaming is already running')
+      console.warn('[FRAME_STREAMING] Frame streaming is already running')
       return
     }
     
@@ -363,21 +363,21 @@ export class FrameStreamer {
       try {
         // 비디오 상태 확인
         if (!this.video || this.video.readyState < 2) {
-          console.warn('비디오가 준비되지 않았습니다. readyState:', this.video?.readyState)
+          console.warn('[VIDEO] 비디오가 준비되지 않았습니다. readyState:', this.video?.readyState)
           this.handleContinuousFailure('Video not ready')
           return
         }
 
         // 비디오 크기 확인
         if (this.video.videoWidth === 0 || this.video.videoHeight === 0) {
-          console.warn('비디오 크기가 0입니다. 스트림에 문제가 있을 수 있습니다.')
+          console.warn('[VIDEO] 비디오 크기가 0입니다. 스트림에 문제가 있을 수 있습니다.')
           this.handleContinuousFailure('Video dimensions are zero')
           return
         }
         
         // 비디오 재생 상태 확인
         if (this.video.paused || this.video.ended) {
-          console.warn('비디오가 일시정지되었거나 종료되었습니다.')
+          console.warn('[VIDEO] 비디오가 일시정지되었거나 종료되었습니다.')
           this.handleContinuousFailure('Video is paused or ended')
           return
         }
@@ -428,12 +428,12 @@ export class FrameStreamer {
         }
         
       } catch (error) {
-        console.error('Frame capture error:', error)
+        console.error('[FRAME_STREAMING] Frame capture error:', error)
         this.handleContinuousFailure(`Capture error: ${(error as Error).message}`)
       }
     }, interval)
     
-    console.log(`Frame streaming started at ${this.frameRate} FPS with adaptive optimization`)
+    console.log('[FRAME_STREAMING] Frame streaming started at', this.frameRate, 'FPS with adaptive optimization')
   }
   
   // 메모리 관리를 위한 제한된 배열 추가 메서드
@@ -468,7 +468,7 @@ export class FrameStreamer {
     const currentFrameRate = this.frameRate
     
     if (Math.abs(recommendedFrameRate - currentFrameRate) >= 2) {
-      console.log(`[동적 프레임레이트] ${currentFrameRate}fps -> ${recommendedFrameRate}fps로 조정`)
+      console.log('[FRAME_RATE] 동적 프레임레이트 조정:', currentFrameRate, 'fps ->', recommendedFrameRate, 'fps')
       this.setFrameRate(recommendedFrameRate)
     }
     
@@ -516,7 +516,7 @@ export class FrameStreamer {
     this.consecutiveFailures++
     
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-      console.error(`연속 ${this.consecutiveFailures}회 실패. 스트리밍 중단: ${reason}`)
+      console.error('[FRAME_STREAMING] 연속', this.consecutiveFailures, '회 실패. 스트리밍 중단:', reason)
       this.stop()
       this.onError?.(new Error(`Frame streaming failed: ${reason}`))
     }
@@ -544,7 +544,7 @@ export class FrameStreamer {
     // Canvas 풀 정리 (전역 정리는 조심스럽게)
     // CanvasPool.getInstance().cleanup() // 다른 인스턴스에서 사용 중일 수 있음
     
-    console.log('Frame streaming stopped and all memory cleaned')
+    console.log('[FRAME_STREAMING] Frame streaming stopped and all memory cleaned')
   }
   
   // 프레임 레이트 변경 (최적화 버전)
@@ -617,28 +617,28 @@ export class FrameStreamer {
     const compressionPerf = this.getCompressionPerformance()
     const batchInfo = this.getBatchInfo()
     
-    console.log(`[🚀 프레임 스트리밍 고급 통계 - 10초]`)
-    console.log(`  📊 기본 정보:`)
-    console.log(`    현재 프레임레이트: ${this.frameRate} FPS`)
-    console.log(`    권장 프레임레이트: ${networkPerf.recommendedFPS} FPS`)
-    console.log(`    캡처된 프레임: ${totalSamples}개`)
-    console.log(`    평균 이미지 크기: ${avgSize.toFixed(2)} KB`)
-    console.log(`    평균 비-제로 픽셀: ${Math.round(avgNonZeroPixels)}개`)
+    console.log('[FRAME_STREAMING] 고급 통계 - 10초')
+    console.log('  기본 정보:')
+    console.log('    현재 프레임레이트:', this.frameRate, 'FPS')
+    console.log('    권장 프레임레이트:', networkPerf.recommendedFPS, 'FPS')
+    console.log('    캡처된 프레임:', totalSamples, '개')
+    console.log('    평균 이미지 크기:', avgSize.toFixed(2), 'KB')
+    console.log('    평균 비-제로 픽셀:', Math.round(avgNonZeroPixels), '개')
     
-    console.log(`  🌐 네트워크 성능:`)
-    console.log(`    평균 지연시간: ${networkPerf.latency.toFixed(1)} ms`)
-    console.log(`    처리량: ${networkPerf.throughput.toFixed(2)} bytes/ms`)
-    console.log(`    연결 품질: ${networkPerf.connectionQuality.toFixed(1)}/100`)
-    console.log(`    권장 재연결 간격: ${networkPerf.reconnectInterval} ms`)
+    console.log('  네트워크 성능:')
+    console.log('    평균 지연시간:', networkPerf.latency.toFixed(1), 'ms')
+    console.log('    처리량:', networkPerf.throughput.toFixed(2), 'bytes/ms')
+    console.log('    연결 품질:', networkPerf.connectionQuality.toFixed(1), '/100')
+    console.log('    권장 재연결 간격:', networkPerf.reconnectInterval, 'ms')
     
-    console.log(`  🗜️ 압축 최적화:`)
-    console.log(`    현재 압축 품질: ${(compressionPerf.currentQuality * 100).toFixed(1)}%`)
-    console.log(`    평균 압축 품질: ${(compressionPerf.avgQuality * 100).toFixed(1)}%`)
-    console.log(`    평균 압축 크기: ${compressionPerf.avgSize.toFixed(2)} KB`)
+    console.log('  압축 최적화:')
+    console.log('    현재 압축 품질:', (compressionPerf.currentQuality * 100).toFixed(1), '%')
+    console.log('    평균 압축 품질:', (compressionPerf.avgQuality * 100).toFixed(1), '%')
+    console.log('    평균 압축 크기:', compressionPerf.avgSize.toFixed(2), 'KB')
     
-    console.log(`  📦 배치 전송:`)
-    console.log(`    현재 배치 크기: ${batchInfo.currentBatchSize}개`)
-    console.log(`    대기 중인 프레임: ${batchInfo.pendingFrames}개`)
+    console.log('  배치 전송:')
+    console.log('    현재 배치 크기:', batchInfo.currentBatchSize, '개')
+    console.log('    대기 중인 프레임:', batchInfo.pendingFrames, '개')
     
     // 통계 데이터는 제한된 크기로 유지 (메모리 누수 방지)
     // 배열을 완전히 초기화하지 않고 크기만 제한
