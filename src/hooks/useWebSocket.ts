@@ -62,7 +62,7 @@ export function useWebSocket(
       const { data: { session } } = await supabase.auth.getSession()
       return session?.access_token || null
     } catch (error) {
-      console.error('Failed to get auth token:', error)
+      console.error('[AUTH] Failed to get auth token:', error)
       return null
     }
   }, [])
@@ -71,7 +71,7 @@ export function useWebSocket(
   const setupEventHandlers = useCallback((): WebSocketEventHandlers => {
     return {
       onOpen: (event) => {
-        console.log('WebSocket connected')
+        console.log('[WEBSOCKET] WebSocket connected')
         setStatus(WebSocketStatus.CONNECTED)
         setReconnectAttempts(0)
         connectionStartTime.current = Date.now()
@@ -87,7 +87,7 @@ export function useWebSocket(
       },
       onMessage: (message) => {
         // 원시 응답값을 콘솔에 출력
-        console.log('📨 WebSocket Raw Response:', message)
+        console.log('[WEBSOCKET] WebSocket Raw Response:', message)
         
         // 제스처 인식 서버 오류 체크
         if (message.type === 'error' || (message.data && message.data.error)) {
@@ -102,7 +102,7 @@ export function useWebSocket(
         eventHandlers?.onMessage?.(message)
       },
       onClose: (event) => {
-        console.log('WebSocket disconnected')
+        console.log('[WEBSOCKET] WebSocket disconnected')
         setStatus(WebSocketStatus.DISCONNECTED)
         setConnectionStable(false)
         lastDisconnectionTime.current = Date.now()
@@ -120,7 +120,7 @@ export function useWebSocket(
         eventHandlers?.onClose?.(event)
       },
       onError: (error) => {
-        console.error('WebSocket error:', error)
+        console.error('[WEBSOCKET] WebSocket error:', error)
         setStatus(WebSocketStatus.ERROR)
         setConnectionStable(false)
         
@@ -130,13 +130,13 @@ export function useWebSocket(
         eventHandlers?.onError?.(error)
       },
       onReconnect: (attempt) => {
-        console.log(`WebSocket reconnecting... Attempt ${attempt}`)
+        console.log('[WEBSOCKET] WebSocket reconnecting... Attempt', attempt)
         setStatus(WebSocketStatus.RECONNECTING)
         setReconnectAttempts(attempt)
         eventHandlers?.onReconnect?.(attempt)
       },
       onMaxReconnectAttemptsReached: () => {
-        console.error('WebSocket max reconnect attempts reached')
+        console.error('[WEBSOCKET] WebSocket max reconnect attempts reached')
         setStatus(WebSocketStatus.ERROR)
         
         const wsError = classifyError(
@@ -173,7 +173,7 @@ export function useWebSocket(
       wsClientRef.current.connect(authToken || undefined)
       
     } catch (error) {
-      console.error('Failed to connect WebSocket:', error)
+      console.error('[WEBSOCKET] Failed to connect WebSocket:', error)
       setStatus(WebSocketStatus.ERROR)
     }
   }, [setupEventHandlers, getAuthToken])
@@ -192,7 +192,7 @@ export function useWebSocket(
   // 메시지 전송
   const sendMessage = useCallback((message: WebSocketMessage) => {
     if (!wsClientRef.current) {
-      console.error('WebSocket client is not initialized')
+      console.error('[WEBSOCKET] WebSocket client is not initialized')
       return
     }
 
@@ -202,7 +202,7 @@ export function useWebSocket(
   // 원시 텍스트 전송 (제스처 인식용)
   const sendRawText = useCallback((text: string) => {
     if (!wsClientRef.current?.isConnected()) {
-      console.error('WebSocket is not connected')
+      console.error('[WEBSOCKET] WebSocket is not connected')
       return
     }
 

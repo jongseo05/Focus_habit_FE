@@ -156,7 +156,7 @@ export function useFocusSessionWithGesture(
         }
     },
     onOpen: () => {
-      console.log('🔗 제스처 인식 WebSocket 연결됨')
+      console.log('[GESTURE] 제스처 인식 WebSocket 연결됨')
     },
     onClose: () => {
       console.log('[GESTURE] 제스처 인식 WebSocket 연결 해제됨')
@@ -177,7 +177,7 @@ export function useFocusSessionWithGesture(
   // 제스처 인식 시작
   const startGestureRecognition = useCallback(() => {
     if (!mediaStream.stream || !isConnected || !enableGestureRecognition) {
-      console.log('⚠️ 제스처 인식 시작 불가:', {
+      console.log('[GESTURE] 제스처 인식 시작 불가:', {
         hasStream: !!mediaStream.stream,
         isWebSocketConnected: isConnected,
         isEnabled: enableGestureRecognition
@@ -187,7 +187,7 @@ export function useFocusSessionWithGesture(
     
     // 이미 실행 중이면 리턴
     if (frameStreamerRef.current && frameStreamerRef.current.getIsStreaming()) {
-      console.log('⚠️ 제스처 인식이 이미 실행 중입니다')
+      console.log('[GESTURE] 제스처 인식이 이미 실행 중입니다')
       return
     }
     
@@ -228,7 +228,7 @@ export function useFocusSessionWithGesture(
       // 비디오 재생 시도
       if (hiddenVideoRef.current) {
         hiddenVideoRef.current.play().catch(error => {
-          console.warn('⚠️ 비디오 자동 재생 실패:', error)
+          console.warn('[VIDEO] 비디오 자동 재생 실패:', error)
         })
       }
       

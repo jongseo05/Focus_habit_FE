@@ -77,10 +77,10 @@ export function useGestureRecognition(
             ...prev.slice(0, 49)
           ])
           
-          console.log('제스처 인식 결과:', gestureData)
+          console.log('[GESTURE] 제스처 인식 결과:', gestureData)
         }
       } catch (error) {
-        console.error('제스처 응답 파싱 오류:', error)
+        console.error('[GESTURE] 제스처 응답 파싱 오류:', error)
       }
     }
   })
@@ -108,7 +108,7 @@ export function useGestureRecognition(
         }
       }
     } catch (error) {
-      console.error('카메라 접근 실패:', error)
+      console.error('[CAMERA] 카메라 접근 실패:', error)
       setIsCameraError(true)
       setCameraError(error instanceof Error ? error.message : '카메라 접근 실패')
     }
@@ -133,7 +133,7 @@ export function useGestureRecognition(
   // 프레임 전송 함수
   const sendFrame = useCallback((base64: string) => {
     if (!isConnected) {
-      console.warn('WebSocket not connected')
+      console.warn('[WEBSOCKET] WebSocket not connected')
       return
     }
 
@@ -145,7 +145,7 @@ export function useGestureRecognition(
   // 스트리밍 시작
   const startStreaming = useCallback(() => {
     if (!videoRef.current || !isVideoReady || !isConnected) {
-      console.warn('Cannot start streaming: video not ready or WebSocket not connected')
+      console.warn('[STREAMING] Cannot start streaming: video not ready or WebSocket not connected')
       return
     }
 
@@ -157,7 +157,7 @@ export function useGestureRecognition(
       videoRef.current,
       sendFrame,
       (error) => {
-        console.error('Frame streaming error:', error)
+        console.error('[FRAME_STREAMING] Frame streaming error:', error)
         setIsStreaming(false)
       }
     )
