@@ -181,7 +181,7 @@ export const useFocusSessionErrorHandler = (
 
     const currentRetries = error.retryCount || 0
     if (currentRetries >= strategy.maxRetries) {
-      console.error('🔄 최대 복구 시도 횟수 초과:', error.type)
+      console.error('[RECOVERY] 최대 복구 시도 횟수 초과:', error.type)
       onRecoveryFailed?.(error)
       
       if (config.gracefulDegradation) {
@@ -239,7 +239,7 @@ export const useFocusSessionErrorHandler = (
         await attemptRecovery(updatedError)
       }
     } catch (recoveryError) {
-      console.error('🔄 복구 시도 중 오류:', recoveryError)
+      console.error('[RECOVERY] 복구 시도 중 오류:', recoveryError)
       onRecoveryFailed?.(error)
     }
 
@@ -312,7 +312,7 @@ export const useFocusSessionErrorHandler = (
 
   // 점진적 성능 저하 모드
   const enableDegradedMode = useCallback(async (errorType: FocusSessionErrorType) => {
-    console.log(' 점진적 성능 저하 모드 활성화:', errorType)
+    console.log('[PERFORMANCE] 점진적 성능 저하 모드 활성화:', errorType)
     
     setState(prev => ({
       ...prev,
@@ -353,14 +353,14 @@ export const useFocusSessionErrorHandler = (
   // 네트워크 상태 모니터링
   useEffect(() => {
     const handleOnline = () => {
-      console.log('🌐 네트워크 연결됨')
+      console.log('[NETWORK] 네트워크 연결됨')
       if (state.lastError?.type === FocusSessionErrorType.NETWORK_ERROR) {
         attemptRecovery(state.lastError)
       }
     }
 
     const handleOffline = () => {
-      console.log('🚫 네트워크 연결 끊김')
+      console.log('[NETWORK] 네트워크 연결 끊김')
       const networkError = classifyError(new Error('Network offline'), 'network')
       handleError(networkError)
     }

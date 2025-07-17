@@ -82,7 +82,7 @@ export const useMediaStream = () => {
       const result = await navigator.permissions.query({ name: 'camera' as PermissionName })
       return result.state // 'granted', 'denied', 'prompt'
     } catch (error) {
-      console.warn('Permission API not supported:', error)
+      console.warn('[PERMISSION] Permission API not supported:', error)
       return 'unknown'
     }
   }, [])
