@@ -18,15 +18,11 @@ export default function ProtectedRoute({
   const { user, loading } = useAuth()
   const router = useRouter()
 
-  console.log('[PROTECTED_ROUTE] User:', user, 'Loading:', loading)
-
   useEffect(() => {
     if (!loading && !user) {
-      console.log('[PROTECTED_ROUTE] Redirecting to login - no user found')
       // 현재 경로를 redirect 파라미터로 저장하여 로그인 후 다시 돌아올 수 있도록 함
       const currentPath = window.location.pathname
       const redirectUrl = `${redirectTo}?redirect=${encodeURIComponent(currentPath)}`
-      console.log('[PROTECTED_ROUTE] Redirect URL:', redirectUrl)
       router.push(redirectUrl)
     }
   }, [user, loading, router, redirectTo])
