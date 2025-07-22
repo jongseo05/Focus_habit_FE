@@ -2,7 +2,6 @@ import { updateSession } from './src/lib/supabase/middleware';
 import { type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  console.log(`[MIDDLEWARE_ROOT] Processing: ${request.nextUrl.pathname}`)
   return await updateSession(request);
 }
 

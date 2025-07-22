@@ -17,7 +17,6 @@ export default function FocusAILanding() {
   // 로그인된 사용자를 dashboard로 리다이렉트
   useEffect(() => {
     if (!loading && user) {
-      console.log('[HOMEPAGE] Logged in user detected, redirecting to dashboard')
       router.push('/dashboard')
     }
   }, [user, loading, router])
