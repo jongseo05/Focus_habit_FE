@@ -3,12 +3,38 @@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Gauge, FileText, Brain, Sparkles } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth/AuthProvider"
 import ThreeStepProcess from "@/components/three-step-process"
 import Link from "next/link"
 
 export default function FocusAILanding() {
   const [activeFeature, setActiveFeature] = useState("realtime")
+  const { user, loading } = useAuth()
+  const router = useRouter()
+
+  // 로그인된 사용자를 dashboard로 리다이렉트
+  useEffect(() => {
+    if (!loading && user) {
+      console.log('[HOMEPAGE] Logged in user detected, redirecting to dashboard')
+      router.push('/dashboard')
+    }
+  }, [user, loading, router])
+
+  // 로딩 중이거나 로그인된 사용자인 경우 로딩 표시
+  if (loading || user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
+          <p className="text-sm text-gray-500">
+            {user ? 'Dashboard로 이동 중...' : '로딩 중...'}
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">

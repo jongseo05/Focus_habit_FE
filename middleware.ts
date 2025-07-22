@@ -2,11 +2,20 @@ import { updateSession } from './src/lib/supabase/middleware';
 import { type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
+  console.log(`[MIDDLEWARE_ROOT] Processing: ${request.nextUrl.pathname}`)
   return await updateSession(request);
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (public assets)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
