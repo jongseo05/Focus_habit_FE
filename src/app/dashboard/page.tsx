@@ -36,6 +36,7 @@ import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
 import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
 import { FocusSessionStatus } from "@/types/focusSession"
+import ProtectedRoute from "@/components/ProtectedRoute"
 
 // Mock data and state management
 const useFocusSession = () => {
@@ -691,6 +692,14 @@ const EnhancedFocusTrendChart = () => {
 }
 
 export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
+  )
+}
+
+function DashboardContent() {
   const session = useFocusSession()
   const mediaStream = useFocusSessionWithGesture(session.isRunning, {
     frameRate: 10, // 1초에 10번 (10fps)
