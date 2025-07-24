@@ -120,3 +120,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media (min-width: 1536px) {
+  .container {
+    max-width: 100rem !important;
+  }
+}
+
+.container {
+  max-width: 100rem !important;
+}

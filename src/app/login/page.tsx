@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { motion } from "framer-motion"
 import { Brain, Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,11 +11,11 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { signIn, signInWithGoogle, signInWithApple } from "@/lib/auth/auth"
 
-export default function LoginPage() {
+function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     email: "",
@@ -25,6 +25,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,8 +40,8 @@ export default function LoginPage() {
       })
 
       if (result.success) {
-        // 로그인 성공 시 대시보드로 리다이렉트
-        router.push("/dashboard")
+        // 로그인 성공 시 지정된 경로 또는 대시보드로 리다이렉트
+        router.push(redirectTo)
       } else {
         // 에러 메시지 표시
         setError(result.error || "로그인에 실패했습니다.")
@@ -54,7 +56,9 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       const result = await signInWithGoogle()
-      if (!result.success) {
+      if (result.success) {
+        router.push(redirectTo)
+      } else {
         setError(result.error || "Google 로그인에 실패했습니다.")
       }
     } catch (err) {
@@ -65,7 +69,9 @@ export default function LoginPage() {
   const handleAppleLogin = async () => {
     try {
       const result = await signInWithApple()
-      if (!result.success) {
+      if (result.success) {
+        router.push(redirectTo)
+      } else {
         setError(result.error || "Apple 로그인에 실패했습니다.")
       }
     } catch (err) {
@@ -342,5 +348,17 @@ export default function LoginPage() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }
