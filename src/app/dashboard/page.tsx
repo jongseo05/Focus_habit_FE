@@ -31,9 +31,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import Link from "next/link"
-import useMediaStream from "@/hooks/useMediaStream"
+import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
 import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
+import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
+import { FocusSessionStatus } from "@/types/focusSession"
+import ProtectedRoute from "@/components/ProtectedRoute"
 
 // Mock data and state management
 const useFocusSession = () => {
@@ -689,16 +692,42 @@ const EnhancedFocusTrendChart = () => {
 }
 
 export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
+  )
+}
+
+function DashboardContent() {
   const session = useFocusSession()
-  const mediaStream = useMediaStream()
+  const mediaStream = useFocusSessionWithGesture(session.isRunning, {
+    frameRate: 10, // 1초에 10번 (10fps)
+    enableGestureRecognition: true,
+    gestureJpegQuality: 0.95
+  })
   
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
   const [showPermissionLayer, setShowPermissionLayer] = useState(false)
+  const [showErrorDisplay, setShowErrorDisplay] = useState(false)
   const [notifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
   ])
+
+  // 에러 상태 모니터링
+  useEffect(() => {
+    if (mediaStream.lastSessionError && mediaStream.sessionStatus === FocusSessionStatus.ERROR) {
+      setShowErrorDisplay(true)
+    } else if (mediaStream.sessionStatus === FocusSessionStatus.ACTIVE) {
+      // 성공적으로 복구된 경우 3초 후 에러 표시 해제
+      const timer = setTimeout(() => {
+        setShowErrorDisplay(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [mediaStream.lastSessionError, mediaStream.sessionStatus])
 
   const handleStartSession = async () => {
     try {
@@ -820,9 +849,9 @@ export default function DashboardPage() {
   ]
 
   const friends = [
-    { name: "김민수", hours: "24:30", avatar: "🧑‍💻" },
-    { name: "이지은", hours: "22:15", avatar: "👩‍🎓" },
-    { name: "박준호", hours: "20:45", avatar: "👨‍🔬" },
+    { name: "김민수", hours: "24:30", avatar: "KM" },
+    { name: "이지은", hours: "22:15", avatar: "LJ" },
+    { name: "박준호", hours: "20:45", avatar: "PJ" },
   ]
 
   const recentFrames = [
@@ -852,6 +881,23 @@ export default function DashboardPage() {
                   <span className="text-slate-600 hidden sm:inline">
                     {showWebcam ? '카메라 활성' : '카메라 비활성'}
                   </span>
+                </div>
+              )}
+
+              {/* 제스처 인식 상태 표시 (세션 중일 때만) */}
+              {session.isRunning && mediaStream.isPermissionGranted && (
+                <div className="flex items-center gap-2 text-sm">
+                  <div className={`w-2 h-2 rounded-full ${
+                    mediaStream.isGestureRecognitionActive ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
+                  }`}></div>
+                  <span className="text-slate-600 hidden sm:inline">
+                    {mediaStream.isGestureRecognitionActive ? '제스처 분석' : '제스처 대기'}
+                  </span>
+                  {mediaStream.gestureFramesSent > 0 && (
+                    <span className="text-xs text-slate-400">
+                      ({mediaStream.gestureFramesSent}프레임)
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -1307,6 +1353,17 @@ export default function DashboardPage() {
           </Card>
         </div>
       </main>
+
+      {/* 집중 세션 에러 표시 */}
+      <FocusSessionErrorDisplay
+        sessionStatus={mediaStream.sessionStatus}
+        sessionErrors={mediaStream.sessionErrors}
+        lastSessionError={mediaStream.lastSessionError}
+        canRecoverFromError={mediaStream.canRecoverFromError}
+        onRetryRecovery={mediaStream.retrySessionRecovery}
+        onDismissError={() => setShowErrorDisplay(false)}
+        isVisible={showErrorDisplay}
+      />
     </div>
   )
 }

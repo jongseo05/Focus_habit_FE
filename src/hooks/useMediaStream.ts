@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useCallback, useEffect } from "react"
+import { useFocusSessionErrorHandler } from "@/hooks/useFocusSessionErrorHandler"
+import { FocusSessionErrorType } from "@/types/focusSession"
 
 export interface MediaStreamState {
   stream: MediaStream | null
@@ -8,6 +10,8 @@ export interface MediaStreamState {
   error: string | null
   isPermissionGranted: boolean
   isPermissionDenied: boolean
+  isRecovering: boolean
+  lastDisconnection: number | null
 }
 
 export interface MediaStreamActions {
@@ -16,6 +20,7 @@ export interface MediaStreamActions {
   stopStream: () => void
   resetError: () => void
   retryPermission: () => Promise<boolean>
+  recoverCameraStream: () => Promise<boolean>
 }
 
 export const useMediaStream = () => {
@@ -25,9 +30,46 @@ export const useMediaStream = () => {
     error: null,
     isPermissionGranted: false,
     isPermissionDenied: false,
+    isRecovering: false,
+    lastDisconnection: null,
   })
 
   const streamRef = useRef<MediaStream | null>(null)
+
+  // 집중 세션 에러 핸들러
+  const { handleError, classifyError, state: errorState } = useFocusSessionErrorHandler({
+    onError: (error) => {
+      setState(prev => ({
+        ...prev,
+        error: error.message,
+        isRecovering: false
+      }))
+    },
+    onRecoveryStart: (errorType) => {
+      console.log('[MEDIA_STREAM] 미디어 스트림 복구 시작:', errorType)
+      setState(prev => ({
+        ...prev,
+        isRecovering: true,
+        error: null
+      }))
+    },
+    onRecoverySuccess: (errorType) => {
+      console.log('[MEDIA_STREAM] 미디어 스트림 복구 성공:', errorType)
+      setState(prev => ({
+        ...prev,
+        isRecovering: false,
+        error: null
+      }))
+    },
+    onRecoveryFailed: (error) => {
+      console.log('[MEDIA_STREAM] 미디어 스트림 복구 실패:', error)
+      setState(prev => ({
+        ...prev,
+        isRecovering: false,
+        error: error.message
+      }))
+    }
+  })
 
   // 권한 상태 확인
   const checkPermissionStatus = useCallback(async () => {
@@ -40,7 +82,7 @@ export const useMediaStream = () => {
       const result = await navigator.permissions.query({ name: 'camera' as PermissionName })
       return result.state // 'granted', 'denied', 'prompt'
     } catch (error) {
-      console.warn('Permission API not supported:', error)
+      console.warn('[PERMISSION] Permission API not supported:', error)
       return 'unknown'
     }
   }, [])
@@ -136,6 +178,10 @@ export const useMediaStream = () => {
         isPermissionDenied,
       }))
 
+      // 집중 세션 에러 핸들러로 에러 전달
+      const sessionError = classifyError(error, 'camera')
+      handleError(sessionError)
+
       return null
     }
   }, [])
@@ -176,7 +222,13 @@ export const useMediaStream = () => {
       }
 
       // 'prompt' 또는 'unknown' 상태에서만 실제 미디어 요청을 통해 권한 확인
-      const stream = await requestMediaStream()
+      const stream = await requestMediaStream({
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 15 }
+        }
+      })
       const success = stream !== null
       return success
     } catch (error) {
@@ -213,8 +265,14 @@ export const useMediaStream = () => {
         }
       }
 
-      // 새 스트림 요청
-      const stream = await requestMediaStream()
+      // 새 스트림 요청 (고해상도로)
+      const stream = await requestMediaStream({
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 15 }
+        }
+      })
       if (stream) {
         setState(prev => ({ ...prev, stream, error: null }))
         return true
@@ -281,33 +339,106 @@ export const useMediaStream = () => {
     }
   }, [])
 
-  // 스트림 상태 변화 감지
+  // 스트림 상태 변화 감지 및 연결 끊김 모니터링
   useEffect(() => {
     if (streamRef.current) {
       const tracks = streamRef.current.getTracks()
       
       const handleTrackEnded = () => {
+        const disconnectionTime = Date.now()
+        
         setState(prev => ({
           ...prev,
           stream: null,
-          // 트랙 종료는 에러가 아닌 정상적인 상황일 수 있으므로 에러 메시지를 부드럽게 변경
+          lastDisconnection: disconnectionTime,
           error: null, // 에러로 처리하지 않음
         }))
+        
         // 스트림 레퍼런스도 정리
         streamRef.current = null
+        
+        // 예기치 않은 연결 끊김으로 판단하여 에러 핸들러 호출
+        const cameraError = classifyError(
+          new Error('Camera stream ended unexpectedly'), 
+          'camera'
+        )
+        handleError(cameraError)
+      }
+
+      const handleTrackMute = () => {
+        console.warn('[CAMERA] 카메라 트랙이 음소거되었습니다')
+        const cameraError = classifyError(
+          new Error('Camera track muted'), 
+          'camera'
+        )
+        handleError(cameraError)
       }
 
       tracks.forEach(track => {
         track.addEventListener('ended', handleTrackEnded)
+        track.addEventListener('mute', handleTrackMute)
       })
 
       return () => {
         tracks.forEach(track => {
           track.removeEventListener('ended', handleTrackEnded)
+          track.removeEventListener('mute', handleTrackMute)
         })
       }
     }
-  }, [state.stream])
+  }, [state.stream, classifyError, handleError])
+
+  // 카메라 연결 끊김 자동 복구
+  const recoverCameraStream = useCallback(async (): Promise<boolean> => {
+    if (state.isRecovering) return false
+    
+    setState(prev => ({ ...prev, isRecovering: true, error: null }))
+    
+    try {
+      // 점진적으로 낮은 해상도로 재시도
+      const constraints = [
+        { video: { width: 1280, height: 720 } },
+        { video: { width: 640, height: 480 } },
+        { video: { width: 320, height: 240 } },
+        { video: true }
+      ]
+      
+      for (const constraint of constraints) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraint)
+          streamRef.current = stream
+          
+          setState(prev => ({
+            ...prev,
+            stream,
+            isLoading: false,
+            isRecovering: false,
+            isPermissionGranted: true,
+            isPermissionDenied: false,
+            error: null,
+          }))
+          
+          console.log('[CAMERA] 카메라 스트림 복구 성공:', constraint)
+          return true
+        } catch (retryError: any) {
+          console.warn('[CAMERA] 카메라 복구 재시도:', constraint, retryError.message)
+          continue
+        }
+      }
+      
+      throw new Error('모든 해상도에서 카메라 복구 실패')
+      
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        isRecovering: false,
+        error: '카메라 복구에 실패했습니다.',
+        isPermissionGranted: false
+      }))
+      
+      return false
+    }
+  }, [state.isRecovering])
 
   const actions: MediaStreamActions = {
     requestPermission,
@@ -315,6 +446,7 @@ export const useMediaStream = () => {
     stopStream,
     resetError,
     retryPermission,
+    recoverCameraStream, // 새로운 복구 액션 추가
   }
 
   return {
