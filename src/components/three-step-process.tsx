@@ -201,7 +201,7 @@ function ReportMockup() {
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
             <div className="text-center">
               <ClipboardList className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-              <p className="text-sm text-blue-700 font-medium">7일 연속 목표 달성! 🎉</p>
+              <p className="text-sm text-blue-700 font-medium">7일 연속 목표 달성!</p>
             </div>
           </div>
         </div>

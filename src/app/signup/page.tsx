@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { motion } from "framer-motion"
 import { Brain, Eye, EyeOff, Mail, Lock, User, ArrowRight, Sparkles, AlertCircle, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,12 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { signUp } from "@/lib/auth/auth"
 import { validateSignUpForm } from "@/lib/auth/validation"
 import type { SignUpFormData } from "@/types/user"
 
-export default function SignUpPage() {
+function SignUpForm() {
   
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -31,6 +31,8 @@ export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState("")
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,7 +57,11 @@ export default function SignUpPage() {
         setSuccessMessage(result.message || "메일이 발송되었습니다! 메일을 통해 회원가입을 완료하세요")
 
         setTimeout(() => {
-          router.push("/login")
+          // redirect 파라미터를 유지하면서 로그인 페이지로 이동
+          const loginUrl = redirectTo !== '/dashboard' 
+            ? `/login?redirect=${encodeURIComponent(redirectTo)}`
+            : '/login'
+          router.push(loginUrl)
         }, 3000)
       } else {
         setErrors({ general: result.error || "회원가입 중 오류가 발생했습니다." })
@@ -364,5 +370,17 @@ export default function SignUpPage() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
+      </div>
+    }>
+      <SignUpForm />
+    </Suspense>
   )
 }

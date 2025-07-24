@@ -16,7 +16,7 @@ export const supabaseServer = async () => {
           cookieStore.set({ name, value, ...options });
         },
         remove(name: string, options: any) {
-          cookieStore.set({ name, value: '', ...options });
+          cookieStore.delete({ name, ...options });
         },
       },
     }
