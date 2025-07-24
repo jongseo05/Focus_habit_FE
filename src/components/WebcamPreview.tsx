@@ -347,6 +347,7 @@ const WebcamPreview = ({ stream, onClose }: WebcamPreviewProps) => {
                 autoPlay
                 muted
                 playsInline
+                style={{ transform: 'scaleX(-1)' }} // 좌우반전 적용
                 className={`w-full h-full object-cover transition-opacity duration-300 ${
                   isVideoReady ? 'opacity-100' : 'opacity-0'
                 }`}
