@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { supabaseBrowser } from "@/lib/supabase/client"
+import LoadingPage from "../../loading/page"
 
 const FORM_CONSTRAINTS = {
   PASSWORD: {
@@ -231,7 +232,7 @@ function ResetPasswordFallback() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<ResetPasswordFallback />}>
+    <Suspense fallback={<LoadingPage />}> 
       <ResetPasswordContent />
     </Suspense>
   )

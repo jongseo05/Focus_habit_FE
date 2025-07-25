@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
 import { supabaseBrowser } from "@/lib/supabase/client"
+import LoadingPage from "../../loading/page"
 
 function ConfirmContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
@@ -184,7 +185,7 @@ function ConfirmFallback() {
 
 export default function ConfirmPage() {
   return (
-    <Suspense fallback={<ConfirmFallback />}>
+    <Suspense fallback={<LoadingPage />}> 
       <ConfirmContent />
     </Suspense>
   )

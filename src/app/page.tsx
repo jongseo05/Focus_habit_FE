@@ -1,3 +1,4 @@
+
 "use client"
 
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth/AuthProvider"
 import ThreeStepProcess from "@/components/three-step-process"
 import Link from "next/link"
+
 
 export default function FocusAILanding() {
   const [activeFeature, setActiveFeature] = useState("realtime")
