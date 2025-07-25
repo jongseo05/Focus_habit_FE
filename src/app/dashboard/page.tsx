@@ -37,6 +37,8 @@ import WebcamPreview from "@/components/WebcamPreview"
 import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
 import { FocusSessionStatus } from "@/types/focusSession"
 import ProtectedRoute from "@/components/ProtectedRoute"
+import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
+import { useMicrophoneStream } from "@/hooks/useMediaStream"
 
 // Mock data and state management
 const useFocusSession = () => {
@@ -706,10 +708,11 @@ function DashboardContent() {
     enableGestureRecognition: true,
     gestureJpegQuality: 0.95
   })
-  
+  const microphoneStream = useMicrophoneStream()
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
-  const [showPermissionLayer, setShowPermissionLayer] = useState(false)
+  const [showCameraPermissionLayer, setShowCameraPermissionLayer] = useState(false)
+  const [showMicrophonePermissionLayer, setShowMicrophonePermissionLayer] = useState(false)
   const [showErrorDisplay, setShowErrorDisplay] = useState(false)
   const [notifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
@@ -729,28 +732,27 @@ function DashboardContent() {
     }
   }, [mediaStream.lastSessionError, mediaStream.sessionStatus])
 
-  const handleStartSession = async () => {
-    try {
-      // 세션 먼저 시작 (카메라와 독립적으로)
-      session.startSession()
-      
-      // 권한 상태 확인
-      if (!mediaStream.isPermissionGranted) {
-        setShowPermissionLayer(true)
-        return
-      }
+  // 집중 시작 버튼 클릭 시 권한 순차 요청
+  const handleStartSession = () => {
+    if (!mediaStream.isPermissionGranted) {
+      setShowCameraPermissionLayer(true)
+      return
+    }
+    if (!microphoneStream.isPermissionGranted) {
+      setShowMicrophonePermissionLayer(true)
+      return
+    }
+    // 둘 다 있으면 바로 시작
+    startFocusSession()
+  }
 
-      // 이미 권한이 있다면 스트림 시작 시도
-      const success = await mediaStream.startStream()
-      if (success) {
-        setShowWebcam(true)
-      } else {
-        // 카메라 실패해도 세션은 계속 진행
-        setShowPermissionLayer(true)
-      }
-    } catch (error) {
-      // 에러가 발생해도 세션은 이미 시작된 상태
-      setShowPermissionLayer(true)
+  // 집중모드 시작 함수
+  const startFocusSession = async () => {
+    if (!session.isRunning) {
+      session.startSession()
+      await mediaStream.startStream()
+      await microphoneStream.startStream()
+      setShowWebcam(true)
     }
   }
 
@@ -774,11 +776,11 @@ function DashboardContent() {
             setShowWebcam(true)
           } else {
             // 실패 시 권한 레이어 표시
-            setShowPermissionLayer(true)
+            setShowMicrophonePermissionLayer(true)
           }
         }
       } catch (error) {
-        setShowPermissionLayer(true)
+        setShowMicrophonePermissionLayer(true)
       }
     }
   }
@@ -789,7 +791,7 @@ function DashboardContent() {
     
     if (success) {
       setShowWebcam(true)
-      setShowPermissionLayer(false)
+      setShowMicrophonePermissionLayer(false)
       
       // 세션이 아직 시작되지 않았다면 시작
       if (!session.isRunning) {
@@ -797,12 +799,12 @@ function DashboardContent() {
       }
     } else {
       // 스트림 시작 실패해도 권한 레이어는 닫고 세션은 유지
-      setShowPermissionLayer(false)
+      setShowMicrophonePermissionLayer(false)
     }
   }
 
-  const handlePermissionLayerClose = () => {
-    setShowPermissionLayer(false)
+  const handleCameraPermissionLayerClose = () => {
+    setShowMicrophonePermissionLayer(false)
     
     // 권한이 확실히 부여되지 않았고, 스트림도 없는 경우에만 웹캠을 끔
     // 스트림이 있으면 권한이 부여된 것으로 간주
@@ -813,19 +815,44 @@ function DashboardContent() {
     }
   }
 
-  // 미디어 스트림 상태가 변경될 때마다 권한 레이어 표시 여부 결정
-  useEffect(() => {
-    if (mediaStream.isPermissionGranted && showPermissionLayer) {
-      handlePermissionGranted()
+  const handleMicrophonePermissionLayerClose = () => {
+    setShowMicrophonePermissionLayer(false)
+    
+    // 권한이 확실히 부여되지 않았고, 스트림도 없는 경우에만 마이크를 끔
+    // 스트림이 있으면 권한이 부여된 것으로 간주
+    if (!microphoneStream.isPermissionGranted && !microphoneStream.stream) {
+      microphoneStream.stopStream()
     }
-  }, [mediaStream.isPermissionGranted, showPermissionLayer])
+  }
 
-  // 에러 발생 시 권한 레이어 표시 (단, 권한 관련 에러만)
+  // 카메라 권한 승인 감지 → 마이크 권한 없으면 마이크 Layer, 있으면 바로 집중모드
   useEffect(() => {
-    if (mediaStream.error && session.isRunning && mediaStream.isPermissionDenied) {
-      setShowPermissionLayer(true)
+    // ...existing code...
+    if (
+      showCameraPermissionLayer &&
+      mediaStream.isPermissionGranted
+    ) {
+      setShowCameraPermissionLayer(false)
+      if (!microphoneStream.isPermissionGranted) {
+        setShowMicrophonePermissionLayer(true)
+      } else {
+        startFocusSession()
+      }
     }
-  }, [mediaStream.error, session.isRunning, mediaStream.isPermissionDenied])
+  }, [mediaStream.isPermissionGranted, showCameraPermissionLayer])
+
+  // 마이크 권한 승인 감지 → 두 권한 모두 있으면 집중모드
+  useEffect(() => {
+    if (
+      showMicrophonePermissionLayer &&
+      microphoneStream.isPermissionGranted
+    ) {
+      setShowMicrophonePermissionLayer(false)
+      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted) {
+        startFocusSession()
+      }
+    }
+  }, [microphoneStream.isPermissionGranted, showMicrophonePermissionLayer])
 
   // Mock data
   const todayStats = {
@@ -975,17 +1002,31 @@ function DashboardContent() {
 
       {/* Camera Permission Layer */}
       <CameraPermissionLayer
-        isVisible={showPermissionLayer}
+        isVisible={showCameraPermissionLayer && !mediaStream.isPermissionGranted}
         isLoading={mediaStream.isLoading}
         error={mediaStream.error}
         isPermissionDenied={mediaStream.isPermissionDenied}
         isPermissionGranted={mediaStream.isPermissionGranted}
         onRequestPermission={mediaStream.requestPermission}
         onRetry={mediaStream.retryPermission}
-        onClose={handlePermissionLayerClose}
+        onClose={handleCameraPermissionLayerClose}
         onDismissError={() => {
           mediaStream.resetError()
-          setShowPermissionLayer(false)
+          setShowCameraPermissionLayer(false)
+        }}
+      />
+      <MicrophonePermissionLayer
+        isVisible={showMicrophonePermissionLayer && !microphoneStream.isPermissionGranted}
+        isLoading={microphoneStream.isLoading}
+        error={microphoneStream.error}
+        isPermissionDenied={microphoneStream.isPermissionDenied}
+        isPermissionGranted={microphoneStream.isPermissionGranted}
+        onRequestPermission={microphoneStream.requestPermission}
+        onRetry={microphoneStream.retryPermission}
+        onClose={handleMicrophonePermissionLayerClose}
+        onDismissError={() => {
+          microphoneStream.resetError()
+          setShowMicrophonePermissionLayer(false)
         }}
       />
 
