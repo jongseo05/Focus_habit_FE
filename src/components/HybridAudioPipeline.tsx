@@ -71,22 +71,27 @@ export default function HybridAudioPipeline() {
   const audioContextRef = useRef<AudioContext | null>(null)
   const workletNodeRef = useRef<AudioWorkletNode | null>(null)
   const workerRef = useRef<Worker | null>(null)
+  const streamRef = useRef<MediaStream | null>(null) // 스트림을 한 번만 생성하고 재사용
 
   // --- 상태 관리 ---
   const recognitionRef = useRef<SpeechRecognitionType | null>(null)
   const speechTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [isSpeaking, setIsSpeaking] = useState(false) // 음성 구간 감지 상태
   const [isListening, setIsListening] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isSpeechRecognitionActive, setIsSpeechRecognitionActive] = useState(false)
   const [liveTranscript, setLiveTranscript] = useState("") // 실시간으로 표시될 텍스트
   const [isInitialized, setIsInitialized] = useState(false) // 오디오 파이프라인 초기화 상태
   const [isInitializing, setIsInitializing] = useState(false) // 초기화 진행 중 상태
   const [error, setError] = useState<string | null>(null) // 오류 상태
+  const [currentAudioLevel, setCurrentAudioLevel] = useState<number>(0) // 현재 오디오 레벨
   const speechBufferRef = useRef<string>("") // 한 발화가 끝날 때까지 텍스트를 모으는 버퍼
   const featureBufferRef = useRef<any[]>([]) // 한 발화 동안의 오디오 특징을 모으는 버퍼
   
   // 타임스탬프 관리
   const speechStartTimeRef = useRef<number | null>(null)
   const speechEndTimeRef = useRef<number | null>(null)
+  const silenceStartTimeRef = useRef<number | null>(null) // 조용함 시작 시간
 
   // 성능 최적화를 위한 디바운스된 텍스트
   const debouncedLiveTranscript = useDebounce(liveTranscript, 100)
@@ -97,20 +102,12 @@ export default function HybridAudioPipeline() {
 
   // 집중 모드 상태 변화 감지 및 오디오 파이프라인 제어
   useEffect(() => {
-    console.log('🎯 집중 모드 상태 변화:', { 
-      isRunning: isFocusSessionRunning, 
-      isPaused: isFocusSessionPaused 
-    })
-
     // 집중 모드가 종료되거나 일시정지된 경우
     if (!isFocusSessionRunning || isFocusSessionPaused) {
-      console.log('⏸️ 집중 모드 일시정지/종료 - 오디오 파이프라인 중단')
-      
       // 음성 인식 중단
       if (recognitionRef.current && recognitionRef.current.state === 'active') {
         try {
           recognitionRef.current.stop()
-          console.log('🎤 음성 인식 중단됨')
         } catch (error) {
           console.log('🎤 음성 인식 중단 중 오류:', error)
         }
@@ -118,39 +115,31 @@ export default function HybridAudioPipeline() {
       
       // 오디오 레벨 체크 중단
       setIsListening(false)
-      console.log('🔇 오디오 레벨 체크 중단됨')
       
       // 발화 버퍼 초기화
       speechBufferRef.current = ""
       speechStartTimeRef.current = null
       speechEndTimeRef.current = null
+      silenceStartTimeRef.current = null
       
       // 실시간 텍스트 초기화
       setLiveTranscript("")
       setIsSpeaking(false)
-      
-      console.log('✅ 오디오 파이프라인 일시정지 완료')
     }
     
     // 집중 모드가 재시작된 경우
     else if (isFocusSessionRunning && !isFocusSessionPaused && isInitialized) {
-      console.log('▶️ 집중 모드 재시작 - 오디오 파이프라인 재시작')
-      
       // 오디오 레벨 체크 재시작
       setIsListening(true)
-      console.log('🔊 오디오 레벨 체크 재시작됨')
       
       // 음성 인식 재시작
       if (recognitionRef.current && recognitionRef.current.state === 'inactive') {
         try {
           recognitionRef.current.start()
-          console.log('🎤 음성 인식 재시작됨')
         } catch (error) {
           console.log('🎤 음성 인식 재시작 중 오류:', error)
         }
       }
-      
-      console.log('✅ 오디오 파이프라인 재시작 완료')
     }
   }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized])
 
@@ -175,11 +164,8 @@ export default function HybridAudioPipeline() {
       audioContextRef.current = audioContext
       
       // AudioContext 상태 확인 및 복구
-      console.log('🎵 AudioContext 초기 상태:', audioContext.state);
-      
       if (audioContext.state === 'suspended') {
         await audioContext.resume()
-        console.log('🎵 AudioContext resumed:', audioContext.state);
       }
       
       if (audioContext.state === 'closed') {
@@ -188,21 +174,62 @@ export default function HybridAudioPipeline() {
       
       // AudioContext 상태가 running인지 확인
       if (audioContext.state !== 'running') {
-        console.warn('⚠️ AudioContext가 running 상태가 아닙니다:', audioContext.state);
         await audioContext.resume();
-        console.log('🎵 AudioContext 강제 resume 후 상태:', audioContext.state);
       }
 
-      // 마이크 권한 요청
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { 
-          sampleRate: 16000, 
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-      })
+      // 마이크 권한 요청 및 스트림 생성 (한 번만)
+      if (!streamRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 16000
+          }
+        });
+        streamRef.current = stream;
+        
+        // 오디오 트랙 이벤트 리스너 추가
+        const audioTrack = stream.getAudioTracks()[0];
+        audioTrack.onended = () => console.log('🎤 오디오 트랙 종료됨');
+        audioTrack.onmute = () => console.log('🎤 오디오 트랙 음소거됨');
+        audioTrack.onunmute = () => console.log('🎤 오디오 트랙 음소거 해제됨');
+        
+        console.log('🎤 마이크 스트림 초기화 완료:', {
+          streamId: stream.id,
+          streamActive: stream.active,
+          audioTrackEnabled: audioTrack.enabled,
+          audioTrackMuted: audioTrack.muted
+        });
+      }
+      
+      const stream = streamRef.current;
+
+      // 마이크 트랙에서 실제 오디오 데이터 확인
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        console.log('🎤 오디오 트랙 상세 정보:', {
+          id: audioTrack.id,
+          label: audioTrack.label,
+          enabled: audioTrack.enabled,
+          muted: audioTrack.muted,
+          readyState: audioTrack.readyState,
+          settings: audioTrack.getSettings(),
+          constraints: audioTrack.getConstraints()
+        });
+        
+        // 오디오 트랙 이벤트 리스너 추가
+        audioTrack.onended = () => console.log('🎤 오디오 트랙 종료됨');
+        audioTrack.onmute = () => console.log('🎤 오디오 트랙 음소거됨');
+        audioTrack.onunmute = () => console.log('🎤 오디오 트랙 음소거 해제됨');
+        
+        console.log('🎤 마이크 스트림 초기화 완료:', {
+          streamId: stream.id,
+          streamActive: stream.active,
+          audioTrackEnabled: audioTrack.enabled,
+          audioTrackMuted: audioTrack.muted
+        });
+      }
 
               // AudioWorklet 모듈 로드 시도 (AudioContext 상태 확인 후)
         try {
@@ -222,8 +249,17 @@ export default function HybridAudioPipeline() {
           })
           workletNodeRef.current = workletNode
 
-          const source = audioContext.createMediaStreamSource(stream)
-          source.connect(workletNode)
+          // AudioWorklet용 소스
+          const workletSource = audioContext.createMediaStreamSource(stream)
+          workletSource.connect(workletNode)
+          
+          console.log('🎤 실제 오디오 분석 스트림 연결:', {
+            audioContextState: audioContext.state,
+            streamId: stream.id,
+            streamActive: stream.active,
+            workletSourceContext: workletSource.context === audioContext,
+            workletNodeState: workletNode.context.state
+          });
 
         // Web Worker 생성 (성능 최적화)
         const createWorker = () => {
@@ -241,81 +277,179 @@ export default function HybridAudioPipeline() {
         const worker = createWorker();
         workerRef.current = worker;
 
+        // 오디오 레벨 분석용 소스와 분석기 (한 번만 생성)
+        const levelSource = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048; // 더 큰 FFT 크기로 변경
+        analyser.smoothingTimeConstant = 0.1; // 더 빠른 반응
+        analyser.minDecibels = -90; // 더 낮은 데시벨 임계값
+        analyser.maxDecibels = -10; // 더 높은 데시벨 임계값
+        levelSource.connect(analyser);
+
         // 오디오 레벨 체크 함수 (명확한 음성 감지 최적화)
         const checkAudioLevel = async () => {
-          console.log('🎤 오디오 레벨 체크 함수 호출됨');
-          
-          // AudioContext 상태 확인 (더 관대하게)
-          if (!audioContext) {
-            console.error('❌ AudioContext가 없습니다. 오디오 레벨 체크 중단');
+          // AudioContext 상태 확인
+          if (!audioContext || audioContext.state === 'closed') {
             return;
           }
           
-          console.log('🎵 AudioContext 상태:', audioContext.state);
-          
-          if (audioContext.state === 'closed') {
-            console.error('❌ AudioContext가 닫혀있습니다. 오디오 레벨 체크 중단');
-            return;
-          }
-          
-          // suspended 상태면 resume 시도
           if (audioContext.state === 'suspended') {
             try {
               await audioContext.resume();
-              console.log('🎵 AudioContext resumed from suspended');
             } catch (error) {
-              console.warn('⚠️ AudioContext resume 실패:', error);
               return;
             }
           }
           
-          // 디버깅: 오디오 레벨 체크 실행 확인
-          console.log('🔍 오디오 레벨 체크 실행 중... (isListening:', stateRef.current.isListening, ')');
-          
           if (!stateRef.current.isListening) {
-            console.log('🔇 isListening이 false - 오디오 레벨 체크 중단');
             return;
           }
           
-          // 오디오 레벨 분석 로직
-          console.log('🎤 오디오 분석 시작...');
-          const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 512; // 더 정밀한 분석
+          // 스트림 상태 확인
+          if (!streamRef.current || !streamRef.current.active) {
+            console.warn('🎤 스트림이 비활성 상태입니다');
+            return;
+          }
+          
+          const audioTrack = streamRef.current.getAudioTracks()[0];
+          if (!audioTrack || !audioTrack.enabled || audioTrack.muted) {
+            console.warn('🎤 오디오 트랙이 비활성화되었습니다:', {
+              enabled: audioTrack?.enabled,
+              muted: audioTrack?.muted,
+              readyState: audioTrack?.readyState
+            });
+            return;
+          }
+          
+          // 오디오 레벨 분석 로직 - 재사용 가능한 분석기 사용
           const bufferLength = analyser.frequencyBinCount;
           const dataArray = new Uint8Array(bufferLength);
-          
-          source.connect(analyser);
           analyser.getByteFrequencyData(dataArray);
-          console.log('🎤 오디오 데이터 수집 완료 (버퍼 길이:', bufferLength, ')');
           
-          // 평균 레벨 계산 (음성 필터링)
-          const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
+          // 시간 도메인 데이터로도 오디오 레벨 계산 시도
+          const timeDataArray = new Uint8Array(bufferLength);
+          analyser.getByteTimeDomainData(timeDataArray);
           
-          // 디버깅: 오디오 레벨 값 출력 (더 자주)
-          if (Math.random() < 0.3) { // 30% 확률로 로깅
-            console.log('📊 현재 오디오 레벨:', average.toFixed(1));
+          // 디버깅: 실제 오디오 데이터 확인 (매우 드물게만)
+          if (Math.random() < 0.001 && streamRef.current) { // 0.1% 확률로만 로깅
+            console.log('🎤 실제 오디오 분석 데이터 확인:', {
+              streamId: streamRef.current.id,
+              audioContextState: audioContext.state,
+              sourceConnected: levelSource.context === audioContext,
+              dataArrayMax: Math.max(...dataArray),
+              dataArrayMin: Math.min(...dataArray),
+              dataArrayRange: `${Math.min(...dataArray)}-${Math.max(...dataArray)}`,
+              nonZeroCount: dataArray.filter(val => val > 0).length,
+              timeDataMax: Math.max(...timeDataArray),
+              timeDataMin: Math.min(...timeDataArray),
+              timeDataRange: `${Math.min(...timeDataArray)}-${Math.max(...timeDataArray)}`,
+              streamActive: streamRef.current.active,
+              audioTrackEnabled: streamRef.current.getAudioTracks()[0].enabled,
+              audioTrackMuted: streamRef.current.getAudioTracks()[0].muted,
+              // 추가 디버깅 정보
+              bufferLength,
+              fftSize: analyser.fftSize,
+              smoothingTimeConstant: analyser.smoothingTimeConstant,
+              minDecibels: analyser.minDecibels,
+              maxDecibels: analyser.maxDecibels
+            });
           }
           
-          // 음성 감지 (적절한 임계값)
-          if (average > 25 && !stateRef.current.isSpeaking) {
+          // RMS (Root Mean Square) 계산으로 오디오 레벨 측정
+          let rms = 0;
+          for (let i = 0; i < timeDataArray.length; i++) {
+            const sample = (timeDataArray[i] - 128) / 128; // -1 to 1 범위로 정규화
+            rms += sample * sample;
+          }
+          rms = Math.sqrt(rms / timeDataArray.length);
+          const rmsLevel = rms * 100; // 0-100 범위로 변환
+          
+          // 주파수 도메인 데이터 분석 (더 민감하게)
+          const freqAverage = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+          const freqMax = Math.max(...dataArray);
+          const freqMin = Math.min(...dataArray);
+          
+          // 더 민감한 레벨 계산 (주파수 최대값과 RMS 중 더 높은 값 사용)
+          const finalLevel = Math.max(freqMax * 0.5, rmsLevel * 2);
+          
+          // 디버깅: 실제 오디오 데이터가 있는지 확인
+          const hasAudioData = freqMax > 0 || rms > 0.001;
+          
+          if (!hasAudioData && Math.random() < 0.01) { // 1% 확률로 로깅
+            console.warn('🎤 오디오 데이터가 감지되지 않습니다:', {
+              freqMax,
+              freqMin,
+              freqAverage: freqAverage.toFixed(2),
+              rms: rms.toFixed(4),
+              rmsLevel: rmsLevel.toFixed(2),
+              finalLevel: finalLevel.toFixed(2),
+              streamActive: streamRef.current?.active,
+              audioTrackEnabled: audioTrack?.enabled,
+              audioTrackMuted: audioTrack?.muted
+            });
+          }
+          
+          setCurrentAudioLevel(finalLevel);
+          
+          // 디버깅: 오디오 분석기 상태 확인 (매우 드물게만)
+          if (Math.random() < 0.001) { // 0.1% 확률로만 로깅
+            console.log('🔍 오디오 분석기 상태:', {
+              analyserFftSize: analyser.fftSize,
+              analyserFrequencyBinCount: analyser.frequencyBinCount,
+              analyserSmoothingTimeConstant: analyser.smoothingTimeConstant,
+              analyserMinDecibels: analyser.minDecibels,
+              analyserMaxDecibels: analyser.maxDecibels,
+              sourceConnected: levelSource.context === audioContext,
+              dataArrayMax: Math.max(...dataArray),
+              dataArrayMin: Math.min(...dataArray),
+              dataArraySum: dataArray.reduce((sum, val) => sum + val, 0),
+              nonZeroCount: dataArray.filter(val => val > 0).length,
+              rmsLevel: rmsLevel.toFixed(2),
+              timeDataMax: Math.max(...timeDataArray),
+              timeDataMin: Math.min(...timeDataArray),
+              finalLevel: finalLevel.toFixed(2),
+              isSpeaking: stateRef.current.isSpeaking,
+              audioContextState: audioContext.state,
+              streamActive: stream.active,
+              streamId: stream.id,
+              // 추가 디버깅 정보
+              freqAverage: freqAverage.toFixed(2),
+              rms: rms.toFixed(4),
+              timeDataRange: `${Math.min(...timeDataArray)}-${Math.max(...timeDataArray)}`,
+              dataArrayRange: `${Math.min(...dataArray)}-${Math.max(...dataArray)}`
+            });
+          }
+          
+          // 음성 감지 (전체 주파수 대역에 맞는 임계값)
+          if (finalLevel > 5 && !stateRef.current.isSpeaking) {
             setIsSpeaking(true);
             speechStartTimeRef.current = Date.now();
-            console.log('🎤 음성 감지됨 (레벨:', average.toFixed(1), ')');
-          } else if (average < 15 && stateRef.current.isSpeaking) {
-            // 발화 종료 감지 (조용해지면 즉시 종료)
-            setIsSpeaking(false);
-            speechEndTimeRef.current = Date.now();
-            console.log('🎤 음성 종료 감지됨 (레벨:', average.toFixed(1), ')');
-          }
-          
-          // 조용한 상태에서 음성 인식 일시 중단 (배경 소음 방지)
-          if (average < 10 && recognitionRef.current && recognitionRef.current.state === 'active') {
-            try {
-              recognitionRef.current.stop();
-              console.log('🔇 조용한 상태 - 음성 인식 일시 중단 (레벨:', average.toFixed(1), ')');
-            } catch (error) {
-              console.log('음성 인식 중단 중...');
+            silenceStartTimeRef.current = null; // 조용함 타이머 리셋
+            console.log('🎤 음성 감지됨 (레벨:', finalLevel.toFixed(1), ')');
+          } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+            // 조용함 시작 시간 기록
+            if (!silenceStartTimeRef.current) {
+              silenceStartTimeRef.current = Date.now();
             }
+            
+            // 0.3초 이상 조용하면 발화 종료로 판단 (더 빠르게)
+            const silenceDuration = Date.now() - silenceStartTimeRef.current;
+            if (silenceDuration > 200) {
+              setIsSpeaking(false);
+              speechEndTimeRef.current = Date.now();
+              console.log('🎤 음성 종료 감지됨 (레벨:', finalLevel.toFixed(1), ', 조용함 지속:', silenceDuration + 'ms)');
+              
+              // 발화 분석 트리거
+              if (speechBufferRef.current.trim()) {
+                processSpeechSegment();
+              }
+              
+              // 타이머 리셋
+              silenceStartTimeRef.current = null;
+            }
+          } else if (finalLevel >= 2 && stateRef.current.isSpeaking) {
+            // 다시 소리가 나면 조용함 타이머 리셋
+            silenceStartTimeRef.current = null;
           }
           
           requestAnimationFrame(() => checkAudioLevel());
@@ -323,11 +457,9 @@ export default function HybridAudioPipeline() {
 
         // 오디오 레벨 모니터링 시작
         setIsListening(true); // 오디오 레벨 체크를 위해 true로 설정
-        console.log('🎤 오디오 레벨 모니터링 시작됨');
         
         // 강제로 오디오 레벨 체크 시작
         setTimeout(() => {
-          console.log('🎤 오디오 레벨 체크 강제 시작');
           checkAudioLevel();
         }, 100);
 
@@ -335,68 +467,162 @@ export default function HybridAudioPipeline() {
         setupSpeechRecognition();
 
         setIsInitialized(true);
-        console.log('🎤 오디오 파이프라인 초기화 완료 (성능 최적화 적용)');
+        console.log('🎤 오디오 파이프라인 초기화 완료');
       } catch (workletError) {
         console.warn("AudioWorklet 로드 실패, 기본 오디오 처리로 대체:", workletError);
         
-                 // 기본 오디오 레벨 체크 (명확한 음성 감지)
-         const source = audioContext.createMediaStreamSource(stream);
+        // 기본 오디오 레벨 체크 (명확한 음성 감지)
+        // 오디오 레벨 분석용 소스와 분석기 (한 번만 생성)
+        const source = audioContext.createMediaStreamSource(streamRef.current);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048; // 더 큰 FFT 크기로 변경
+        analyser.smoothingTimeConstant = 0.1; // 더 빠른 반응
+        analyser.minDecibels = -90; // 더 낮은 데시벨 임계값
+        analyser.maxDecibels = -10; // 더 높은 데시벨 임계값
+        source.connect(analyser);
+         
+         console.log('🎤 기본 오디오 레벨 체크 스트림 연결:', {
+           audioContextState: audioContext.state,
+           streamId: streamRef.current.id,
+           streamActive: streamRef.current.active,
+           sourceContext: source.context === audioContext
+         });
+         
          const checkAudioLevel = async () => {
            // AudioContext 상태 확인
            if (!audioContext || audioContext.state === 'closed') {
-             console.error('❌ AudioContext가 닫혀있습니다. 기본 오디오 레벨 체크 중단');
              return;
            }
            
            if (audioContext.state !== 'running') {
-             console.warn('⚠️ AudioContext가 running 상태가 아닙니다:', audioContext.state);
              return;
            }
-           
-           // 디버깅: 기본 오디오 레벨 체크 실행 확인
-           console.log('🔍 기본 오디오 레벨 체크 실행 중... (isListening:', stateRef.current.isListening, ')');
            
            if (!stateRef.current.isListening) {
-             console.log('🔇 isListening이 false - 기본 오디오 레벨 체크 중단');
              return;
            }
            
-           const analyser = audioContext.createAnalyser();
-           analyser.fftSize = 512; // 더 정밀한 분석
+           // 스트림 상태 확인
+           if (!streamRef.current || !streamRef.current.active) {
+             console.warn('🎤 기본 체크: 스트림이 비활성 상태입니다');
+             return;
+           }
+           
+           const audioTrack = streamRef.current.getAudioTracks()[0];
+           if (!audioTrack || !audioTrack.enabled || audioTrack.muted) {
+             console.warn('🎤 기본 체크: 오디오 트랙이 비활성화되었습니다:', {
+               enabled: audioTrack?.enabled,
+               muted: audioTrack?.muted,
+               readyState: audioTrack?.readyState
+             });
+             return;
+           }
+           
+           // 오디오 레벨 분석 로직 - 재사용 가능한 분석기 사용
            const bufferLength = analyser.frequencyBinCount;
            const dataArray = new Uint8Array(bufferLength);
+           analyser.getByteFrequencyData(dataArray);
            
-                     source.connect(analyser);
-          analyser.getByteFrequencyData(dataArray);
-          
-          const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
-          
-          // 디버깅: 기본 오디오 레벨 값 출력 (더 자주)
-          if (Math.random() < 0.3) { // 30% 확률로 로깅
-            console.log('📊 현재 기본 오디오 레벨:', average.toFixed(1));
-          }
-          
-          // 음성 감지 (적절한 임계값)
-          if (average > 25 && !stateRef.current.isSpeaking) {
-            setIsSpeaking(true);
-            speechStartTimeRef.current = Date.now();
-            console.log('🎤 음성 감지됨 (레벨:', average.toFixed(1), ')');
-          } else if (average < 15 && stateRef.current.isSpeaking) {
-            // 발화 종료 감지 (조용해지면 즉시 종료)
-            setIsSpeaking(false);
-            speechEndTimeRef.current = Date.now();
-            console.log('🎤 음성 종료 감지됨 (레벨:', average.toFixed(1), ')');
-          }
-          
-          requestAnimationFrame(() => checkAudioLevel());
-        };
+           // 시간 도메인 데이터로도 오디오 레벨 계산 시도
+           const timeDataArray = new Uint8Array(bufferLength);
+           analyser.getByteTimeDomainData(timeDataArray);
+           
+           // RMS (Root Mean Square) 계산으로 오디오 레벨 측정
+           let rms = 0;
+           for (let i = 0; i < timeDataArray.length; i++) {
+             const sample = (timeDataArray[i] - 128) / 128; // -1 to 1 범위로 정규화
+             rms += sample * sample;
+           }
+           rms = Math.sqrt(rms / timeDataArray.length);
+           const rmsLevel = rms * 100; // 0-100 범위로 변환
+           
+           // 주파수 도메인 데이터 분석 (더 민감하게)
+           const freqAverage = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+           const freqMax = Math.max(...dataArray);
+           const freqMin = Math.min(...dataArray);
+           
+           // 더 민감한 레벨 계산 (주파수 최대값과 RMS 중 더 높은 값 사용)
+           const finalLevel = Math.max(freqMax * 0.5, rmsLevel * 2);
+           
+           // 디버깅: 실제 오디오 데이터가 있는지 확인
+           const hasAudioData = freqMax > 0 || rms > 0.001;
+           
+           if (!hasAudioData && Math.random() < 0.01) { // 1% 확률로 로깅
+             console.warn('🎤 기본 체크: 오디오 데이터가 감지되지 않습니다:', {
+               freqMax,
+               freqMin,
+               freqAverage: freqAverage.toFixed(2),
+               rms: rms.toFixed(4),
+               rmsLevel: rmsLevel.toFixed(2),
+               finalLevel: finalLevel.toFixed(2),
+               streamActive: streamRef.current?.active,
+               audioTrackEnabled: audioTrack?.enabled,
+               audioTrackMuted: audioTrack?.muted
+             });
+           }
+           
+           setCurrentAudioLevel(finalLevel);
+           
+           // 디버깅: 오디오 분석기 상태 확인 (매우 드물게만)
+           if (Math.random() < 0.001) { // 0.1% 확률로만 로깅
+             console.log('🔍 오디오 분석기 상태:', {
+               analyserFftSize: analyser.fftSize,
+               analyserFrequencyBinCount: analyser.frequencyBinCount,
+               analyserSmoothingTimeConstant: analyser.smoothingTimeConstant,
+               analyserMinDecibels: analyser.minDecibels,
+               analyserMaxDecibels: analyser.maxDecibels,
+               sourceConnected: source.context === audioContext,
+               dataArrayMax: Math.max(...dataArray),
+               dataArrayMin: Math.min(...dataArray),
+               dataArraySum: dataArray.reduce((sum, val) => sum + val, 0),
+               nonZeroCount: dataArray.filter(val => val > 0).length,
+               rmsLevel: rmsLevel.toFixed(2),
+               timeDataMax: Math.max(...timeDataArray),
+               timeDataMin: Math.min(...timeDataArray),
+               finalLevel: finalLevel.toFixed(2),
+               isSpeaking: stateRef.current.isSpeaking
+             });
+           }
+           
+           // 음성 감지 (전체 주파수 대역에 맞는 임계값)
+           if (finalLevel > 5 && !stateRef.current.isSpeaking) {
+             setIsSpeaking(true);
+             speechStartTimeRef.current = Date.now();
+             silenceStartTimeRef.current = null; // 조용함 타이머 리셋
+             console.log('🎤 음성 감지됨 (레벨:', finalLevel.toFixed(1), ')');
+           } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+             // 조용함 시작 시간 기록
+             if (!silenceStartTimeRef.current) {
+               silenceStartTimeRef.current = Date.now();
+             }
+             
+             // 0.3초 이상 조용하면 발화 종료로 판단 (더 빠르게)
+             const silenceDuration = Date.now() - silenceStartTimeRef.current;
+             if (silenceDuration > 200) {
+               setIsSpeaking(false);
+               speechEndTimeRef.current = Date.now();
+               console.log('🎤 음성 종료 감지됨 (레벨:', finalLevel.toFixed(1), ', 조용함 지속:', silenceDuration + 'ms)');
+               
+               // 발화 분석 트리거
+               if (speechBufferRef.current.trim()) {
+                 processSpeechSegment();
+               }
+               
+               // 타이머 리셋
+               silenceStartTimeRef.current = null;
+             }
+           } else if (finalLevel >= 2 && stateRef.current.isSpeaking) {
+             // 다시 소리가 나면 조용함 타이머 리셋
+             silenceStartTimeRef.current = null;
+           }
+           
+           requestAnimationFrame(() => checkAudioLevel());
+         };
 
         setIsListening(true); // 기본 오디오 레벨 체크를 위해 true로 설정
-        console.log('🎤 기본 오디오 레벨 모니터링 시작됨');
         
         // 강제로 기본 오디오 레벨 체크 시작
         setTimeout(() => {
-          console.log('🎤 기본 오디오 레벨 체크 강제 시작');
           checkAudioLevel();
         }, 100);
         setupSpeechRecognition();
@@ -438,10 +664,7 @@ export default function HybridAudioPipeline() {
     let finalTranscript = '';
     let interimTranscript = '';
 
-    recognition.onstart = () => {
-      setIsListening(true);
-      console.log('🎤 음성 인식 시작됨');
-    };
+    recognition.onstart = () => { setIsSpeechRecognitionActive(true); };
 
     recognition.onresult = (event: any) => {
       let interimTranscript = '';
@@ -471,7 +694,7 @@ export default function HybridAudioPipeline() {
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      setIsSpeechRecognitionActive(false);
       speechEndTimeRef.current = Date.now();
       console.log('🎤 음성 인식 종료됨 - 발화 분석 시작');
       
@@ -487,12 +710,15 @@ export default function HybridAudioPipeline() {
       if (recognitionRef.current && stateRef.current.isListening) {
         try {
           // 상태 확인 후 재시작
-          if (recognitionRef.current.state === 'inactive') {
+          const currentState = recognitionRef.current.state;
+          console.log('🎤 음성 인식 상태 확인:', currentState);
+          
+          if (currentState === 'inactive') {
             recognitionRef.current.start();
             setIsListening(true);
             console.log('🎤 음성 인식 재시작됨');
           } else {
-            console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', recognitionRef.current.state, ')');
+            console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
           }
         } catch (error) {
           console.warn('음성 인식 재시작 실패:', error);
@@ -500,7 +726,9 @@ export default function HybridAudioPipeline() {
           setTimeout(() => {
             if (recognitionRef.current && stateRef.current.isListening) {
               try {
-                if (recognitionRef.current.state === 'inactive') {
+                const retryState = recognitionRef.current.state;
+                console.log('🎤 음성 인식 재시도 - 상태:', retryState);
+                if (retryState === 'inactive') {
                   recognitionRef.current.start();
                   setIsListening(true);
                   console.log('🎤 음성 인식 재시작 재시도 성공');
@@ -541,8 +769,10 @@ export default function HybridAudioPipeline() {
 
   // 발화 세그먼트 처리 - 성능 최적화 적용
   const processSpeechSegment = useCallback(async () => {
+    if (isAnalyzing) return;
+    setIsAnalyzing(true);
     const text = speechBufferRef.current.trim();
-    if (!text) return;
+    if (!text) { setIsAnalyzing(false); return; }
 
     const startTime = performance.now();
     
@@ -551,6 +781,10 @@ export default function HybridAudioPipeline() {
       const duration = speechStartTimeRef.current && speechEndTimeRef.current 
         ? (speechEndTimeRef.current - speechStartTimeRef.current) / 1000 
         : 0;
+
+      // 타임스탬프 정보
+      const startTimestamp = speechStartTimeRef.current ? new Date(speechStartTimeRef.current).toLocaleTimeString() : '알 수 없음';
+      const endTimestamp = speechEndTimeRef.current ? new Date(speechEndTimeRef.current).toLocaleTimeString() : '알 수 없음';
 
       // KoELECTRA 모델 추론 (우선순위)
       let isStudyRelated = false;
@@ -590,7 +824,8 @@ export default function HybridAudioPipeline() {
       // 구조화된 분석 결과 출력
       console.log(`
 🎤 발화 분석 결과 (${new Date().toLocaleTimeString()}):
-├─ 시간: ${new Date().toLocaleString()}
+├─ 시작 시간: ${startTimestamp}
+├─ 종료 시간: ${endTimestamp}
 ├─ 지속시간: ${duration.toFixed(1)}초
 ├─ 원문: "${text}"
 ├─ 분석 방법: ${analysisMethod}
@@ -609,8 +844,49 @@ export default function HybridAudioPipeline() {
     } catch (error) {
       console.error('발화 분석 실패:', error);
       speechBufferRef.current = "";
+    } finally {
+      setIsAnalyzing(false);
+      // 분석 완료 후 음성인식 재시작 보장
+      setTimeout(() => {
+        if (recognitionRef.current && isInitialized && isFocusSessionRunning && !isFocusSessionPaused) {
+          try {
+            console.log('🎤 발화 분석 완료 - 음성 인식 재시작 시도 (상태:', recognitionRef.current.state, ')');
+            if (recognitionRef.current.state === 'inactive') {
+              recognitionRef.current.start();
+              console.log('🎤 음성 인식 재시작 성공');
+            } else {
+              console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', recognitionRef.current.state, ')');
+            }
+          } catch (error) {
+            console.warn('분석 후 재시작 실패:', error);
+          }
+        } else {
+          console.log('🎤 음성 인식 재시작 조건 불만족:', {
+            hasRecognition: !!recognitionRef.current,
+            isInitialized,
+            isFocusSessionRunning,
+            isFocusSessionPaused
+          });
+          
+          // isInitialized가 false여도 재시작 시도
+          if (recognitionRef.current && isFocusSessionRunning && !isFocusSessionPaused) {
+            try {
+              console.log('🎤 isInitialized가 false이지만 재시작 시도');
+              // 상태가 undefined인 경우에도 재시작 시도
+              if (!recognitionRef.current.state || recognitionRef.current.state === 'inactive') {
+                recognitionRef.current.start();
+                console.log('🎤 음성 인식 재시작 성공 (isInitialized 무시)');
+              } else {
+                console.log('🎤 음성 인식 상태 확인:', recognitionRef.current.state);
+              }
+            } catch (error) {
+              console.warn('재시작 실패 (isInitialized 무시):', error);
+            }
+          }
+        }
+      }, 100); // 100ms 지연 후 재시작
     }
-  }, [isModelLoaded, koelectraInference]);
+  }, [isModelLoaded, koelectraInference, isInitialized, isAnalyzing]);
 
   // 텍스트 문맥을 분석하는 헬퍼 함수
   const analyzeTextContext = (text: string):
@@ -739,9 +1015,7 @@ export default function HybridAudioPipeline() {
     const initializeComponents = async () => {
       // 1. 토크나이저 초기화 (우선순위)
       try {
-        console.log('📚 토크나이저 초기화 시작...');
         await initializeTokenizer();
-        console.log('✅ 토크나이저 초기화 완료');
       } catch (error) {
         console.error('❌ 토크나이저 초기화 실패:', error);
       }
@@ -749,7 +1023,6 @@ export default function HybridAudioPipeline() {
       // 2. 오디오 파이프라인 초기화 (토크나이저 로드 후)
       setTimeout(() => {
         if (!isInitialized && !isInitializing) {
-          console.log('🎤 오디오 파이프라인 자동 초기화 시작')
           initializeAudioPipeline()
         }
       }, 500); // 토크나이저 로드 완료 후 500ms 대기
@@ -814,9 +1087,57 @@ export default function HybridAudioPipeline() {
 
       
       {isInitialized && (
-        <div className="space-y-2">
-          <p><b>음성 인식 상태:</b> {isListening ? "듣는 중..." : "대기 중"}</p>
-          <p><b>실시간 텍스트:</b> {liveTranscript}</p>
+        <div className="space-y-3 p-3 bg-white rounded border">
+          <h4 className="font-semibold text-sm">🎤 오디오 파이프라인 상태</h4>
+          
+          {/* 음성 감지 상태 */}
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
+            <span className="text-sm">
+              {isSpeaking ? "🎤 말하는 중..." : "🔇 조용함"}
+            </span>
+          </div>
+          
+          {/* 오디오 레벨 표시 */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span>오디오 레벨</span>
+              <span>{currentAudioLevel.toFixed(1)}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full transition-all duration-200 ${
+                  currentAudioLevel > 25 ? 'bg-red-500' : 
+                  currentAudioLevel > 15 ? 'bg-yellow-500' : 'bg-gray-400'
+                }`}
+                style={{ width: `${Math.min(currentAudioLevel * 2, 100)}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* 시스템 상태 */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-gray-600">음성 인식:</span>
+              <span className={`ml-1 ${isSpeechRecognitionActive ? 'text-green-600' : 'text-gray-400'}`}>
+                {isSpeechRecognitionActive ? '활성' : '대기'}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-600">오디오 모니터링:</span>
+              <span className={`ml-1 ${isListening ? 'text-green-600' : 'text-gray-400'}`}>
+                {isListening ? '활성' : '비활성'}
+              </span>
+            </div>
+          </div>
+          
+          {/* 실시간 텍스트 */}
+          {liveTranscript && (
+            <div className="p-2 bg-blue-50 rounded text-xs">
+              <span className="text-gray-600">인식된 텍스트:</span>
+              <p className="mt-1 text-gray-800">{liveTranscript}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -54,6 +54,9 @@ export function useFocusSessionWithGesture(
   const [gestureFramesSent, setGestureFramesSent] = useState(0)
   const [isGestureActive, setIsGestureActive] = useState(false)
 
+  // 1. 상태 추가
+  const [isSpeechRecognitionActive, setIsSpeechRecognitionActive] = useState(false)
+
   // 집중 세션 통합 에러 핸들러
   const { 
     state: errorHandlerState, 
