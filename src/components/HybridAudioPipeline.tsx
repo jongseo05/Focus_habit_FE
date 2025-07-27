@@ -97,6 +97,11 @@ export default function HybridAudioPipeline() {
   const audioLevelSpeechStartRef = useRef<number | null>(null) // 오디오 레벨로 감지한 발화 시작 시간
   const audioLevelSpeechEndRef = useRef<number | null>(null) // 오디오 레벨로 감지한 발화 종료 시간
   const isAudioLevelSpeakingRef = useRef<boolean>(false) // 오디오 레벨 기반 발화 상태
+  
+  // 오디오 레벨 변화 감지용 상태
+  const previousAudioLevelRef = useRef<number>(0) // 이전 오디오 레벨
+  const audioLevelHistoryRef = useRef<number[]>([]) // 최근 오디오 레벨 히스토리 (최대 10개)
+  const rapidDropDetectedRef = useRef<boolean>(false) // 급격한 하락 감지 플래그
 
   // 성능 최적화를 위한 디바운스된 텍스트
   const debouncedLiveTranscript = useDebounce(liveTranscript, 100)
@@ -104,6 +109,49 @@ export default function HybridAudioPipeline() {
   // useEffect 클로저에서 최신 상태를 참조하기 위한 Ref
   const stateRef = useRef({ isSpeaking, isListening });
   stateRef.current = { isSpeaking, isListening };
+
+  // 오디오 레벨 급격한 하락 감지 함수
+  const detectRapidAudioLevelDrop = useCallback((currentLevel: number): boolean => {
+    // 히스토리에 현재 레벨 추가 (최대 10개 유지)
+    audioLevelHistoryRef.current.push(currentLevel);
+    if (audioLevelHistoryRef.current.length > 10) {
+      audioLevelHistoryRef.current.shift();
+    }
+    
+    // 최소 3개의 데이터가 있어야 분석
+    if (audioLevelHistoryRef.current.length < 3) {
+      previousAudioLevelRef.current = currentLevel;
+      return false;
+    }
+    
+    // 최근 3개 값의 평균과 이전 3개 값의 평균 비교
+    const recentValues = audioLevelHistoryRef.current.slice(-3);
+    const previousValues = audioLevelHistoryRef.current.slice(-6, -3);
+    
+    if (previousValues.length < 3) {
+      previousAudioLevelRef.current = currentLevel;
+      return false;
+    }
+    
+    const recentAverage = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const previousAverage = previousValues.reduce((sum, val) => sum + val, 0) / previousValues.length;
+    
+    // 급격한 하락 감지 (이전 평균 대비 50% 이상 감소)
+    const dropRatio = recentAverage / previousAverage;
+    const isRapidDrop = dropRatio < 0.5 && previousAverage > 30 && recentAverage < 25;
+    
+    if (isRapidDrop && !rapidDropDetectedRef.current) {
+      console.log('🎤 급격한 오디오 레벨 하락 감지:', {
+        이전평균: previousAverage.toFixed(1),
+        현재평균: recentAverage.toFixed(1),
+        하락비율: (dropRatio * 100).toFixed(1) + '%'
+      });
+      rapidDropDetectedRef.current = true;
+    }
+    
+    previousAudioLevelRef.current = currentLevel;
+    return isRapidDrop;
+  }, []);
 
   // 음성 인식 재시작 함수 (중앙 관리) - 개선된 버전
   const restartSpeechRecognition = useCallback(() => {
@@ -165,6 +213,11 @@ export default function HybridAudioPipeline() {
       isAudioLevelSpeakingRef.current = false
       audioLevelSpeechStartRef.current = null
       audioLevelSpeechEndRef.current = null
+      
+      // 오디오 레벨 변화 감지 상태 초기화
+      previousAudioLevelRef.current = 0
+      audioLevelHistoryRef.current = []
+      rapidDropDetectedRef.current = false
       
       // 실시간 텍스트 초기화
       setLiveTranscript("")
@@ -458,29 +511,27 @@ export default function HybridAudioPipeline() {
             });
           }
           
-          // 오디오 레벨 기반 발화 감지 (더 정확한 임계값 사용)
+          // 오디오 레벨 기반 발화 감지 (급격한 하락 감지 추가)
           const SPEECH_THRESHOLD = 40; // 말할 때 일반적으로 40 이상
           const SILENCE_THRESHOLD = 25; // 조용함 기준 (10-25 사이가 일반 상황)
           const SILENCE_DURATION = 800; // 0.8초 조용하면 발화 종료로 판단
+          
+          // 급격한 오디오 레벨 하락 감지
+          const isRapidDrop = detectRapidAudioLevelDrop(finalLevel);
           
           // 발화 시작 감지 (오디오 레벨이 임계값을 넘을 때)
           if (finalLevel > SPEECH_THRESHOLD && !isAudioLevelSpeakingRef.current) {
             isAudioLevelSpeakingRef.current = true;
             audioLevelSpeechStartRef.current = Date.now();
             silenceStartTimeRef.current = null; // 조용함 타이머 리셋
+            rapidDropDetectedRef.current = false; // 급격한 하락 플래그 리셋
             console.log('🎤 오디오 레벨 기반 발화 시작 감지 (레벨:', finalLevel.toFixed(1), ')');
           }
           
-          // 발화 종료 감지 (오디오 레벨이 낮아지고 일정 시간 조용할 때)
-          if (finalLevel < SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
-            // 조용함 시작 시간 기록
-            if (!silenceStartTimeRef.current) {
-              silenceStartTimeRef.current = Date.now();
-            }
-            
-            // 일정 시간 조용하면 발화 종료로 판단
-            const silenceDuration = Date.now() - silenceStartTimeRef.current;
-            if (silenceDuration > SILENCE_DURATION) {
+          // 발화 종료 감지 (급격한 하락 또는 일정 시간 조용함)
+          if ((isRapidDrop || finalLevel < SILENCE_THRESHOLD) && isAudioLevelSpeakingRef.current) {
+            // 급격한 하락이 감지되면 즉시 발화 종료
+            if (isRapidDrop) {
               isAudioLevelSpeakingRef.current = false;
               audioLevelSpeechEndRef.current = Date.now();
               
@@ -489,27 +540,65 @@ export default function HybridAudioPipeline() {
                 ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
                 : 0;
               
-              console.log('🎤 오디오 레벨 기반 발화 종료 감지:', {
+              console.log('🎤 급격한 하락으로 인한 발화 종료 감지:', {
                 레벨: finalLevel.toFixed(1),
-                조용함지속: silenceDuration + 'ms',
-                실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+                실제발화시간: actualSpeechDuration.toFixed(1) + '초',
+                하락감지: '즉시'
               });
               
               // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
               if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
-                console.log('🎤 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
+                console.log('🎤 급격한 하락 - 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
                 processSpeechSegment();
               } else if (speechBufferRef.current.trim()) {
-                console.log('🎤 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                console.log('🎤 급격한 하락 - 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
                 speechBufferRef.current = ""; // 버퍼 초기화
               } else {
-                console.log('🎤 발화 버퍼가 비어있음 - 분석 건너뜀');
+                console.log('🎤 급격한 하락 - 발화 버퍼가 비어있음 - 분석 건너뜀');
               }
               
-              // 타이머 리셋
+              // 상태 리셋
               silenceStartTimeRef.current = null;
               audioLevelSpeechStartRef.current = null;
               audioLevelSpeechEndRef.current = null;
+              rapidDropDetectedRef.current = false;
+            } else {
+              // 일반적인 조용함 감지 (기존 로직)
+              if (!silenceStartTimeRef.current) {
+                silenceStartTimeRef.current = Date.now();
+              }
+              
+              const silenceDuration = Date.now() - silenceStartTimeRef.current;
+              if (silenceDuration > SILENCE_DURATION) {
+                isAudioLevelSpeakingRef.current = false;
+                audioLevelSpeechEndRef.current = Date.now();
+                
+                const actualSpeechDuration = audioLevelSpeechStartRef.current && audioLevelSpeechEndRef.current 
+                  ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
+                  : 0;
+                
+                console.log('🎤 조용함 지속으로 인한 발화 종료 감지:', {
+                  레벨: finalLevel.toFixed(1),
+                  조용함지속: silenceDuration + 'ms',
+                  실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+                });
+                
+                // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
+                if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
+                  console.log('🎤 조용함 지속 - 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
+                  processSpeechSegment();
+                } else if (speechBufferRef.current.trim()) {
+                  console.log('🎤 조용함 지속 - 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                  speechBufferRef.current = ""; // 버퍼 초기화
+                } else {
+                  console.log('🎤 조용함 지속 - 발화 버퍼가 비어있음 - 분석 건너뜀');
+                }
+                
+                // 타이머 리셋
+                silenceStartTimeRef.current = null;
+                audioLevelSpeechStartRef.current = null;
+                audioLevelSpeechEndRef.current = null;
+              }
             }
           } else if (finalLevel >= SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
             // 다시 소리가 나면 조용함 타이머 리셋
@@ -657,29 +746,27 @@ export default function HybridAudioPipeline() {
              });
            }
            
-           // 오디오 레벨 기반 발화 감지 (더 정확한 임계값 사용)
+           // 오디오 레벨 기반 발화 감지 (급격한 하락 감지 추가)
            const SPEECH_THRESHOLD = 40; // 말할 때 일반적으로 40 이상
            const SILENCE_THRESHOLD = 25; // 조용함 기준 (10-25 사이가 일반 상황)
            const SILENCE_DURATION = 800; // 0.8초 조용하면 발화 종료로 판단
+           
+           // 급격한 오디오 레벨 하락 감지
+           const isRapidDrop = detectRapidAudioLevelDrop(finalLevel);
            
            // 발화 시작 감지 (오디오 레벨이 임계값을 넘을 때)
            if (finalLevel > SPEECH_THRESHOLD && !isAudioLevelSpeakingRef.current) {
              isAudioLevelSpeakingRef.current = true;
              audioLevelSpeechStartRef.current = Date.now();
              silenceStartTimeRef.current = null; // 조용함 타이머 리셋
+             rapidDropDetectedRef.current = false; // 급격한 하락 플래그 리셋
              console.log('🎤 기본 체크: 오디오 레벨 기반 발화 시작 감지 (레벨:', finalLevel.toFixed(1), ')');
            }
            
-           // 발화 종료 감지 (오디오 레벨이 낮아지고 일정 시간 조용할 때)
-           if (finalLevel < SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
-             // 조용함 시작 시간 기록
-             if (!silenceStartTimeRef.current) {
-               silenceStartTimeRef.current = Date.now();
-             }
-             
-             // 일정 시간 조용하면 발화 종료로 판단
-             const silenceDuration = Date.now() - silenceStartTimeRef.current;
-             if (silenceDuration > SILENCE_DURATION) {
+           // 발화 종료 감지 (급격한 하락 또는 일정 시간 조용함)
+           if ((isRapidDrop || finalLevel < SILENCE_THRESHOLD) && isAudioLevelSpeakingRef.current) {
+             // 급격한 하락이 감지되면 즉시 발화 종료
+             if (isRapidDrop) {
                isAudioLevelSpeakingRef.current = false;
                audioLevelSpeechEndRef.current = Date.now();
                
@@ -688,27 +775,65 @@ export default function HybridAudioPipeline() {
                  ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
                  : 0;
                
-               console.log('🎤 기본 체크: 오디오 레벨 기반 발화 종료 감지:', {
+               console.log('🎤 기본 체크: 급격한 하락으로 인한 발화 종료 감지:', {
                  레벨: finalLevel.toFixed(1),
-                 조용함지속: silenceDuration + 'ms',
-                 실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+                 실제발화시간: actualSpeechDuration.toFixed(1) + '초',
+                 하락감지: '즉시'
                });
                
                // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
                if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
-                 console.log('🎤 기본 체크: 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
+                 console.log('🎤 기본 체크: 급격한 하락 - 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
                  processSpeechSegment();
                } else if (speechBufferRef.current.trim()) {
-                 console.log('🎤 기본 체크: 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                 console.log('🎤 기본 체크: 급격한 하락 - 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
                  speechBufferRef.current = ""; // 버퍼 초기화
                } else {
-                 console.log('🎤 기본 체크: 발화 버퍼가 비어있음 - 분석 건너뜀');
+                 console.log('🎤 기본 체크: 급격한 하락 - 발화 버퍼가 비어있음 - 분석 건너뜀');
                }
                
-               // 타이머 리셋
+               // 상태 리셋
                silenceStartTimeRef.current = null;
                audioLevelSpeechStartRef.current = null;
                audioLevelSpeechEndRef.current = null;
+               rapidDropDetectedRef.current = false;
+             } else {
+               // 일반적인 조용함 감지 (기존 로직)
+               if (!silenceStartTimeRef.current) {
+                 silenceStartTimeRef.current = Date.now();
+               }
+               
+               const silenceDuration = Date.now() - silenceStartTimeRef.current;
+               if (silenceDuration > SILENCE_DURATION) {
+                 isAudioLevelSpeakingRef.current = false;
+                 audioLevelSpeechEndRef.current = Date.now();
+                 
+                 const actualSpeechDuration = audioLevelSpeechStartRef.current && audioLevelSpeechEndRef.current 
+                   ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
+                   : 0;
+                 
+                 console.log('🎤 기본 체크: 조용함 지속으로 인한 발화 종료 감지:', {
+                   레벨: finalLevel.toFixed(1),
+                   조용함지속: silenceDuration + 'ms',
+                   실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+                 });
+                 
+                 // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
+                 if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
+                   console.log('🎤 기본 체크: 조용함 지속 - 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
+                   processSpeechSegment();
+                 } else if (speechBufferRef.current.trim()) {
+                   console.log('🎤 기본 체크: 조용함 지속 - 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                   speechBufferRef.current = ""; // 버퍼 초기화
+                 } else {
+                   console.log('🎤 기본 체크: 조용함 지속 - 발화 버퍼가 비어있음 - 분석 건너뜀');
+                 }
+                 
+                 // 타이머 리셋
+                 silenceStartTimeRef.current = null;
+                 audioLevelSpeechStartRef.current = null;
+                 audioLevelSpeechEndRef.current = null;
+               }
              }
            } else if (finalLevel >= SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
              // 다시 소리가 나면 조용함 타이머 리셋
