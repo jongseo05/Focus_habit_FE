@@ -86,7 +86,7 @@ export const useFocusSessionErrorHandler = (
   // 에러 분류 및 복구 가능성 판단
   const classifyError = useCallback((
     error: any, 
-    context: 'camera' | 'websocket' | 'gesture' | 'network'
+    context: 'camera' | 'websocket' | 'gesture' | 'network' | 'microphone'
   ): FocusSessionError => {
     let errorType: FocusSessionErrorType
     let message: string
@@ -125,6 +125,20 @@ export const useFocusSessionErrorHandler = (
       case 'network':
         errorType = FocusSessionErrorType.NETWORK_ERROR
         message = '네트워크 연결이 불안정합니다'
+        break
+
+      case 'microphone':
+        if (error.name === 'NotAllowedError') {
+          errorType = FocusSessionErrorType.PERMISSION_REVOKED
+          message = '마이크 권한이 취소되었습니다'
+          recoverable = false
+        } else if (error.name === 'NotReadableError' || error.message?.includes('device in use')) {
+          errorType = FocusSessionErrorType.HARDWARE_ERROR
+          message = '마이크 연결이 끊어졌거나 다른 앱에서 사용 중입니다'
+        } else {
+          errorType = FocusSessionErrorType.HARDWARE_ERROR
+          message = '마이크 하드웨어 오류가 발생했습니다'
+        }
         break
 
       default:
