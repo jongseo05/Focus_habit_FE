@@ -237,26 +237,40 @@ export function useFocusSessionWithGesture(
   
   // 제스처 인식 중지
   const stopGestureRecognition = useCallback(() => {
+    console.log('🛑 제스처 인식 중지 요청')
+    
     if (frameStreamerRef.current) {
       frameStreamerRef.current.stop()
       frameStreamerRef.current = null
+      console.log('✅ 프레임 스트리밍 중지됨')
     }
     
     if (hiddenVideoRef.current) {
       hiddenVideoRef.current.srcObject = null
       hiddenVideoRef.current.remove()
       hiddenVideoRef.current = null
+      console.log('✅ 숨겨진 비디오 엘리먼트 정리됨')
     }
     
     if (isGestureActive) {
       setIsGestureActive(false)
       setGestureFramesSent(0)
+      console.log('✅ 제스처 인식 완전 중지됨')
     }
   }, [isGestureActive])
   
   // 세션 상태에 따른 자동 제어
   useEffect(() => {
+    console.log('🎯 집중 세션 상태 변화 감지:', { 
+      isSessionRunning, 
+      hasStream: !!mediaStream.stream, 
+      isPermissionGranted: mediaStream.isPermissionGranted,
+      isConnected,
+      enableGestureRecognition
+    })
+    
     if (isSessionRunning && mediaStream.stream && mediaStream.isPermissionGranted) {
+      console.log('▶️ 제스처 인식 시작 조건 충족 - 1초 후 시작')
       // 약간의 지연을 두어 스트림이 안정화되도록 함
       const timer = setTimeout(() => {
         startGestureRecognition()
@@ -264,12 +278,15 @@ export function useFocusSessionWithGesture(
       
       return () => clearTimeout(timer)
     } else {
+      console.log('⏸️ 제스처 인식 중지 조건 충족 - 즉시 중지')
       stopGestureRecognition()
     }
   }, [
     isSessionRunning, 
     mediaStream.stream, 
-    mediaStream.isPermissionGranted
+    mediaStream.isPermissionGranted,
+    isConnected,
+    enableGestureRecognition
     // startGestureRecognition, stopGestureRecognition 제거하여 무한 루프 방지
   ])
   

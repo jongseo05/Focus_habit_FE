@@ -41,30 +41,20 @@ import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream } from "@/hooks/useMediaStream"
 import HybridAudioPipeline from "@/components/HybridAudioPipeline"
 
-// Mock data and state management
+// 실제 Zustand 스토어 사용
+import { useDashboardStore } from "@/stores/dashboardStore"
+
 const useFocusSession = () => {
-  const [isRunning, setIsRunning] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const [focusScore, setFocusScore] = useState(85)
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isRunning && !isPaused) {
-      interval = setInterval(() => {
-        setElapsed((prev) => prev + 1)
-        // Simulate focus score fluctuation
-        setFocusScore((prev) => Math.max(60, Math.min(100, prev + (Math.random() - 0.5) * 10)))
-      }, 1000)
-    }
-    return () => clearInterval(interval)
-  }, [isRunning, isPaused])
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-  }
+  const { 
+    isRunning, 
+    isPaused, 
+    elapsed, 
+    focusScore, 
+    startSession, 
+    pauseSession, 
+    stopSession, 
+    formatTime 
+  } = useDashboardStore()
 
   return {
     isRunning,
@@ -72,13 +62,9 @@ const useFocusSession = () => {
     elapsed,
     focusScore,
     formatTime,
-    startSession: () => setIsRunning(true),
-    pauseSession: () => setIsPaused(!isPaused),
-    stopSession: () => {
-      setIsRunning(false)
-      setIsPaused(false)
-      setElapsed(0)
-    },
+    startSession,
+    pauseSession,
+    stopSession,
   }
 }
 
@@ -704,6 +690,19 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const session = useFocusSession()
+  const { updateElapsed } = useDashboardStore()
+  
+  // elapsed 시간 업데이트
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (session.isRunning && !session.isPaused) {
+      interval = setInterval(() => {
+        updateElapsed()
+      }, 1000)
+    }
+    return () => clearInterval(interval)
+  }, [session.isRunning, session.isPaused, updateElapsed])
+  
   const mediaStream = useFocusSessionWithGesture(session.isRunning, {
     frameRate: 10, // 1초에 10번 (10fps)
     enableGestureRecognition: true,
@@ -760,11 +759,19 @@ function DashboardContent() {
   }
 
   const handleStopSession = () => {
+    console.log('🛑 집중 세션 완전 종료')
     session.stopSession()
     mediaStream.stopStream()
     microphoneStream.stopStream()
     setShowWebcam(false)
     setShowAudioPipeline(false) // 오디오 파이프라인 비활성화
+  }
+
+  const handlePauseSession = () => {
+    console.log('⏸️ 집중 세션 일시정지/재시작')
+    session.pauseSession()
+    // 일시정지 시에는 스트림은 유지하되, 오디오 파이프라인과 제스처 인식만 일시정지
+    // (HybridAudioPipeline과 useFocusSessionWithGesture에서 자동으로 처리됨)
   }
 
   const handleWebcamToggle = async () => {
@@ -1072,7 +1079,7 @@ function DashboardContent() {
                       <Button
                         size="lg"
                         variant="outline"
-                        onClick={session.pauseSession}
+                        onClick={handlePauseSession}
                         className="px-6 py-3 rounded-xl bg-transparent"
                       >
                         {session.isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}

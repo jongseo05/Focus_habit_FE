@@ -15,15 +15,30 @@ let tokenizerCache: any = null;
 export async function loadKOElectraVocab(): Promise<string[]> {
   if (vocabCache) return vocabCache;
   
-                try {
-                const response = await fetch("/models/koelectra/vocab.txt");
-                const text = await response.text();
-                vocabCache = text.split("\n").filter(line => line.trim());
-                return vocabCache;
-              } catch (error) {
-                console.error("어휘 사전 로드 실패:", error);
-                throw error;
-              }
+  try {
+    const response = await fetch("/models/koelectra/vocab.txt");
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const text = await response.text();
+    vocabCache = text.split("\n").filter(line => line.trim());
+    console.log('📚 어휘 사전 로드 완료:', vocabCache.length, '개 토큰');
+    return vocabCache;
+  } catch (error) {
+    console.error("어휘 사전 로드 실패:", error);
+    throw error;
+  }
+}
+
+// 어휘 사전 자동 로드 (초기화 시 호출)
+export async function initializeTokenizer(): Promise<void> {
+  try {
+    await loadKOElectraVocab();
+    await loadKOElectraTokenizer();
+    console.log('✅ 토크나이저 초기화 완료');
+  } catch (error) {
+    console.error('❌ 토크나이저 초기화 실패:', error);
+  }
 }
 
 // 토크나이저 설정 로드
@@ -101,46 +116,67 @@ export function tokenizeText(text: string, vocab: string[]): number[] {
   return tokens;
 }
 
-// KoELECTRA 전처리 (메인 함수)
-  export async function koelectraPreprocess(text: string): Promise<number[]> {
-    try {
-      // 1. 어휘 사전과 토크나이저 설정 로드
-      const vocab = await loadKOElectraVocab();
-      const tokenizerConfig = await loadKOElectraTokenizer();
-      
-      // 2. BERT 스타일 토크나이징
-      const wordTokens = tokenizeText(text, vocab);
-      
-      // 3. BERT 특수 토큰 추가
-      const tokens: number[] = [];
-      
-      // [CLS] 토큰 추가
-      const clsIndex = vocab.indexOf("[CLS]");
-      tokens.push(clsIndex !== -1 ? clsIndex : 2);
-      
-      // 단어 토큰들 추가
-      tokens.push(...wordTokens);
-      
-      // [SEP] 토큰 추가
-      const sepIndex = vocab.indexOf("[SEP]");
-      tokens.push(sepIndex !== -1 ? sepIndex : 3);
-      
-      // 4. 패딩 (최대 길이 512)
-      const maxLength = 512;
-      while (tokens.length < maxLength) {
-        const padIndex = vocab.indexOf("[PAD]");
-        tokens.push(padIndex !== -1 ? padIndex : 0);
-      }
-      
-      const result = tokens.slice(0, maxLength);
-      
-      return result;
-    } catch (error) {
-      console.error("토크나이징 실패:", error);
-      // 에러 시 기본값 반환
-      return new Array(512).fill(0);
+// KoELECTRA 전처리 (메인 함수) - 동기 버전으로 변경
+export function koelectraPreprocess(text: string, maxLength: number = 512): { input_ids: number[], attention_mask: number[] } {
+  try {
+    // 1. 어휘 사전과 토크나이저 설정 로드 (캐시된 값 사용)
+    if (!vocabCache) {
+      console.warn("어휘 사전이 로드되지 않았습니다. 자동 로드를 시도합니다.");
+      // 비동기 로드를 동기적으로 처리하기 위해 기본값 반환
+      return {
+        input_ids: new Array(maxLength).fill(0),
+        attention_mask: new Array(maxLength).fill(0)
+      };
     }
+    
+    // 2. BERT 스타일 토크나이징
+    const wordTokens = tokenizeText(text, vocabCache);
+    
+    // 3. BERT 특수 토큰 추가
+    const tokens: number[] = [];
+    
+    // [CLS] 토큰 추가
+    const clsIndex = vocabCache.indexOf("[CLS]");
+    tokens.push(clsIndex !== -1 ? clsIndex : 2);
+    
+    // 단어 토큰들 추가
+    tokens.push(...wordTokens);
+    
+    // [SEP] 토큰 추가
+    const sepIndex = vocabCache.indexOf("[SEP]");
+    tokens.push(sepIndex !== -1 ? sepIndex : 3);
+    
+    // 4. 패딩 및 attention mask 생성
+    const input_ids: number[] = [];
+    const attention_mask: number[] = [];
+    
+    for (let i = 0; i < maxLength; i++) {
+      if (i < tokens.length) {
+        input_ids.push(tokens[i]);
+        attention_mask.push(1); // 실제 토큰
+      } else {
+        const padIndex = vocabCache.indexOf("[PAD]");
+        input_ids.push(padIndex !== -1 ? padIndex : 0);
+        attention_mask.push(0); // 패딩 토큰
+      }
+    }
+    
+    return { input_ids, attention_mask };
+  } catch (error) {
+    console.error("토크나이징 실패:", error);
+    // 에러 시 기본값 반환
+    return {
+      input_ids: new Array(maxLength).fill(0),
+      attention_mask: new Array(maxLength).fill(0)
+    };
   }
+}
+
+// 비동기 버전 (기존 호환성 유지)
+export async function koelectraPreprocessAsync(text: string): Promise<number[]> {
+  const result = koelectraPreprocess(text);
+  return result.input_ids;
+}
 
   // 토크나이저 테스트 함수
   export async function testTokenizer(texts: string[]): Promise<void> {
