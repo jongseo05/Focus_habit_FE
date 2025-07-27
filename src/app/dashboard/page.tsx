@@ -39,6 +39,7 @@ import { FocusSessionStatus } from "@/types/focusSession"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream } from "@/hooks/useMediaStream"
+import HybridAudioPipeline from "@/components/HybridAudioPipeline"
 
 // Mock data and state management
 const useFocusSession = () => {
@@ -714,6 +715,7 @@ function DashboardContent() {
   const [showCameraPermissionLayer, setShowCameraPermissionLayer] = useState(false)
   const [showMicrophonePermissionLayer, setShowMicrophonePermissionLayer] = useState(false)
   const [showErrorDisplay, setShowErrorDisplay] = useState(false)
+  const [showAudioPipeline, setShowAudioPipeline] = useState(false)
   const [notifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
@@ -753,13 +755,16 @@ function DashboardContent() {
       await mediaStream.startStream()
       await microphoneStream.startStream()
       setShowWebcam(true)
+      setShowAudioPipeline(true) // 오디오 파이프라인 활성화
     }
   }
 
   const handleStopSession = () => {
     session.stopSession()
     mediaStream.stopStream()
+    microphoneStream.stopStream()
     setShowWebcam(false)
+    setShowAudioPipeline(false) // 오디오 파이프라인 비활성화
   }
 
   const handleWebcamToggle = async () => {
@@ -997,6 +1002,15 @@ function DashboardContent() {
             stream={mediaStream.stream}
             onClose={handleWebcamToggle}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Audio Pipeline - 세션 중일 때만 표시 */}
+      <AnimatePresence>
+        {showAudioPipeline && session.isRunning && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <HybridAudioPipeline />
+          </div>
         )}
       </AnimatePresence>
 
