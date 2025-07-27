@@ -21,22 +21,22 @@ const analyzeStudyRelatedByKeywords = (() => {
   }
 })()
 
-// 성능 최적화를 위한 디바운스 훅
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+  // 성능 최적화를 위한 디바운스 훅
+  function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value)
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value)
-    }, delay)
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value)
+      }, delay)
 
-    return () => {
-      clearTimeout(handler)
-    }
-  }, [value, delay])
+      return () => {
+        clearTimeout(handler)
+      }
+    }, [value, delay])
 
-  return debouncedValue
-}
+    return debouncedValue
+  }
 
 
 
@@ -92,6 +92,11 @@ export default function HybridAudioPipeline() {
   const speechStartTimeRef = useRef<number | null>(null)
   const speechEndTimeRef = useRef<number | null>(null)
   const silenceStartTimeRef = useRef<number | null>(null) // 조용함 시작 시간
+  
+  // 오디오 레벨 기반 발화 감지 상태
+  const audioLevelSpeechStartRef = useRef<number | null>(null) // 오디오 레벨로 감지한 발화 시작 시간
+  const audioLevelSpeechEndRef = useRef<number | null>(null) // 오디오 레벨로 감지한 발화 종료 시간
+  const isAudioLevelSpeakingRef = useRef<boolean>(false) // 오디오 레벨 기반 발화 상태
 
   // 성능 최적화를 위한 디바운스된 텍스트
   const debouncedLiveTranscript = useDebounce(liveTranscript, 100)
@@ -99,6 +104,40 @@ export default function HybridAudioPipeline() {
   // useEffect 클로저에서 최신 상태를 참조하기 위한 Ref
   const stateRef = useRef({ isSpeaking, isListening });
   stateRef.current = { isSpeaking, isListening };
+
+  // 음성 인식 재시작 함수 (중앙 관리) - 개선된 버전
+  const restartSpeechRecognition = useCallback(() => {
+    if (!recognitionRef.current) {
+      console.log('🎤 음성 인식 재시작 실패: recognitionRef가 없음');
+      return false;
+    }
+
+    if (!stateRef.current.isListening) {
+      console.log('🎤 음성 인식 재시작 실패: isListening이 false');
+      return false;
+    }
+
+    const currentState = recognitionRef.current.state;
+    console.log('🎤 음성 인식 재시작 시도 - 현재 상태:', currentState);
+    
+    // inactive 또는 undefined 상태일 때 재시작 (브라우저 호환성 고려)
+    if (currentState === 'inactive' || currentState === undefined) {
+      try {
+        recognitionRef.current.start();
+        console.log('🎤 음성 인식 재시작 성공 (상태:', currentState, ')');
+        return true;
+      } catch (error) {
+        console.warn('🎤 음성 인식 재시작 실패:', error);
+        return false;
+      }
+    } else if (currentState === 'active') {
+      console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
+      return true; // 이미 활성 상태면 성공으로 처리
+    } else {
+      console.log('🎤 음성 인식 상태가 예상과 다름 (상태:', currentState, ')');
+      return false;
+    }
+  }, []);
 
   // 집중 모드 상태 변화 감지 및 오디오 파이프라인 제어
   useEffect(() => {
@@ -122,6 +161,11 @@ export default function HybridAudioPipeline() {
       speechEndTimeRef.current = null
       silenceStartTimeRef.current = null
       
+      // 오디오 레벨 기반 발화 감지 상태 초기화
+      isAudioLevelSpeakingRef.current = false
+      audioLevelSpeechStartRef.current = null
+      audioLevelSpeechEndRef.current = null
+      
       // 실시간 텍스트 초기화
       setLiveTranscript("")
       setIsSpeaking(false)
@@ -132,24 +176,10 @@ export default function HybridAudioPipeline() {
       // 오디오 레벨 체크 재시작
       setIsListening(true)
       
-      // 음성 인식 재시작 (상태 체크 강화)
-      if (recognitionRef.current) {
-        const currentState = recognitionRef.current.state;
-        console.log('🎤 집중 모드 재시작 - 음성 인식 상태 확인:', currentState);
-        
-        if (currentState === 'inactive') {
-          try {
-            recognitionRef.current.start();
-            console.log('🎤 집중 모드 재시작 - 음성 인식 시작됨');
-          } catch (error) {
-            console.log('🎤 음성 인식 재시작 중 오류:', error);
-          }
-        } else {
-          console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
-        }
-      }
+      // 음성 인식 재시작 (중앙 함수 사용)
+      restartSpeechRecognition();
     }
-  }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized])
+  }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized, restartSpeechRecognition])
 
   // 모델 상태 요약
   const modelStatus = useMemo(() => ({
@@ -428,36 +458,71 @@ export default function HybridAudioPipeline() {
             });
           }
           
-          // 음성 감지 (전체 주파수 대역에 맞는 임계값)
-          if (finalLevel > 5 && !stateRef.current.isSpeaking) {
-            setIsSpeaking(true);
-            speechStartTimeRef.current = Date.now();
+          // 오디오 레벨 기반 발화 감지 (더 정확한 임계값 사용)
+          const SPEECH_THRESHOLD = 40; // 말할 때 일반적으로 40 이상
+          const SILENCE_THRESHOLD = 25; // 조용함 기준 (10-25 사이가 일반 상황)
+          const SILENCE_DURATION = 800; // 0.8초 조용하면 발화 종료로 판단
+          
+          // 발화 시작 감지 (오디오 레벨이 임계값을 넘을 때)
+          if (finalLevel > SPEECH_THRESHOLD && !isAudioLevelSpeakingRef.current) {
+            isAudioLevelSpeakingRef.current = true;
+            audioLevelSpeechStartRef.current = Date.now();
             silenceStartTimeRef.current = null; // 조용함 타이머 리셋
-            console.log('🎤 음성 감지됨 (레벨:', finalLevel.toFixed(1), ')');
-          } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+            console.log('🎤 오디오 레벨 기반 발화 시작 감지 (레벨:', finalLevel.toFixed(1), ')');
+          }
+          
+          // 발화 종료 감지 (오디오 레벨이 낮아지고 일정 시간 조용할 때)
+          if (finalLevel < SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
             // 조용함 시작 시간 기록
             if (!silenceStartTimeRef.current) {
               silenceStartTimeRef.current = Date.now();
             }
             
-            // 0.3초 이상 조용하면 발화 종료로 판단 (더 빠르게)
+            // 일정 시간 조용하면 발화 종료로 판단
             const silenceDuration = Date.now() - silenceStartTimeRef.current;
-            if (silenceDuration > 200) {
-              setIsSpeaking(false);
-              speechEndTimeRef.current = Date.now();
-              console.log('🎤 음성 종료 감지됨 (레벨:', finalLevel.toFixed(1), ', 조용함 지속:', silenceDuration + 'ms)');
+            if (silenceDuration > SILENCE_DURATION) {
+              isAudioLevelSpeakingRef.current = false;
+              audioLevelSpeechEndRef.current = Date.now();
               
-              // 발화 분석 트리거
-              if (speechBufferRef.current.trim()) {
+              // 실제 발화 지속시간 계산
+              const actualSpeechDuration = audioLevelSpeechStartRef.current && audioLevelSpeechEndRef.current 
+                ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
+                : 0;
+              
+              console.log('🎤 오디오 레벨 기반 발화 종료 감지:', {
+                레벨: finalLevel.toFixed(1),
+                조용함지속: silenceDuration + 'ms',
+                실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+              });
+              
+              // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
+              if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
+                console.log('🎤 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
                 processSpeechSegment();
+              } else if (speechBufferRef.current.trim()) {
+                console.log('🎤 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                speechBufferRef.current = ""; // 버퍼 초기화
+              } else {
+                console.log('🎤 발화 버퍼가 비어있음 - 분석 건너뜀');
               }
               
               // 타이머 리셋
               silenceStartTimeRef.current = null;
+              audioLevelSpeechStartRef.current = null;
+              audioLevelSpeechEndRef.current = null;
             }
-          } else if (finalLevel >= 2 && stateRef.current.isSpeaking) {
+          } else if (finalLevel >= SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
             // 다시 소리가 나면 조용함 타이머 리셋
             silenceStartTimeRef.current = null;
+          }
+          
+          // 기존 음성 감지 로직도 유지 (UI 표시용)
+          if (finalLevel > 5 && !stateRef.current.isSpeaking) {
+            setIsSpeaking(true);
+            speechStartTimeRef.current = Date.now();
+          } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+            setIsSpeaking(false);
+            speechEndTimeRef.current = Date.now();
           }
           
           requestAnimationFrame(() => checkAudioLevel());
@@ -592,36 +657,71 @@ export default function HybridAudioPipeline() {
              });
            }
            
-           // 음성 감지 (전체 주파수 대역에 맞는 임계값)
-           if (finalLevel > 5 && !stateRef.current.isSpeaking) {
-             setIsSpeaking(true);
-             speechStartTimeRef.current = Date.now();
+           // 오디오 레벨 기반 발화 감지 (더 정확한 임계값 사용)
+           const SPEECH_THRESHOLD = 40; // 말할 때 일반적으로 40 이상
+           const SILENCE_THRESHOLD = 25; // 조용함 기준 (10-25 사이가 일반 상황)
+           const SILENCE_DURATION = 800; // 0.8초 조용하면 발화 종료로 판단
+           
+           // 발화 시작 감지 (오디오 레벨이 임계값을 넘을 때)
+           if (finalLevel > SPEECH_THRESHOLD && !isAudioLevelSpeakingRef.current) {
+             isAudioLevelSpeakingRef.current = true;
+             audioLevelSpeechStartRef.current = Date.now();
              silenceStartTimeRef.current = null; // 조용함 타이머 리셋
-             console.log('🎤 음성 감지됨 (레벨:', finalLevel.toFixed(1), ')');
-           } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+             console.log('🎤 기본 체크: 오디오 레벨 기반 발화 시작 감지 (레벨:', finalLevel.toFixed(1), ')');
+           }
+           
+           // 발화 종료 감지 (오디오 레벨이 낮아지고 일정 시간 조용할 때)
+           if (finalLevel < SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
              // 조용함 시작 시간 기록
              if (!silenceStartTimeRef.current) {
                silenceStartTimeRef.current = Date.now();
              }
              
-             // 0.3초 이상 조용하면 발화 종료로 판단 (더 빠르게)
+             // 일정 시간 조용하면 발화 종료로 판단
              const silenceDuration = Date.now() - silenceStartTimeRef.current;
-             if (silenceDuration > 200) {
-               setIsSpeaking(false);
-               speechEndTimeRef.current = Date.now();
-               console.log('🎤 음성 종료 감지됨 (레벨:', finalLevel.toFixed(1), ', 조용함 지속:', silenceDuration + 'ms)');
+             if (silenceDuration > SILENCE_DURATION) {
+               isAudioLevelSpeakingRef.current = false;
+               audioLevelSpeechEndRef.current = Date.now();
                
-               // 발화 분석 트리거
-               if (speechBufferRef.current.trim()) {
+               // 실제 발화 지속시간 계산
+               const actualSpeechDuration = audioLevelSpeechStartRef.current && audioLevelSpeechEndRef.current 
+                 ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
+                 : 0;
+               
+               console.log('🎤 기본 체크: 오디오 레벨 기반 발화 종료 감지:', {
+                 레벨: finalLevel.toFixed(1),
+                 조용함지속: silenceDuration + 'ms',
+                 실제발화시간: actualSpeechDuration.toFixed(1) + '초'
+               });
+               
+               // 발화 분석 트리거 (실제 발화 시간이 0.5초 이상일 때만)
+               if (speechBufferRef.current.trim() && actualSpeechDuration > 0.5) {
+                 console.log('🎤 기본 체크: 발화 분석 트리거 - 버퍼 내용:', speechBufferRef.current);
                  processSpeechSegment();
+               } else if (speechBufferRef.current.trim()) {
+                 console.log('🎤 기본 체크: 발화 시간이 너무 짧음 (', actualSpeechDuration.toFixed(1), '초) - 분석 건너뜀');
+                 speechBufferRef.current = ""; // 버퍼 초기화
+               } else {
+                 console.log('🎤 기본 체크: 발화 버퍼가 비어있음 - 분석 건너뜀');
                }
                
                // 타이머 리셋
                silenceStartTimeRef.current = null;
+               audioLevelSpeechStartRef.current = null;
+               audioLevelSpeechEndRef.current = null;
              }
-           } else if (finalLevel >= 2 && stateRef.current.isSpeaking) {
+           } else if (finalLevel >= SILENCE_THRESHOLD && isAudioLevelSpeakingRef.current) {
              // 다시 소리가 나면 조용함 타이머 리셋
              silenceStartTimeRef.current = null;
+           }
+           
+           // 기존 음성 감지 로직도 유지 (UI 표시용)
+           if (finalLevel > 5 && !stateRef.current.isSpeaking) {
+             setIsSpeaking(true);
+             speechStartTimeRef.current = Date.now();
+           } else if (finalLevel < 2 && stateRef.current.isSpeaking) {
+             setIsSpeaking(false);
+             speechEndTimeRef.current = Date.now();
            }
            
            requestAnimationFrame(() => checkAudioLevel());
@@ -727,55 +827,28 @@ export default function HybridAudioPipeline() {
       
       if (finalTranscript) {
         speechBufferRef.current += finalTranscript;
-        console.log('🎤 최종 텍스트 추가됨:', finalTranscript);
+        console.log('🎤 최종 텍스트 추가됨:', finalTranscript, '버퍼 상태:', speechBufferRef.current);
       }
     };
 
     recognition.onend = () => {
       setIsSpeechRecognitionActive(false);
       speechEndTimeRef.current = Date.now();
-      console.log('🎤 음성 인식 종료됨 - 발화 분석 시작');
+      console.log('🎤 음성 인식 종료됨');
       
-      // 발화 세그먼트 처리 (강제 실행)
-      if (speechBufferRef.current.trim()) {
-        console.log('🎤 발화 버퍼 내용:', speechBufferRef.current);
-        processSpeechSegment();
-      } else {
-        console.log('🎤 발화 버퍼가 비어있음 - 분석 건너뜀');
-      }
+      // 발화 세그먼트 처리 (오디오 레벨 기반 발화 감지에서만 처리하도록 변경)
+      // 여기서는 처리하지 않고, 오디오 레벨 기반 발화 감지에서만 processSpeechSegment 호출
       
-      // 안전한 재시작 (상태 체크 강화)
-      if (recognitionRef.current && stateRef.current.isListening) {
-        // 재시작 전에 상태 확인
-        const currentState = recognitionRef.current.state;
-        console.log('🎤 음성 인식 재시작 시도 - 현재 상태:', currentState);
-        
-        // inactive 상태일 때만 재시작
-        if (currentState === 'inactive') {
-          try {
-            recognitionRef.current.start();
-            console.log('🎤 음성 인식 재시작 성공');
-          } catch (error) {
-            console.warn('🎤 음성 인식 재시작 실패:', error);
-            // 재시작 실패 시 500ms 후 재시도
-            setTimeout(() => {
-              if (recognitionRef.current && stateRef.current.isListening) {
-                try {
-                  const retryState = recognitionRef.current.state;
-                  console.log('🎤 음성 인식 재시도 - 상태:', retryState);
-                  if (retryState === 'inactive') {
-                    recognitionRef.current.start();
-                    console.log('🎤 음성 인식 재시작 재시도 성공');
-                  }
-                } catch (retryError) {
-                  console.error('🎤 음성 인식 재시작 재시도 실패:', retryError);
-                }
-              }
-            }, 500);
-          }
-        } else {
-          console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
-        }
+      // 자동 재시작 (중앙 함수 사용)
+      console.log('🎤 음성 인식 종료 - 자동 재시작 시도');
+      const restartSuccess = restartSpeechRecognition();
+      if (!restartSuccess) {
+        // 재시작 실패 시 1초 후 재시도
+        console.log('🎤 음성 인식 재시작 실패 - 1초 후 재시도');
+        setTimeout(() => {
+          console.log('🎤 음성 인식 재시작 재시도');
+          restartSpeechRecognition();
+        }, 1000);
       }
     };
 
@@ -816,7 +889,12 @@ export default function HybridAudioPipeline() {
     const startTime = performance.now();
     
     try {
-      // 발화 지속시간 계산
+      // 실제 발화 지속시간 계산 (오디오 레벨 기반)
+      const actualSpeechDuration = audioLevelSpeechStartRef.current && audioLevelSpeechEndRef.current 
+        ? (audioLevelSpeechEndRef.current - audioLevelSpeechStartRef.current) / 1000 
+        : 0;
+      
+      // 기존 지속시간 계산 (백업용)
       const duration = speechStartTimeRef.current && speechEndTimeRef.current 
         ? (speechEndTimeRef.current - speechStartTimeRef.current) / 1000 
         : 0;
@@ -865,7 +943,8 @@ export default function HybridAudioPipeline() {
 🎤 발화 분석 결과 (${new Date().toLocaleTimeString()}):
 ├─ 시작 시간: ${startTimestamp}
 ├─ 종료 시간: ${endTimestamp}
-├─ 지속시간: ${duration.toFixed(1)}초
+├─ 실제 발화 시간: ${actualSpeechDuration.toFixed(1)}초
+├─ 전체 분석 시간: ${duration.toFixed(1)}초
 ├─ 원문: "${text}"
 ├─ 분석 방법: ${analysisMethod}
 ├─ KoELECTRA 신뢰도: ${koelectraConfidence.toFixed(3)}
@@ -875,43 +954,41 @@ export default function HybridAudioPipeline() {
 └─ 처리 시간: ${processingTime.toFixed(1)}ms
       `);
 
-      // 버퍼 초기화
+      // 버퍼 초기화 (분석 완료 후 즉시)
       speechBufferRef.current = "";
       speechStartTimeRef.current = null;
       speechEndTimeRef.current = null;
+      
+      // 오디오 레벨 기반 발화 감지 상태도 초기화
+      isAudioLevelSpeakingRef.current = false;
+      audioLevelSpeechStartRef.current = null;
+      audioLevelSpeechEndRef.current = null;
+      
+      console.log('🎤 발화 분석 완료 - 버퍼 및 상태 초기화됨');
 
     } catch (error) {
       console.error('발화 분석 실패:', error);
       speechBufferRef.current = "";
     } finally {
       setIsAnalyzing(false);
-      // 분석 완료 후 음성인식 재시작 보장 (상태 체크 강화)
-      setTimeout(() => {
-        if (recognitionRef.current && isFocusSessionRunning && !isFocusSessionPaused) {
-          try {
-            const currentState = recognitionRef.current.state;
-            console.log('🎤 발화 분석 완료 - 음성 인식 재시작 시도 (상태:', currentState, ')');
-            
-            // inactive 상태일 때만 재시작
-            if (currentState === 'inactive') {
-              recognitionRef.current.start();
-              console.log('🎤 음성 인식 재시작 성공');
-            } else {
-              console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
-            }
-          } catch (error) {
-            console.warn('🎤 분석 후 재시작 실패:', error);
-          }
-        } else {
-          console.log('🎤 음성 인식 재시작 조건 불만족:', {
-            hasRecognition: !!recognitionRef.current,
-            isFocusSessionRunning,
-            isFocusSessionPaused
-          });
-        }
-      }, 200); // 200ms 지연 후 재시작
+      // 발화 분석 완료 후 음성 인식 상태 확인 및 재시작 보장
+      console.log('🎤 발화 분석 완료 - 음성 인식 상태:', {
+        hasRecognition: !!recognitionRef.current,
+        recognitionState: recognitionRef.current?.state,
+        isFocusSessionRunning,
+        isFocusSessionPaused,
+        isListening: stateRef.current.isListening
+      });
+      
+      // 발화 분석 완료 후 음성 인식 재시작 보장
+      if (isFocusSessionRunning && !isFocusSessionPaused) {
+        setTimeout(() => {
+          console.log('🎤 발화 분석 완료 후 음성 인식 재시작 보장');
+          restartSpeechRecognition();
+        }, 500);
+      }
     }
-  }, [isModelLoaded, koelectraInference, isInitialized, isAnalyzing]);
+  }, [isModelLoaded, koelectraInference, isAnalyzing, restartSpeechRecognition]);
 
   // 텍스트 문맥을 분석하는 헬퍼 함수
   const analyzeTextContext = (text: string):
@@ -1128,6 +1205,14 @@ export default function HybridAudioPipeline() {
             <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
             <span className="text-sm">
               {isSpeaking ? "🎤 말하는 중..." : "🔇 조용함"}
+            </span>
+          </div>
+          
+          {/* 오디오 레벨 기반 발화 상태 */}
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${isAudioLevelSpeakingRef.current ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+            <span className="text-sm">
+              {isAudioLevelSpeakingRef.current ? "🔊 실제 발화 감지" : "🔇 발화 없음"}
             </span>
           </div>
           
