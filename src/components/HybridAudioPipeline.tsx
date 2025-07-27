@@ -133,12 +133,15 @@ export default function HybridAudioPipeline() {
       setIsListening(true)
       
       // 음성 인식 재시작
-      if (recognitionRef.current && recognitionRef.current.state === 'inactive') {
+      if (recognitionRef.current && (recognitionRef.current.state === 'inactive' || recognitionRef.current.state === undefined)) {
         try {
           recognitionRef.current.start()
+          console.log('🎤 집중 모드 재시작 - 음성 인식 시작됨 (상태:', recognitionRef.current.state, ')')
         } catch (error) {
           console.log('🎤 음성 인식 재시작 중 오류:', error)
         }
+      } else {
+        console.log('🎤 집중 모드 재시작 - 음성 인식 상태 확인:', recognitionRef.current?.state)
       }
     }
   }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized])
@@ -619,14 +622,25 @@ export default function HybridAudioPipeline() {
            requestAnimationFrame(() => checkAudioLevel());
          };
 
-        setIsListening(true); // 기본 오디오 레벨 체크를 위해 true로 설정
+        // 오디오 레벨 모니터링 시작
+        setIsListening(true); // 오디오 레벨 체크를 위해 true로 설정
         
         // 강제로 기본 오디오 레벨 체크 시작
         setTimeout(() => {
           checkAudioLevel();
         }, 100);
+        
+        // 음성 인식 설정 및 시작
         setupSpeechRecognition();
+        
+        // 초기화 완료
         setIsInitialized(true);
+        console.log('🎤 오디오 파이프라인 초기화 완료 - 음성 인식 상태:', {
+          isListening: true,
+          isInitialized: true,
+          isFocusSessionRunning,
+          isFocusSessionPaused
+        });
       }
     } catch (error) {
       console.error('오디오 파이프라인 초기화 실패:', error);
@@ -667,11 +681,23 @@ export default function HybridAudioPipeline() {
     recognition.onstart = () => { setIsSpeechRecognitionActive(true); };
 
     recognition.onresult = (event: any) => {
+      console.log('🎤 Speech Recognition onresult 이벤트 발생:', {
+        resultIndex: event.resultIndex,
+        resultsLength: event.results.length,
+        hasResults: !!event.results
+      });
+
       let interimTranscript = '';
       let finalTranscript = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
+        console.log('🎤 인식된 텍스트:', {
+          index: i,
+          transcript,
+          isFinal: event.results[i].isFinal
+        });
+        
         if (event.results[i].isFinal) {
           finalTranscript += transcript;
           // 첫 번째 finalTranscript 수신 시 시작 시간 기록
@@ -713,10 +739,11 @@ export default function HybridAudioPipeline() {
           const currentState = recognitionRef.current.state;
           console.log('🎤 음성 인식 상태 확인:', currentState);
           
-          if (currentState === 'inactive') {
+          // undefined 상태도 inactive로 처리하여 재시작 시도
+          if (currentState === 'inactive' || currentState === undefined) {
             recognitionRef.current.start();
             setIsListening(true);
-            console.log('🎤 음성 인식 재시작됨');
+            console.log('🎤 음성 인식 재시작됨 (상태:', currentState, ')');
           } else {
             console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', currentState, ')');
           }
@@ -728,10 +755,10 @@ export default function HybridAudioPipeline() {
               try {
                 const retryState = recognitionRef.current.state;
                 console.log('🎤 음성 인식 재시도 - 상태:', retryState);
-                if (retryState === 'inactive') {
+                if (retryState === 'inactive' || retryState === undefined) {
                   recognitionRef.current.start();
                   setIsListening(true);
-                  console.log('🎤 음성 인식 재시작 재시도 성공');
+                  console.log('🎤 음성 인식 재시작 재시도 성공 (상태:', retryState, ')');
                 }
               } catch (retryError) {
                 console.error('음성 인식 재시작 재시도 실패:', retryError);
@@ -761,7 +788,9 @@ export default function HybridAudioPipeline() {
 
     // 안전하게 시작
     try {
+      console.log('🎤 Speech Recognition 시작 시도...');
       recognition.start();
+      console.log('🎤 Speech Recognition 시작 성공');
     } catch (error) {
       console.warn('음성 인식 시작 실패:', error);
     }
@@ -846,45 +875,45 @@ export default function HybridAudioPipeline() {
       speechBufferRef.current = "";
     } finally {
       setIsAnalyzing(false);
-      // 분석 완료 후 음성인식 재시작 보장
-      setTimeout(() => {
-        if (recognitionRef.current && isInitialized && isFocusSessionRunning && !isFocusSessionPaused) {
-          try {
-            console.log('🎤 발화 분석 완료 - 음성 인식 재시작 시도 (상태:', recognitionRef.current.state, ')');
-            if (recognitionRef.current.state === 'inactive') {
-              recognitionRef.current.start();
-              console.log('🎤 음성 인식 재시작 성공');
-            } else {
-              console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', recognitionRef.current.state, ')');
-            }
-          } catch (error) {
-            console.warn('분석 후 재시작 실패:', error);
-          }
-        } else {
-          console.log('🎤 음성 인식 재시작 조건 불만족:', {
-            hasRecognition: !!recognitionRef.current,
-            isInitialized,
-            isFocusSessionRunning,
-            isFocusSessionPaused
-          });
-          
-          // isInitialized가 false여도 재시작 시도
-          if (recognitionRef.current && isFocusSessionRunning && !isFocusSessionPaused) {
+              // 분석 완료 후 음성인식 재시작 보장
+        setTimeout(() => {
+          if (recognitionRef.current && isInitialized && isFocusSessionRunning && !isFocusSessionPaused) {
             try {
-              console.log('🎤 isInitialized가 false이지만 재시작 시도');
-              // 상태가 undefined인 경우에도 재시작 시도
-              if (!recognitionRef.current.state || recognitionRef.current.state === 'inactive') {
+              console.log('🎤 발화 분석 완료 - 음성 인식 재시작 시도 (상태:', recognitionRef.current.state, ')');
+              if (recognitionRef.current.state === 'inactive' || recognitionRef.current.state === undefined) {
                 recognitionRef.current.start();
-                console.log('🎤 음성 인식 재시작 성공 (isInitialized 무시)');
+                console.log('🎤 음성 인식 재시작 성공 (상태:', recognitionRef.current.state, ')');
               } else {
-                console.log('🎤 음성 인식 상태 확인:', recognitionRef.current.state);
+                console.log('🎤 음성 인식이 이미 활성 상태입니다 (상태:', recognitionRef.current.state, ')');
               }
             } catch (error) {
-              console.warn('재시작 실패 (isInitialized 무시):', error);
+              console.warn('분석 후 재시작 실패:', error);
+            }
+          } else {
+            console.log('🎤 음성 인식 재시작 조건 불만족:', {
+              hasRecognition: !!recognitionRef.current,
+              isInitialized,
+              isFocusSessionRunning,
+              isFocusSessionPaused
+            });
+            
+            // isInitialized가 false여도 재시작 시도
+            if (recognitionRef.current && isFocusSessionRunning && !isFocusSessionPaused) {
+              try {
+                console.log('🎤 isInitialized가 false이지만 재시작 시도');
+                // 상태가 undefined인 경우에도 재시작 시도
+                if (!recognitionRef.current.state || recognitionRef.current.state === 'inactive' || recognitionRef.current.state === undefined) {
+                  recognitionRef.current.start();
+                  console.log('🎤 음성 인식 재시작 성공 (isInitialized 무시, 상태:', recognitionRef.current.state, ')');
+                } else {
+                  console.log('🎤 음성 인식 상태 확인:', recognitionRef.current.state);
+                }
+              } catch (error) {
+                console.warn('재시작 실패 (isInitialized 무시):', error);
+              }
             }
           }
-        }
-      }, 100); // 100ms 지연 후 재시작
+        }, 100); // 100ms 지연 후 재시작
     }
   }, [isModelLoaded, koelectraInference, isInitialized, isAnalyzing]);
 
