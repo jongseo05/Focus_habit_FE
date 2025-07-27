@@ -1,70 +1,13 @@
 "use client"
 
-// onnxruntime-web import
-import * as ort from "onnxruntime-web";
 import { useEffect, useRef, useState } from "react"
+import { koelectraPreprocess, testTokenizer } from "@/lib/tokenizer/koelectra"
+import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 
-// ONNX 모델 로드 함수들
-async function loadKOElectraModel() {
-  const response = await fetch("/models/koelectra/koelectra.onnx")
-  const arrayBuffer = await response.arrayBuffer()
-  return new Uint8Array(arrayBuffer)
-}
-
-async function isStudyRelatedONNX(text: string): Promise<boolean> {
+// 공부 관련 텍스트 분석 함수 (키워드 기반)
+async function analyzeStudyRelatedByKeywords(text: string): Promise<boolean> {
   try {
-    const model = await loadKOElectraModel()
-    // 실제 ONNX 추론 로직은 여기에 구현
-    // 현재는 간단한 키워드 기반 판단
-    const studyKeywords = ["공부", "학습", "수업", "문제", "책", "읽기", "쓰기", "계산", "공식", "이론"]
-    return studyKeywords.some(keyword => text.includes(keyword))
-  } catch (error) {
-    console.error("ONNX 모델 로드 실패:", error)
-    return false
-  }
-}
-
-async function loadKOElectraVocab() {
-  const response = await fetch("/models/koelectra/vocab.txt")
-  const text = await response.text()
-  return text.split("\n").filter(line => line.trim())
-}
-
-async function loadKOElectraTokenizer() {
-  const response = await fetch("/models/koelectra/tokenizer.json")
-  return response.json()
-}
-
-async function koelectraPreprocess(text: string): Promise<number[]> {
-  try {
-    const vocab = await loadKOElectraVocab()
-    const tokenizer = await loadKOElectraTokenizer()
-    
-    // 간단한 토크나이징 (실제로는 더 복잡한 로직 필요)
-    const tokens = text.split(" ").map(word => {
-      const index = vocab.indexOf(word)
-      return index >= 0 ? index : 0
-    })
-    
-    return tokens.slice(0, 512) // 최대 길이 제한
-  } catch (error) {
-    console.error("토크나이징 실패:", error)
-    return []
-  }
-}
-
-async function loadStudyModel() {
-  // 실제 모델 로드 로직
-  return null
-}
-
-async function isStudyRelated(text: string): Promise<boolean> {
-  try {
-    // 1. ONNX 모델 기반 판단 시도
-    const onnxResult = await isStudyRelatedONNX(text)
-    if (onnxResult !== null) return onnxResult
-    
-    // 2. 키워드 기반 판단 (폴백)
+    // 키워드 기반 판단 (기본)
     const studyKeywords = [
       "공부", "학습", "수업", "문제", "책", "읽기", "쓰기", "계산", "공식", "이론",
       "시험", "과제", "프로젝트", "리포트", "논문", "연구", "분석", "실험",
@@ -93,6 +36,14 @@ const SpeechRecognition: any =
   typeof window !== "undefined" ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
 
 export default function HybridAudioPipeline() {
+  // KoELECTRA 모델 훅
+  const { 
+    isLoaded: isModelLoaded, 
+    isLoading: isModelLoading, 
+    error: modelError, 
+    inference: koelectraInference 
+  } = useKoELECTRA({ autoLoad: true })
+
   // 오디오 파이프라인 Ref
   const audioContextRef = useRef<AudioContext | null>(null)
   const workletNodeRef = useRef<AudioWorkletNode | null>(null)
@@ -109,6 +60,10 @@ export default function HybridAudioPipeline() {
   const [error, setError] = useState<string | null>(null) // 오류 상태
   const speechBufferRef = useRef<string>("") // 한 발화가 끝날 때까지 텍스트를 모으는 버퍼
   const featureBufferRef = useRef<any[]>([]) // 한 발화 동안의 오디오 특징을 모으는 버퍼
+  
+  // 타임스탬프 관리
+  const speechStartTimeRef = useRef<number | null>(null)
+  const speechEndTimeRef = useRef<number | null>(null)
 
   // useEffect 클로저에서 최신 상태를 참조하기 위한 Ref
   const stateRef = useRef({ isSpeaking, isListening });
@@ -122,42 +77,31 @@ export default function HybridAudioPipeline() {
     setError(null);
     
     try {
-      console.log("[AUDIO] 오디오 파이프라인 초기화 시작");
-      
       // AudioContext 생성 및 실행 상태로 전환
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
       audioContextRef.current = audioContext
       
       // AudioContext가 suspended 상태일 수 있으므로 resume 호출
       if (audioContext.state === 'suspended') {
-        console.log("[AUDIO] AudioContext suspended 상태, resume 호출");
         await audioContext.resume()
       }
 
-      console.log("[AUDIO] AudioContext 상태:", audioContext.state);
-
       // 마이크 권한 요청
-      console.log("[AUDIO] 마이크 권한 요청");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { sampleRate: 16000, channelCount: 1 },
       })
-      console.log("[AUDIO] 마이크 권한 획득 성공");
 
       // AudioWorklet 모듈 로드 시도
       try {
-        console.log("[AUDIO] AudioWorklet 모듈 로드 시도");
         await audioContext.audioWorklet.addModule("/audio/stft-mel-processor.js")
         const workletNode = new AudioWorkletNode(audioContext, "stft-mel-processor")
         workletNodeRef.current = workletNode
-        console.log("[AUDIO] AudioWorklet 모듈 로드 성공");
 
         const source = audioContext.createMediaStreamSource(stream)
         source.connect(workletNode)
 
         // Worker 로드
         try {
-          console.log("[AUDIO] Worker 모드로 시작")
-          
           // 조건부 Worker 생성
           const createWorker = () => {
             if (typeof window !== 'undefined' && typeof Worker !== 'undefined') {
@@ -174,50 +118,34 @@ export default function HybridAudioPipeline() {
           const worker = createWorker();
           if (worker) {
             workerRef.current = worker;
-            console.log("[AUDIO] Worker 생성 성공");
 
             // Worklet에서 PCM 데이터를 Worker로 전달
             workletNode.port.onmessage = (e) => {
-              console.log("[AUDIO] Worklet에서 PCM 수신:", e.data);
               if (e.data && e.data.pcm && workerRef.current) {
-                console.log("[AUDIO] Worker로 PCM 전달");
                 workerRef.current.postMessage({ pcm: e.data.pcm });
               }
             };
 
             // Worker에서 멜 스펙트로그램 + scene_tag 수신
             worker.onmessage = (e) => {
-              console.log("[AUDIO] Worker에서 결과 수신:", e.data);
               const { mel, scene_tag, noise_db } = e.data
               const packet = buildPacket({ mel, scene_tag, noise_db })
 
               if (scene_tag === "speech") {
-                console.log("[AUDIO] scene_tag === 'speech' 감지됨");
                 if (!stateRef.current.isSpeaking) {
                   setIsSpeaking(true)
                   speechBufferRef.current = ""
                   featureBufferRef.current = []
-                  console.log("[AUDIO] --- 🎤 발화 시작 (Worker) ---")
                 }
                 featureBufferRef.current.push(packet)
                 
                 // Speech Recognition 시작
-                console.log("[STT] 음성 감지됨 (Worker 모드), Speech Recognition 시작 시도");
-                console.log("[STT] recognitionRef.current:", recognitionRef.current);
-                console.log("[STT] stateRef.current.isListening:", stateRef.current.isListening);
-                
                 if (recognitionRef.current && !stateRef.current.isListening) {
                   try {
-                    console.log("[STT] recognition.start() 호출 시도")
                     recognitionRef.current.start()
-                    console.log("[STT] recognition.start() 호출 완료")
                   } catch (err) {
                     console.error("[STT] recognition.start() 에러:", err)
                   }
-                } else {
-                  console.log("[STT] Speech Recognition 시작 조건 불충족 (Worker 모드)");
-                  console.log("[STT] - recognitionRef.current 존재:", !!recognitionRef.current);
-                  console.log("[STT] - 이미 듣는 중:", stateRef.current.isListening);
                 }
                 
                 if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current)
@@ -255,22 +183,12 @@ export default function HybridAudioPipeline() {
               }
               
               // Speech Recognition 시작
-              console.log("[STT] 음성 감지됨 (기본 모드), Speech Recognition 시작 시도");
-              console.log("[STT] recognitionRef.current:", recognitionRef.current);
-              console.log("[STT] stateRef.current.isListening:", stateRef.current.isListening);
-              
               if (recognitionRef.current && !stateRef.current.isListening) {
                 try {
-                  console.log("[STT] recognition.start() 호출 시도")
                   recognitionRef.current.start()
-                  console.log("[STT] recognition.start() 호출 완료")
                 } catch (err) {
                   console.error("[STT] recognition.start() 에러:", err)
                 }
-              } else {
-                console.log("[STT] Speech Recognition 시작 조건 불충족 (기본 모드)");
-                console.log("[STT] - recognitionRef.current 존재:", !!recognitionRef.current);
-                console.log("[STT] - 이미 듣는 중:", stateRef.current.isListening);
               }
               
               if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current)
@@ -307,26 +225,15 @@ export default function HybridAudioPipeline() {
               setIsSpeaking(true)
               speechBufferRef.current = ""
               featureBufferRef.current = []
-              console.log("[AUDIO] --- 🎤 발화 시작 (기본 분석기 모드) ---")
             }
             
             // Speech Recognition 시작
-            console.log("[STT] 음성 감지됨 (기본 분석기 모드), Speech Recognition 시작 시도");
-            console.log("[STT] recognitionRef.current:", recognitionRef.current);
-            console.log("[STT] stateRef.current.isListening:", stateRef.current.isListening);
-            
             if (recognitionRef.current && !stateRef.current.isListening) {
               try {
-                console.log("[STT] recognition.start() 호출 시도")
                 recognitionRef.current.start()
-                console.log("[STT] recognition.start() 호출 완료")
               } catch (err) {
                 console.error("[STT] recognition.start() 에러:", err)
               }
-            } else {
-              console.log("[STT] Speech Recognition 시작 조건 불충족 (기본 분석기 모드)");
-              console.log("[STT] - recognitionRef.current 존재:", !!recognitionRef.current);
-              console.log("[STT] - 이미 듣는 중:", stateRef.current.isListening);
             }
             
             if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current)
@@ -342,7 +249,6 @@ export default function HybridAudioPipeline() {
       }
 
       setIsInitialized(true);
-      console.log("[AUDIO] 오디오 파이프라인 초기화 완료");
 
     } catch (error) {
       console.error("[AUDIO] 오디오 파이프라인 설정 오류:", error)
@@ -354,9 +260,6 @@ export default function HybridAudioPipeline() {
 
   // 음성 인식(STT) 설정
   const setupSpeechRecognition = () => {
-    console.log("[STT] Speech Recognition 설정 시작");
-    console.log("[STT] SpeechRecognition 객체:", SpeechRecognition);
-    
     if (!SpeechRecognition) {
       console.error("[STT] 이 브라우저는 Speech Recognition API를 지원하지 않습니다.")
       return
@@ -366,39 +269,46 @@ export default function HybridAudioPipeline() {
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = "ko-KR"
-    
-    console.log("[STT] Recognition 인스턴스 생성:", recognition);
 
     recognition.onresult = (event: any) => {
-      console.log("[STT] onresult 이벤트 발생");
       let finalTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         setLiveTranscript(event.results[i][0].transcript);
-        console.log("[STT] 실시간 인식 텍스트:", event.results[i][0].transcript);
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
         }
       }
       if (finalTranscript) {
+        // 발화 시작 시간 기록 (첫 번째 텍스트가 들어올 때)
+        if (!speechStartTimeRef.current) {
+          speechStartTimeRef.current = Date.now();
+          console.log('🎤 발화 시작:', new Date().toLocaleTimeString());
+        }
         speechBufferRef.current += finalTranscript.trim() + " ";
-        console.log("[STT] 최종 인식 텍스트 누적:", speechBufferRef.current);
       }
     };
 
     recognition.onstart = () => {
       setIsListening(true);
-      console.log("[STT] recognition 시작됨");
     };
     recognition.onend = () => {
       setIsListening(false);
-      console.log("[STT] recognition 종료됨");
       if (stateRef.current.isSpeaking) {
-        console.log("[STT] --- 🎤 발화 종료 ---");
+        // 발화 종료 시간 기록
+        speechEndTimeRef.current = Date.now();
+        console.log('🎤 발화 종료:', new Date().toLocaleTimeString());
         processSpeechSegment();
         setIsSpeaking(false);
       }
     };
     recognition.onerror = (event: any) => {
+      // aborted는 정상적인 종료이므로 별도 처리
+      if (event.error === 'aborted') {
+        console.log('🎤 음성 인식 정상 종료됨');
+        return;
+      }
+      
+      // 다른 오류들은 로그 출력
       console.error("[STT] recognition error:", event.error);
     };
 
@@ -411,18 +321,86 @@ export default function HybridAudioPipeline() {
     const fullText = speechBufferRef.current.trim();
     if (!fullText) return;
 
-    console.log("======[ 최종 분석 ]======");
-    console.log("인식된 문장:", fullText);
+    // 타임스탬프 계산
+    const startTime = speechStartTimeRef.current;
+    const endTime = speechEndTimeRef.current || Date.now();
+    const duration = startTime ? endTime - startTime : 0;
 
-    // 공부 관련 여부 판단 (ML 기반)
-    const isStudy = await isStudyRelated(fullText);
-    console.log("공부 관련 여부:", isStudy);
+    console.log('🎤 발화 분석 시작 ===================');
+    console.log(`📅 타임스탬프: ${new Date(startTime || Date.now()).toLocaleTimeString()} ~ ${new Date(endTime).toLocaleTimeString()}`);
+    console.log(`⏱️  발화 지속시간: ${duration}ms (${(duration / 1000).toFixed(1)}초)`);
+    console.log(`💬 발화 내용: "${fullText}"`);
 
-    // 문맥 분석
-    const context = analyzeTextContext(fullText);
-    const contextualWeight = getContextualWeight(context);
-    console.log("문맥 분석:", context, "가중치:", contextualWeight);
-    console.log("분석 결과 - 학습 관련:", isStudy, "텍스트:", fullText);
+    try {
+      // 1. KoELECTRA 모델 분석 (우선)
+      let isStudyRelated = false;
+      let confidence = 0;
+      
+      if (isModelLoaded && koelectraInference) {
+        try {
+          const koelectraResult = await koelectraInference(fullText);
+          confidence = koelectraResult?.confidence || 0;
+          isStudyRelated = confidence > 0.6; // 신뢰도 60% 이상을 공부 관련으로 판단
+          
+          console.log(`🤖 KoELECTRA 분석 결과:`);
+          console.log(`   - 신뢰도: ${(confidence * 100).toFixed(1)}%`);
+          console.log(`   - 공부 관련: ${isStudyRelated ? '✅ 예' : '❌ 아니오'}`);
+          console.log(`   - 처리 시간: ${koelectraResult?.processingTime.toFixed(1)}ms`);
+        } catch (error) {
+          console.warn('⚠️ KoELECTRA 분석 실패, 키워드 기반 분석으로 대체:', error);
+        }
+      }
+
+      // 2. 키워드 기반 분석 (폴백 또는 보조)
+      if (!isModelLoaded || !koelectraInference) {
+        const keywordResult = await analyzeStudyRelatedByKeywords(fullText);
+        isStudyRelated = keywordResult;
+        console.log(`🔍 키워드 기반 분석 결과:`);
+        console.log(`   - 공부 관련: ${keywordResult ? '✅ 예' : '❌ 아니오'}`);
+      }
+
+      // 3. 문맥 분석
+      const context = analyzeTextContext(fullText);
+      const contextualWeight = getContextualWeight(context);
+      
+      console.log(`📊 문맥 분석 결과:`);
+      console.log(`   - 문맥 유형: ${getContextLabel(context)}`);
+      console.log(`   - 문맥 가중치: ${contextualWeight}`);
+
+      // 4. 최종 판정
+      const finalResult = isStudyRelated ? '공부 관련' : '잡담';
+      const finalConfidence = isModelLoaded ? confidence : 0.5; // 키워드 기반은 50% 신뢰도
+
+      console.log(`🎯 최종 판정:`);
+      console.log(`   - 결과: ${finalResult}`);
+      console.log(`   - 신뢰도: ${(finalConfidence * 100).toFixed(1)}%`);
+      console.log(`   - 문맥 가중치: ${contextualWeight}`);
+      
+      // 5. 상세 정보 출력
+      console.log(`📋 상세 정보:`);
+      console.log(`   - 발화 시작: ${new Date(startTime || Date.now()).toISOString()}`);
+      console.log(`   - 발화 종료: ${new Date(endTime).toISOString()}`);
+      console.log(`   - 텍스트 길이: ${fullText.length}자`);
+      
+      if (isStudyRelated) {
+        console.log(`✅ 이 발화는 공부/학습 관련 내용입니다.`);
+        console.log(`   - 질문, 토론, 수업 내용 등 학습 활동으로 분류됨`);
+      } else {
+        console.log(`❌ 이 발화는 잡담/개인적인 내용입니다.`);
+        console.log(`   - 학습과 무관한 대화로 분류됨`);
+      }
+      
+      console.log('🎤 발화 분석 완료 ===================\n');
+
+    } catch (error) {
+      console.error('❌ 발화 분석 중 오류 발생:', error);
+    }
+
+    // 버퍼 초기화
+    speechBufferRef.current = "";
+    featureBufferRef.current = [];
+    speechStartTimeRef.current = null;
+    speechEndTimeRef.current = null;
   };
 
   // 텍스트 문맥을 분석하는 헬퍼 함수
@@ -513,6 +491,28 @@ export default function HybridAudioPipeline() {
     }
   };
 
+  // 문맥 유형을 한글로 변환하는 헬퍼 함수
+  const getContextLabel = (
+    context:
+      | 'discussion'
+      | 'class'
+      | 'presentation'
+      | 'question'
+      | 'frustration'
+      | 'statement'
+      | 'unknown'
+  ): string => {
+    switch (context) {
+      case 'discussion': return '토론';
+      case 'class': return '수업';
+      case 'presentation': return '발표';
+      case 'question': return '질문';
+      case 'frustration': return '좌절';
+      case 'statement': return '진술';
+      default: return '불명확';
+    }
+  };
+
   useEffect(() => {
     // Speech Recognition 설정만 먼저 수행
     setupSpeechRecognition();
@@ -525,26 +525,66 @@ export default function HybridAudioPipeline() {
     }
   }, [])
 
+  // 컴포넌트 마운트 시 자동으로 오디오 파이프라인 초기화
+  useEffect(() => {
+    if (!isInitialized && !isInitializing) {
+      console.log('🎤 오디오 파이프라인 자동 초기화 시작')
+      initializeAudioPipeline()
+    }
+  }, [isInitialized, isInitializing])
+
+  // 토크나이저 테스트 함수
+  const handleTokenizerTest = async () => {
+    const testTexts = [
+      "안녕하세요",
+      "공부를 하고 있어요",
+      "수학 문제를 풀고 있습니다",
+      "이론을 공부하고 있어요",
+      "토론을 하고 있어요",
+      "선생님이 설명해주세요",
+      "어떻게 풀어야 할까요?",
+      "짜증나요 이 문제가 안 풀려요"
+    ];
+    
+    await testTokenizer(testTexts);
+  };
+
   return (
     <div className="p-4 bg-slate-100 rounded-lg">
       <h3 className="font-bold">하이브리드 오디오 파이프라인</h3>
       
-      {!isInitialized && !isInitializing && (
+      {/* 토크나이저 테스트 버튼 */}
+      <div className="mb-4">
         <button 
-          onClick={initializeAudioPipeline}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4"
+          onClick={handleTokenizerTest}
+          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 mr-2"
         >
-          오디오 파이프라인 시작
+          토크나이저 테스트
         </button>
-      )}
+        <span className="text-sm text-gray-600">새로운 WordPiece 토크나이저를 테스트합니다</span>
+      </div>
       
       {isInitializing && (
-        <p className="text-blue-600 mb-4">오디오 파이프라인 초기화 중...</p>
+        <p className="text-blue-600 mb-4">🎤 오디오 파이프라인 초기화 중...</p>
       )}
       
       {error && (
         <p className="text-red-600 mb-4">오류: {error}</p>
       )}
+      
+      {/* KoELECTRA 모델 상태 */}
+      <div className="mb-4 p-3 bg-gray-50 rounded">
+        <h4 className="font-semibold mb-2">🤖 KoELECTRA 모델 상태</h4>
+        <div className="space-y-1 text-sm">
+          <p><b>모델 로드:</b> 
+            {isModelLoading ? "🔄 로딩 중..." : 
+             isModelLoaded ? "✅ 로드됨" : "❌ 미로드"}
+          </p>
+          {modelError && (
+            <p className="text-red-600"><b>모델 에러:</b> {modelError}</p>
+          )}
+        </div>
+      </div>
       
       {isInitialized && (
         <div className="space-y-2">

@@ -846,13 +846,19 @@ function DashboardContent() {
     }
   }, [mediaStream.isPermissionGranted, showCameraPermissionLayer])
 
-  // 마이크 권한 승인 감지 → 두 권한 모두 있으면 집중모드
+  // 마이크 권한 승인 감지 → 자동으로 오디오 파이프라인 시작
   useEffect(() => {
     if (
       showMicrophonePermissionLayer &&
       microphoneStream.isPermissionGranted
     ) {
       setShowMicrophonePermissionLayer(false)
+      console.log('🎤 마이크 권한 허용됨 - 오디오 파이프라인 자동 시작')
+      
+      // 오디오 파이프라인 자동 시작
+      setShowAudioPipeline(true)
+      
+      // 두 권한 모두 있으면 집중 세션도 시작
       if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted) {
         startFocusSession()
       }

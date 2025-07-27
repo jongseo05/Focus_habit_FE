@@ -12,8 +12,7 @@ self.onmessage = async function(e) {
     return band.reduce((a, b) => a + b, 0) / band.length;
   });
 
-  // mel[0] 값과 mel 전체의 max값 로그
-  console.log('[WORKER] mel[0] 값:', mel[0], 'mel max:', Math.max(...mel));
+
 
   // 2. ML 추론 (샘플: softmax, scene_tag, noise_db 등)
   // 임계값을 mel 전체의 max값으로 판단
