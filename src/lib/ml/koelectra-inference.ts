@@ -1,9 +1,10 @@
 import * as ort from 'onnxruntime-web'
 import { koelectraPreprocess } from '@/lib/tokenizer/koelectra'
 
-// ONNX Runtime 설정
+// ONNX Runtime 설정 - 성능 최적화
+// 멀티스레딩은 crossOriginIsolated 모드에서만 작동하므로 단일 스레드로 설정
 ort.env.wasm.numThreads = 1
-ort.env.wasm.simd = false
+ort.env.wasm.simd = true // SIMD 활성화로 성능 향상
 // WASM 파일 경로 설정
 ort.env.wasm.wasmPaths = '/'
 
@@ -11,6 +12,9 @@ export interface KoELECTRAConfig {
   modelPath: string
   maxLength: number
   batchSize: number
+  enableCache?: boolean
+  cacheSize?: number
+  enableBatching?: boolean
 }
 
 export interface InferenceResult {
@@ -18,6 +22,7 @@ export interface InferenceResult {
   embeddings?: Float32Array
   confidence: number
   processingTime: number
+  cached?: boolean
 }
 
 export interface KoELECTRALoader {
@@ -29,6 +34,58 @@ export interface KoELECTRALoader {
   unloadModel: () => void
   inference: (text: string) => Promise<InferenceResult>
   batchInference: (texts: string[]) => Promise<InferenceResult[]>
+  clearCache: () => void
+  getCacheStats: () => { hits: number; misses: number; size: number }
+}
+
+// 간단한 LRU 캐시 구현
+class LRUCache<K, V> {
+  private capacity: number
+  private cache = new Map<K, V>()
+  private hits = 0
+  private misses = 0
+
+  constructor(capacity: number) {
+    this.capacity = capacity
+  }
+
+  get(key: K): V | undefined {
+    if (this.cache.has(key)) {
+      const value = this.cache.get(key)!
+      this.cache.delete(key)
+      this.cache.set(key, value)
+      this.hits++
+      return value
+    }
+    this.misses++
+    return undefined
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key)
+    } else if (this.cache.size >= this.capacity) {
+      const firstKey = this.cache.keys().next().value
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey)
+      }
+    }
+    this.cache.set(key, value)
+  }
+
+  clear(): void {
+    this.cache.clear()
+    this.hits = 0
+    this.misses = 0
+  }
+
+  getStats() {
+    return {
+      hits: this.hits,
+      misses: this.misses,
+      size: this.cache.size
+    }
+  }
 }
 
 class KoELECTRAInferenceEngine implements KoELECTRALoader {
@@ -37,9 +94,22 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
   private _isLoading = false
   private _error: string | null = null
   private _config: KoELECTRAConfig
+  private _cache: LRUCache<string, InferenceResult> | null = null
+  private _batchQueue: string[] = []
+  private _batchTimeout: NodeJS.Timeout | null = null
+  private _processingBatch = false
 
   constructor(config: KoELECTRAConfig) {
-    this._config = config
+    this._config = {
+      enableCache: true,
+      cacheSize: 100,
+      enableBatching: true,
+      ...config
+    }
+    
+    if (this._config.enableCache) {
+      this._cache = new LRUCache<string, InferenceResult>(this._config.cacheSize || 100)
+    }
   }
 
   get session(): ort.InferenceSession | null {
@@ -69,13 +139,21 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
     try {
       console.log('[KoELECTRA] 모델 로딩 시작...')
       
-      // ONNX 모델 로드
+      // ONNX 모델 로드 - 성능 최적화 옵션 적용
       this._session = await ort.InferenceSession.create(
         this._config.modelPath,
         {
           executionProviders: ['wasm'],
           graphOptimizationLevel: 'all',
-          executionMode: 'sequential'
+          executionMode: 'parallel', // 병렬 실행으로 성능 향상
+          enableCpuMemArena: true, // CPU 메모리 아레나 활성화
+          enableMemPattern: true, // 메모리 패턴 최적화
+          extra: {
+            session: {
+              use_ort_model_bytes_directly: true, // 모델 바이트 직접 사용
+              log_severity_level: 0 // 로그 레벨 최소화
+            }
+          }
         }
       )
 
@@ -100,53 +178,122 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
     }
     this._isLoaded = false
     this._error = null
-    console.log('[KoELECTRA] 모델 언로드 완료')
+    this.clearCache()
+    
+    // 배치 큐 정리
+    if (this._batchTimeout) {
+      clearTimeout(this._batchTimeout)
+      this._batchTimeout = null
+    }
+    this._batchQueue = []
+    this._processingBatch = false
   }
 
   async inference(text: string): Promise<InferenceResult> {
     if (!this._session || !this._isLoaded) {
-      throw new Error('모델이 로드되지 않았습니다. loadModel()을 먼저 호출하세요.')
+      throw new Error('모델이 로드되지 않았습니다.')
+    }
+
+    const startTime = performance.now()
+
+    // 캐시 확인
+    if (this._cache) {
+      const cached = this._cache.get(text)
+      if (cached) {
+        return { ...cached, cached: true, processingTime: 0 }
+      }
+    }
+
+    // 배치 처리 활성화된 경우 큐에 추가
+    if (this._config.enableBatching && this._batchQueue.length < 5) {
+      return this.addToBatch(text)
+    }
+
+    // 즉시 처리
+    const result = await this.processInference(text)
+    
+    // 캐시에 저장
+    if (this._cache) {
+      this._cache.set(text, result)
+    }
+
+    return result
+  }
+
+  private async addToBatch(text: string): Promise<InferenceResult> {
+    return new Promise((resolve, reject) => {
+      this._batchQueue.push(text)
+      
+      // 배치 처리 시작
+      if (!this._processingBatch) {
+        this.processBatch()
+      }
+      
+      // 타임아웃 설정 (최대 100ms 대기)
+      setTimeout(() => {
+        const index = this._batchQueue.indexOf(text)
+        if (index > -1) {
+          this._batchQueue.splice(index, 1)
+          reject(new Error('배치 처리 타임아웃'))
+        }
+      }, 100)
+    })
+  }
+
+  private async processBatch(): Promise<void> {
+    if (this._processingBatch || this._batchQueue.length === 0) {
+      return
+    }
+
+    this._processingBatch = true
+    const texts = [...this._batchQueue]
+    this._batchQueue = []
+
+    try {
+      const results = await this.batchInference(texts)
+      // 결과 처리
+      console.log(`[KoELECTRA] 배치 처리 완료: ${texts.length}개 텍스트`)
+    } catch (error) {
+      console.error('[KoELECTRA] 배치 처리 실패:', error)
+    } finally {
+      this._processingBatch = false
+      
+      // 큐에 남은 항목이 있으면 다시 처리
+      if (this._batchQueue.length > 0) {
+        setTimeout(() => this.processBatch(), 10)
+      }
+    }
+  }
+
+  private async processInference(text: string): Promise<InferenceResult> {
+    if (!this._session) {
+      throw new Error('모델이 로드되지 않았습니다.')
     }
 
     const startTime = performance.now()
 
     try {
-      // 1. 텍스트 전처리 및 토크나이징
-      const inputIds = await koelectraPreprocess(text)
+      // 텍스트 전처리
+      const preprocessed = koelectraPreprocess(text, this._config.maxLength)
       
-      // 2. 입력 텐서 생성
-      const inputTensor = new ort.Tensor('int64', new BigInt64Array(inputIds.map(id => BigInt(id))), [1, inputIds.length])
-      
-      // 3. 어텐션 마스크 생성 (패딩 토큰 제외)
-      const attentionMask = new Array(inputIds.length).fill(1)
-      const padIndex = 0 // [PAD] 토큰 인덱스
-      for (let i = 0; i < inputIds.length; i++) {
-        if (inputIds[i] === padIndex) {
-          attentionMask[i] = 0
-        }
-      }
-      const attentionMaskTensor = new ort.Tensor('int64', new BigInt64Array(attentionMask.map(mask => BigInt(mask))), [1, attentionMask.length])
+      // 입력 텐서 생성
+      const inputTensor = new ort.Tensor('int64', preprocessed.input_ids, [1, preprocessed.input_ids.length])
+      const attentionMask = new ort.Tensor('int64', preprocessed.attention_mask, [1, preprocessed.attention_mask.length])
 
-      // 4. 추론 실행
+      // 추론 실행
       const feeds = {
         input_ids: inputTensor,
-        attention_mask: attentionMaskTensor
+        attention_mask: attentionMask
       }
 
       const results = await this._session.run(feeds)
-      
-      // 5. 결과 처리
-      const logits = results.logits?.data as Float32Array
-      const embeddings = results.hidden_states?.data as Float32Array
-      
+      const logits = results.logits.data as Float32Array
+
       const processingTime = performance.now() - startTime
-      
-      // 6. 신뢰도 계산 (소프트맥스 적용)
       const confidence = this.calculateConfidence(logits)
 
       return {
         logits,
-        embeddings,
         confidence,
         processingTime
       }
@@ -157,51 +304,116 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
   }
 
   async batchInference(texts: string[]): Promise<InferenceResult[]> {
-    const results: InferenceResult[] = []
-    
-    for (const text of texts) {
-      try {
-        const result = await this.inference(text)
-        results.push(result)
-      } catch (error) {
-        console.error(`[KoELECTRA] 배치 추론 실패 (텍스트: "${text}"):`, error)
-        // 에러가 발생한 경우 기본값 반환
-        results.push({
-          logits: new Float32Array(),
-          confidence: 0,
-          processingTime: 0
-        })
-      }
+    if (!this._session || !this._isLoaded) {
+      throw new Error('모델이 로드되지 않았습니다.')
     }
-    
-    return results
+
+    const startTime = performance.now()
+    const results: InferenceResult[] = []
+
+    try {
+      // 배치 크기로 나누어 처리
+      const batchSize = this._config.batchSize || 4
+      for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize)
+        const batchResults = await this.processBatchInference(batch)
+        results.push(...batchResults)
+      }
+
+      const totalTime = performance.now() - startTime
+      console.log(`[KoELECTRA] 배치 추론 완료: ${texts.length}개, ${totalTime.toFixed(2)}ms`)
+
+      return results
+    } catch (error) {
+      console.error('[KoELECTRA] 배치 추론 실패:', error)
+      throw error
+    }
+  }
+
+  private async processBatchInference(texts: string[]): Promise<InferenceResult[]> {
+    if (!this._session) {
+      throw new Error('모델이 로드되지 않았습니다.')
+    }
+
+    const batchSize = texts.length
+    const maxLength = Math.max(...texts.map(text => text.length))
+    const paddedLength = Math.min(maxLength, this._config.maxLength)
+
+    // 배치 입력 준비
+    const inputIds: number[][] = []
+    const attentionMasks: number[][] = []
+
+    for (const text of texts) {
+      const preprocessed = koelectraPreprocess(text, paddedLength)
+      inputIds.push(preprocessed.input_ids)
+      attentionMasks.push(preprocessed.attention_mask)
+    }
+
+    // 배치 텐서 생성
+    const inputTensor = new ort.Tensor('int64', inputIds.flat(), [batchSize, paddedLength])
+    const attentionMask = new ort.Tensor('int64', attentionMasks.flat(), [batchSize, paddedLength])
+
+    // 배치 추론 실행
+    const feeds = {
+      input_ids: inputTensor,
+      attention_mask: attentionMask
+    }
+
+    const results = await this._session.run(feeds)
+    const logits = results.logits.data as Float32Array
+
+    // 결과 분리
+    const logitsPerText = logits.length / batchSize
+    const inferenceResults: InferenceResult[] = []
+
+    for (let i = 0; i < batchSize; i++) {
+      const startIdx = i * logitsPerText
+      const endIdx = startIdx + logitsPerText
+      const textLogits = logits.slice(startIdx, endIdx)
+      
+      inferenceResults.push({
+        logits: textLogits,
+        confidence: this.calculateConfidence(textLogits),
+        processingTime: 0 // 배치 처리에서는 개별 시간 측정 어려움
+      })
+    }
+
+    return inferenceResults
   }
 
   private calculateConfidence(logits: Float32Array): number {
-    if (!logits || logits.length === 0) {
-      return 0
-    }
-
-    // 소프트맥스 적용
-    const maxLogit = Math.max(...Array.from(logits))
-    const expLogits = Array.from(logits).map(logit => Math.exp(logit - maxLogit))
+    // Softmax 계산
+    const maxLogit = Math.max(...logits)
+    const expLogits = logits.map(logit => Math.exp(logit - maxLogit))
     const sumExpLogits = expLogits.reduce((sum, exp) => sum + exp, 0)
-    const softmax = expLogits.map(exp => exp / sumExpLogits)
+    const probabilities = expLogits.map(exp => exp / sumExpLogits)
     
     // 최대 확률을 신뢰도로 사용
-    return Math.max(...softmax)
+    return Math.max(...probabilities)
   }
 
-  // 모델 정보 조회
   getModelInfo() {
     if (!this._session) {
-      return null
+      return { inputNames: [], outputNames: [] }
     }
-
+    
     return {
       inputNames: this._session.inputNames,
       outputNames: this._session.outputNames
     }
+  }
+
+  clearCache(): void {
+    if (this._cache) {
+      this._cache.clear()
+    }
+  }
+
+  getCacheStats(): { hits: number; misses: number; size: number } {
+    if (!this._cache) {
+      return { hits: 0, misses: 0, size: 0 }
+    }
+    return this._cache.getStats()
   }
 }
 

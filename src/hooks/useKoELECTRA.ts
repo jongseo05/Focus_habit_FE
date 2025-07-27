@@ -13,6 +13,7 @@ type KoELECTRAInferenceEngine = ReturnType<typeof createKoELECTRA>
 interface UseKoELECTRAOptions {
   autoLoad?: boolean
   config?: Partial<KoELECTRAConfig>
+  enablePerformanceMonitoring?: boolean
 }
 
 interface UseKoELECTRAReturn {
@@ -32,22 +33,36 @@ interface UseKoELECTRAReturn {
   // 성능 정보
   lastInferenceTime: number | null
   totalInferences: number
+  averageInferenceTime: number
+  
+  // 캐시 관리
+  clearCache: () => void
+  cacheStats: { hits: number; misses: number; size: number }
   
   // 모델 정보
   modelInfo: {
     inputNames: readonly string[]
     outputNames: readonly string[]
   } | null
+  
+  // 성능 모니터링
+  performanceStats: {
+    totalProcessingTime: number
+    cacheHitRate: number
+    throughput: number // inferences per second
+  }
 }
 
 export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRAReturn {
-  const { autoLoad = false, config = {} } = options
+  const { autoLoad = false, config = {}, enablePerformanceMonitoring = true } = options
   
   const [isLoaded, setIsLoaded] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastInferenceTime, setLastInferenceTime] = useState<number | null>(null)
   const [totalInferences, setTotalInferences] = useState(0)
+  const [averageInferenceTime, setAverageInferenceTime] = useState(0)
+  const [cacheStats, setCacheStats] = useState({ hits: 0, misses: 0, size: 0 })
   const [modelInfo, setModelInfo] = useState<{
     inputNames: readonly string[]
     outputNames: readonly string[]
@@ -55,6 +70,11 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
   
   const modelRef = useRef<KoELECTRAInferenceEngine | null>(null)
   const isInitializedRef = useRef(false)
+  const performanceRef = useRef({
+    totalProcessingTime: 0,
+    startTime: Date.now(),
+    inferenceTimes: [] as number[]
+  })
 
   // 모델 초기화
   const initializeModel = useCallback(() => {
@@ -64,14 +84,17 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       const defaultConfig: KoELECTRAConfig = {
         modelPath: '/models/koelectra/koelectra.onnx',
         maxLength: 512,
-        batchSize: 1,
+        batchSize: 4, // 배치 크기 증가
+        enableCache: true,
+        cacheSize: 200, // 캐시 크기 증가
+        enableBatching: true,
         ...config
       }
       
       modelRef.current = createKoELECTRA(defaultConfig)
       isInitializedRef.current = true
       
-      console.log('[useKoELECTRA] 모델 초기화 완료')
+      console.log('[useKoELECTRA] 모델 초기화 완료 (최적화 설정 적용)')
     } catch (err) {
       console.error('[useKoELECTRA] 모델 초기화 실패:', err)
       setError(err instanceof Error ? err.message : '모델 초기화 실패')
@@ -100,6 +123,12 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       await modelRef.current.loadModel()
       setIsLoaded(true)
       setModelInfo(modelRef.current.getModelInfo())
+      
+      // 성능 모니터링 시작
+      if (enablePerformanceMonitoring) {
+        performanceRef.current.startTime = Date.now()
+      }
+      
       console.log('[useKoELECTRA] 모델 로드 완료')
     } catch (err) {
       console.error('[useKoELECTRA] 모델 로드 실패:', err)
@@ -107,34 +136,56 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
     } finally {
       setIsLoading(false)
     }
-  }, [initializeModel])
+  }, [initializeModel, enablePerformanceMonitoring])
 
   // 모델 언로드
   const unloadModel = useCallback(() => {
     if (modelRef.current) {
       modelRef.current.unloadModel()
+      setIsLoaded(false)
+      setModelInfo(null)
+      setError(null)
+      
+      // 성능 통계 초기화
+      performanceRef.current = {
+        totalProcessingTime: 0,
+        startTime: Date.now(),
+        inferenceTimes: []
+      }
+      
+      console.log('[useKoELECTRA] 모델 언로드 완료')
     }
-    setIsLoaded(false)
-    setModelInfo(null)
-    setError(null)
-    console.log('[useKoELECTRA] 모델 언로드 완료')
   }, [])
 
-  // 단일 추론
+  // 추론 실행
   const inference = useCallback(async (text: string): Promise<InferenceResult | null> => {
     if (!modelRef.current || !modelRef.current.isLoaded) {
-      setError('모델이 로드되지 않았습니다.')
+      console.warn('[useKoELECTRA] 모델이 로드되지 않았습니다.')
       return null
     }
     
+    const startTime = performance.now()
+    
     try {
-      const startTime = performance.now()
       const result = await modelRef.current.inference(text)
-      const endTime = performance.now()
+      const processingTime = performance.now() - startTime
       
-      setLastInferenceTime(endTime - startTime)
+      // 성능 통계 업데이트
+      setLastInferenceTime(processingTime)
       setTotalInferences(prev => prev + 1)
-      setError(null)
+      
+      if (enablePerformanceMonitoring) {
+        performanceRef.current.totalProcessingTime += processingTime
+        performanceRef.current.inferenceTimes.push(processingTime)
+        
+        // 최근 100개 추론의 평균 시간 계산
+        const recentTimes = performanceRef.current.inferenceTimes.slice(-100)
+        const avgTime = recentTimes.reduce((sum, time) => sum + time, 0) / recentTimes.length
+        setAverageInferenceTime(avgTime)
+      }
+      
+      // 캐시 통계 업데이트
+      setCacheStats(modelRef.current.getCacheStats())
       
       return result
     } catch (err) {
@@ -142,23 +193,37 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       setError(err instanceof Error ? err.message : '추론 실패')
       return null
     }
-  }, [])
+  }, [enablePerformanceMonitoring])
 
   // 배치 추론
   const batchInference = useCallback(async (texts: string[]): Promise<InferenceResult[]> => {
     if (!modelRef.current || !modelRef.current.isLoaded) {
-      setError('모델이 로드되지 않았습니다.')
+      console.warn('[useKoELECTRA] 모델이 로드되지 않았습니다.')
       return []
     }
     
+    const startTime = performance.now()
+    
     try {
-      const startTime = performance.now()
       const results = await modelRef.current.batchInference(texts)
-      const endTime = performance.now()
+      const processingTime = performance.now() - startTime
       
-      setLastInferenceTime(endTime - startTime)
+      // 성능 통계 업데이트
+      setLastInferenceTime(processingTime)
       setTotalInferences(prev => prev + texts.length)
-      setError(null)
+      
+      if (enablePerformanceMonitoring) {
+        performanceRef.current.totalProcessingTime += processingTime
+        performanceRef.current.inferenceTimes.push(processingTime)
+        
+        // 최근 100개 추론의 평균 시간 계산
+        const recentTimes = performanceRef.current.inferenceTimes.slice(-100)
+        const avgTime = recentTimes.reduce((sum, time) => sum + time, 0) / recentTimes.length
+        setAverageInferenceTime(avgTime)
+      }
+      
+      // 캐시 통계 업데이트
+      setCacheStats(modelRef.current.getCacheStats())
       
       return results
     } catch (err) {
@@ -166,35 +231,50 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       setError(err instanceof Error ? err.message : '배치 추론 실패')
       return []
     }
+  }, [enablePerformanceMonitoring])
+
+  // 캐시 클리어
+  const clearCache = useCallback(() => {
+    if (modelRef.current) {
+      modelRef.current.clearCache()
+      setCacheStats({ hits: 0, misses: 0, size: 0 })
+      console.log('[useKoELECTRA] 캐시 클리어 완료')
+    }
   }, [])
+
+  // 성능 통계 계산
+  const performanceStats = {
+    totalProcessingTime: performanceRef.current.totalProcessingTime,
+    cacheHitRate: cacheStats.hits + cacheStats.misses > 0 
+      ? (cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100 
+      : 0,
+    throughput: performanceRef.current.totalProcessingTime > 0 
+      ? (totalInferences / (performanceRef.current.totalProcessingTime / 1000))
+      : 0
+  }
 
   // 자동 로드
   useEffect(() => {
-    if (autoLoad && !isInitializedRef.current) {
-      initializeModel()
+    if (autoLoad && !isLoaded && !isLoading) {
       loadModel()
     }
-  }, [autoLoad, initializeModel, loadModel])
+  }, [autoLoad, isLoaded, isLoading, loadModel])
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
-    return () => {
+    const handleBeforeUnload = () => {
       if (modelRef.current) {
-        modelRef.current.unloadModel()
+        cleanupKoELECTRA()
       }
     }
-  }, [])
 
-  // 전역 정리 함수 등록
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      cleanupKoELECTRA()
-    }
-    
     window.addEventListener('beforeunload', handleBeforeUnload)
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      if (modelRef.current) {
+        cleanupKoELECTRA()
+      }
     }
   }, [])
 
@@ -208,7 +288,11 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
     batchInference,
     lastInferenceTime,
     totalInferences,
-    modelInfo
+    averageInferenceTime,
+    clearCache,
+    cacheStats,
+    modelInfo,
+    performanceStats
   }
 }
 
