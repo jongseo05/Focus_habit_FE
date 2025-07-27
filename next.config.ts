@@ -33,6 +33,57 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // ONNX Runtime WASM 파일들을 위한 CORS 설정
+      {
+        source: '/_next/static/chunks/pages/:path*',
+        headers: [
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+        ],
+      },
+      // WASM 파일들을 위한 MIME 타입 설정
+      {
+        source: '/ort-wasm-simd-threaded.wasm',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/wasm',
+          },
+        ],
+      },
+      {
+        source: '/ort-wasm-simd-threaded.jsep.wasm',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/wasm',
+          },
+        ],
+      },
+      {
+        source: '/ort-wasm-simd-threaded.mjs',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/javascript',
+          },
+        ],
+      },
+      {
+        source: '/ort-wasm-simd-threaded.jsep.mjs',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/javascript',
+          },
+        ],
+      },
     ];
   },
 };

@@ -433,7 +433,7 @@ export class FrameStreamer {
       }
     }, interval)
     
-    console.log('[FRAME_STREAMING] Frame streaming started at', this.frameRate, 'FPS with adaptive optimization')
+
   }
   
   // 메모리 관리를 위한 제한된 배열 추가 메서드
@@ -468,7 +468,7 @@ export class FrameStreamer {
     const currentFrameRate = this.frameRate
     
     if (Math.abs(recommendedFrameRate - currentFrameRate) >= 2) {
-      console.log('[FRAME_RATE] 동적 프레임레이트 조정:', currentFrameRate, 'fps ->', recommendedFrameRate, 'fps')
+      
       this.setFrameRate(recommendedFrameRate)
     }
     
@@ -544,7 +544,7 @@ export class FrameStreamer {
     // Canvas 풀 정리 (전역 정리는 조심스럽게)
     // CanvasPool.getInstance().cleanup() // 다른 인스턴스에서 사용 중일 수 있음
     
-    console.log('[FRAME_STREAMING] Frame streaming stopped and all memory cleaned')
+
   }
   
   // 프레임 레이트 변경 (최적화 버전)
@@ -609,36 +609,6 @@ export class FrameStreamer {
   // 평균 통계 로그 출력 (고급 최적화 버전)
   private logAverageStats(): void {
     if (this.frameSizes.length === 0) return
-    
-    const totalSamples = this.frameSizes.length
-    const avgSize = this.frameSizes.reduce((a, b) => a + b, 0) / totalSamples
-    const avgNonZeroPixels = this.nonZeroPixelCounts.reduce((a, b) => a + b, 0) / totalSamples
-    const networkPerf = this.getNetworkPerformance()
-    const compressionPerf = this.getCompressionPerformance()
-    const batchInfo = this.getBatchInfo()
-    
-    console.log('[FRAME_STREAMING] 고급 통계 - 10초')
-    console.log('  기본 정보:')
-    console.log('    현재 프레임레이트:', this.frameRate, 'FPS')
-    console.log('    권장 프레임레이트:', networkPerf.recommendedFPS, 'FPS')
-    console.log('    캡처된 프레임:', totalSamples, '개')
-    console.log('    평균 이미지 크기:', avgSize.toFixed(2), 'KB')
-    console.log('    평균 비-제로 픽셀:', Math.round(avgNonZeroPixels), '개')
-    
-    console.log('  네트워크 성능:')
-    console.log('    평균 지연시간:', networkPerf.latency.toFixed(1), 'ms')
-    console.log('    처리량:', networkPerf.throughput.toFixed(2), 'bytes/ms')
-    console.log('    연결 품질:', networkPerf.connectionQuality.toFixed(1), '/100')
-    console.log('    권장 재연결 간격:', networkPerf.reconnectInterval, 'ms')
-    
-    console.log('  압축 최적화:')
-    console.log('    현재 압축 품질:', (compressionPerf.currentQuality * 100).toFixed(1), '%')
-    console.log('    평균 압축 품질:', (compressionPerf.avgQuality * 100).toFixed(1), '%')
-    console.log('    평균 압축 크기:', compressionPerf.avgSize.toFixed(2), 'KB')
-    
-    console.log('  배치 전송:')
-    console.log('    현재 배치 크기:', batchInfo.currentBatchSize, '개')
-    console.log('    대기 중인 프레임:', batchInfo.pendingFrames, '개')
     
     // 통계 데이터는 제한된 크기로 유지 (메모리 누수 방지)
     // 배열을 완전히 초기화하지 않고 크기만 제한

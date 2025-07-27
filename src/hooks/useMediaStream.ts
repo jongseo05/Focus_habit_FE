@@ -46,7 +46,6 @@ export const useMediaStream = () => {
       }))
     },
     onRecoveryStart: (errorType) => {
-      console.log('[MEDIA_STREAM] 미디어 스트림 복구 시작:', errorType)
       setState(prev => ({
         ...prev,
         isRecovering: true,
@@ -54,7 +53,6 @@ export const useMediaStream = () => {
       }))
     },
     onRecoverySuccess: (errorType) => {
-      console.log('[MEDIA_STREAM] 미디어 스트림 복구 성공:', errorType)
       setState(prev => ({
         ...prev,
         isRecovering: false,
@@ -62,7 +60,6 @@ export const useMediaStream = () => {
       }))
     },
     onRecoveryFailed: (error) => {
-      console.log('[MEDIA_STREAM] 미디어 스트림 복구 실패:', error)
       setState(prev => ({
         ...prev,
         isRecovering: false,
@@ -418,7 +415,6 @@ export const useMediaStream = () => {
             error: null,
           }))
           
-          console.log('[CAMERA] 카메라 스트림 복구 성공:', constraint)
           return true
         } catch (retryError: any) {
           console.warn('[CAMERA] 카메라 복구 재시도:', constraint, retryError.message)

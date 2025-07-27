@@ -69,6 +69,8 @@ const MicrophonePermissionLayer = ({
         //   // 추론 결과 수신 및 후처리
         //   // e.data: { result, ... }
         // }
+        
+        console.log('🎤 마이크 권한 허용 및 오디오 파이프라인 자동 시작')
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('마이크 스트림/AudioWorklet 연결 실패:', err)
