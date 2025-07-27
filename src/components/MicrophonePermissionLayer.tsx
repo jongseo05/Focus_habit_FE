@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Mic, AlertTriangle, RefreshCw, Settings, X, CheckCircle, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -33,8 +33,47 @@ const MicrophonePermissionLayer = ({
 }: MicrophonePermissionLayerProps) => {
   const [showHelp, setShowHelp] = useState(false)
 
+  // AudioContext, AudioWorkletNode 관리용 ref
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
+
+  // 16kHz mono 스트림 획득 및 AudioWorkletNode 연결
   const handlePermissionRequest = async () => {
     const success = await onRequestPermission()
+    if (success && navigator.mediaDevices?.getUserMedia) {
+      try {
+        // 16kHz mono 스트림 요청
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1 }
+        })
+        // AudioContext 생성
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
+        audioContextRef.current = audioContext
+        // AudioWorkletProcessor 등록
+        await audioContext.audioWorklet.addModule('/audio/stft-mel-processor.js')
+        const workletNode = new AudioWorkletNode(audioContext, 'stft-mel-processor')
+        workletNodeRef.current = workletNode
+        // 마이크 스트림을 AudioContext에 연결
+        const source = audioContext.createMediaStreamSource(stream)
+        source.connect(workletNode)
+        // workletNode.connect(audioContext.destination) // 필요시 모니터링용
+
+        // Web Worker 예시 (ML 추론용, 실제 worker 구현 필요)
+        // const worker = new Worker('/audio/ml-inference-worker.js')
+        // workletNode.port.onmessage = (e) => {
+        //   if (e.data && e.data.mel) {
+        //     worker.postMessage({ mel: e.data.mel })
+        //   }
+        // }
+        // worker.onmessage = (e) => {
+        //   // 추론 결과 수신 및 후처리
+        //   // e.data: { result, ... }
+        // }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('마이크 스트림/AudioWorklet 연결 실패:', err)
+      }
+    }
     // 자동으로 닫지 않음 - Dashboard의 useEffect에서 상태 변화를 감지하여 처리
   }
 
