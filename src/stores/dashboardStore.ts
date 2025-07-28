@@ -39,6 +39,7 @@ interface DashboardState extends FocusSessionState, DashboardUIState {
   startSession: () => void
   pauseSession: () => void
   stopSession: () => void
+  updateElapsed: () => void
   updateFocusScore: (score: number) => void
   
   // UI 액션
@@ -89,7 +90,8 @@ export const useDashboardStore = create<DashboardState>()(
         set({
           isRunning: true,
           isPaused: false,
-          startTime: Date.now()
+          startTime: Date.now(),
+          elapsed: 0
         })
       },
       
@@ -105,6 +107,16 @@ export const useDashboardStore = create<DashboardState>()(
           isPaused: false,
           elapsed: 0,
           startTime: null
+        })
+      },
+      
+      updateElapsed: () => {
+        set((state) => {
+          if (state.isRunning && !state.isPaused && state.startTime) {
+            const elapsed = Math.floor((Date.now() - state.startTime) / 1000)
+            return { elapsed }
+          }
+          return state
         })
       },
       

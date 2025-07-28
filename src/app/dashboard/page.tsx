@@ -21,6 +21,9 @@ import {
   X,
   Video,
   VideoOff,
+  Activity,
+  Target,
+  AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,31 +40,25 @@ import WebcamPreview from "@/components/WebcamPreview"
 import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
 import { FocusSessionStatus } from "@/types/focusSession"
 import ProtectedRoute from "@/components/ProtectedRoute"
+import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
+import { useMicrophoneStream } from "@/hooks/useMediaStream"
+import HybridAudioPipeline from "@/components/HybridAudioPipeline"
+import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 
-// Mock data and state management
+// 실제 Zustand 스토어 사용
+import { useDashboardStore } from "@/stores/dashboardStore"
+
 const useFocusSession = () => {
-  const [isRunning, setIsRunning] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const [focusScore, setFocusScore] = useState(85)
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isRunning && !isPaused) {
-      interval = setInterval(() => {
-        setElapsed((prev) => prev + 1)
-        // Simulate focus score fluctuation
-        setFocusScore((prev) => Math.max(60, Math.min(100, prev + (Math.random() - 0.5) * 10)))
-      }, 1000)
-    }
-    return () => clearInterval(interval)
-  }, [isRunning, isPaused])
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-  }
+  const { 
+    isRunning, 
+    isPaused, 
+    elapsed, 
+    focusScore, 
+    startSession, 
+    pauseSession, 
+    stopSession, 
+    formatTime 
+  } = useDashboardStore()
 
   return {
     isRunning,
@@ -69,13 +66,9 @@ const useFocusSession = () => {
     elapsed,
     focusScore,
     formatTime,
-    startSession: () => setIsRunning(true),
-    pauseSession: () => setIsPaused(!isPaused),
-    stopSession: () => {
-      setIsRunning(false)
-      setIsPaused(false)
-      setElapsed(0)
-    },
+    startSession,
+    pauseSession,
+    stopSession,
   }
 }
 
@@ -701,20 +694,204 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const session = useFocusSession()
+  const { updateElapsed } = useDashboardStore()
+  
+  // KoELECTRA 모델 초기화
+  const { isLoaded: isModelLoaded, isLoading: isModelLoading, error: modelError, inference, loadModel } = useKoELECTRA({
+    autoLoad: false, // 자동 로드 비활성화하고 수동으로 제어
+    config: {
+      modelPath: '/models/koelectra/koelectra.onnx',
+      maxLength: 512,
+      batchSize: 1,
+      enableCache: true,
+      cacheSize: 100,
+      enableBatching: false
+    }
+  })
+  
+  // 컴포넌트 마운트 시 즉시 모델 로드
+  useEffect(() => {
+    console.log('[대시보드] 모델 로딩 상태 확인:', {
+      isModelLoaded,
+      isModelLoading,
+      modelError,
+      hasLoadModel: !!loadModel
+    });
+    
+    if (!isModelLoaded && !isModelLoading && !modelError && loadModel) {
+      console.log('[대시보드] KoELECTRA 모델 즉시 로드 시작');
+      loadModel().catch(err => {
+        console.error('[대시보드] KoELECTRA 모델 로드 실패:', err);
+      });
+    }
+  }, [isModelLoaded, isModelLoading, modelError, loadModel]);
+  
+  // 모델 로딩 실패 시 재시도 (5초 후)
+  useEffect(() => {
+    if (modelError && loadModel) {
+      console.log('[대시보드] 모델 로딩 실패 감지, 5초 후 재시도 예정');
+      const retryTimeout = setTimeout(() => {
+        console.log('[대시보드] 모델 로딩 재시도');
+        loadModel().catch(err => {
+          console.error('[대시보드] KoELECTRA 모델 재시도 실패:', err);
+        });
+      }, 5000);
+      
+      return () => clearTimeout(retryTimeout);
+    }
+  }, [modelError, loadModel]);
+  
+  // 모델 로딩 상태 모니터링 (10초마다)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('[대시보드] 모델 상태 모니터링:', {
+        isModelLoaded,
+        isModelLoading,
+        modelError,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [isModelLoaded, isModelLoading, modelError]);
+  
+  // 실시간 집중 상태 분석 상태
+  const [currentFocusStatus, setCurrentFocusStatus] = useState<'focused' | 'distracted' | 'unknown'>('unknown')
+  const [focusConfidence, setFocusConfidence] = useState(0)
+  const [lastAnalysisTime, setLastAnalysisTime] = useState<Date | null>(null)
+  const [analysisHistory, setAnalysisHistory] = useState<Array<{
+    timestamp: Date
+    status: 'focused' | 'distracted'
+    confidence: number
+    text: string
+  }>>([])
+  
+  // elapsed 시간 업데이트
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (session.isRunning && !session.isPaused) {
+      interval = setInterval(() => {
+        updateElapsed()
+      }, 1000)
+    }
+    return () => clearInterval(interval)
+  }, [session.isRunning, session.isPaused, updateElapsed])
+  
+  // 실시간 집중 상태 분석 (30초마다)
+  useEffect(() => {
+    console.log('[대시보드] 집중 상태 분석 조건 확인:', {
+      isRunning: session.isRunning,
+      isPaused: session.isPaused,
+      isModelLoaded,
+      hasInference: !!inference
+    });
+    
+    if (!session.isRunning || session.isPaused || !isModelLoaded || !inference) {
+      return
+    }
+    
+    const analyzeFocusStatus = async () => {
+      try {
+        // 실제 사용자 활동을 시뮬레이션하는 텍스트들
+        const focusTexts = [
+          "공부를 열심히 하고 있습니다.",
+          "코딩을 하고 있습니다.",
+          "문서를 작성하고 있습니다.",
+          "학습에 집중하고 있습니다.",
+          "과제를 해결하고 있습니다."
+        ]
+        
+        const distractedTexts = [
+          "게임을 하고 있습니다.",
+          "유튜브를 보고 있습니다.",
+          "SNS를 확인하고 있습니다.",
+          "음악을 듣고 있습니다.",
+          "휴대폰을 만지고 있습니다."
+        ]
+        
+        // 랜덤하게 텍스트 선택 (실제로는 사용자 활동 데이터를 사용)
+        const isFocused = Math.random() > 0.3 // 70% 확률로 집중 상태
+        const texts = isFocused ? focusTexts : distractedTexts
+        const randomText = texts[Math.floor(Math.random() * texts.length)]
+        
+        console.log('[대시보드] 집중 상태 분석 시작:', randomText)
+        
+        const result = await inference(randomText)
+        
+        if (result) {
+          const { confidence, logits } = result
+          const prediction = logits[1] > logits[0] ? 1 : 0
+          const status: 'focused' | 'distracted' = prediction === 1 ? 'focused' : 'distracted'
+          
+          setCurrentFocusStatus(status)
+          setFocusConfidence(confidence)
+          setLastAnalysisTime(new Date())
+          
+          // 분석 히스토리에 추가
+          setAnalysisHistory(prev => {
+            const newHistory = [...prev, {
+              timestamp: new Date(),
+              status,
+              confidence,
+              text: randomText
+            }]
+            // 최근 10개만 유지
+            return newHistory.slice(-10)
+          })
+          
+          console.log('[대시보드] 집중 상태 분석 완료:', {
+            status,
+            confidence,
+            text: randomText
+          })
+        }
+      } catch (error) {
+        console.error('[대시보드] 집중 상태 분석 실패:', error)
+        setCurrentFocusStatus('unknown')
+        setFocusConfidence(0)
+      }
+    }
+    
+    // 첫 번째 분석은 즉시 실행
+    analyzeFocusStatus()
+    
+    // 이후 30초마다 분석
+    const interval = setInterval(analyzeFocusStatus, 30000)
+    
+    return () => clearInterval(interval)
+  }, [session.isRunning, session.isPaused, isModelLoaded, inference])
+  
   const mediaStream = useFocusSessionWithGesture(session.isRunning, {
     frameRate: 10, // 1초에 10번 (10fps)
     enableGestureRecognition: true,
     gestureJpegQuality: 0.95
   })
-  
+  const microphoneStream = useMicrophoneStream()
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
-  const [showPermissionLayer, setShowPermissionLayer] = useState(false)
+  const [showCameraPermissionLayer, setShowCameraPermissionLayer] = useState(false)
+  const [showMicrophonePermissionLayer, setShowMicrophonePermissionLayer] = useState(false)
   const [showErrorDisplay, setShowErrorDisplay] = useState(false)
-  const [notifications] = useState([
+  const [showAudioPipeline, setShowAudioPipeline] = useState(false)
+  const [notifications, setNotifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
   ])
+  
+  // KoELECTRA 모델 로딩 알림 추가
+  useEffect(() => {
+    if (isModelLoaded) {
+      setNotifications(prev => [
+        { id: Date.now(), message: "KoELECTRA AI 모델이 성공적으로 로드되었습니다", type: "success" },
+        ...prev.slice(0, 4) // 최대 5개 알림 유지
+      ])
+    } else if (modelError) {
+      setNotifications(prev => [
+        { id: Date.now(), message: `AI 모델 로딩 실패: ${modelError}`, type: "error" },
+        ...prev.slice(0, 4)
+      ])
+    }
+  }, [isModelLoaded, modelError])
 
   // 에러 상태 모니터링
   useEffect(() => {
@@ -729,35 +906,45 @@ function DashboardContent() {
     }
   }, [mediaStream.lastSessionError, mediaStream.sessionStatus])
 
-  const handleStartSession = async () => {
-    try {
-      // 세션 먼저 시작 (카메라와 독립적으로)
-      session.startSession()
-      
-      // 권한 상태 확인
-      if (!mediaStream.isPermissionGranted) {
-        setShowPermissionLayer(true)
-        return
-      }
+  // 집중 시작 버튼 클릭 시 권한 순차 요청
+  const handleStartSession = () => {
+    if (!mediaStream.isPermissionGranted) {
+      setShowCameraPermissionLayer(true)
+      return
+    }
+    if (!microphoneStream.isPermissionGranted) {
+      setShowMicrophonePermissionLayer(true)
+      return
+    }
+    // 둘 다 있으면 바로 시작
+    startFocusSession()
+  }
 
-      // 이미 권한이 있다면 스트림 시작 시도
-      const success = await mediaStream.startStream()
-      if (success) {
-        setShowWebcam(true)
-      } else {
-        // 카메라 실패해도 세션은 계속 진행
-        setShowPermissionLayer(true)
-      }
-    } catch (error) {
-      // 에러가 발생해도 세션은 이미 시작된 상태
-      setShowPermissionLayer(true)
+  // 집중모드 시작 함수
+  const startFocusSession = async () => {
+    if (!session.isRunning) {
+      session.startSession()
+      await mediaStream.startStream()
+      await microphoneStream.startStream()
+      setShowWebcam(true)
+      setShowAudioPipeline(true) // 오디오 파이프라인 활성화
     }
   }
 
   const handleStopSession = () => {
+    console.log('🛑 집중 세션 완전 종료')
     session.stopSession()
     mediaStream.stopStream()
+    microphoneStream.stopStream()
     setShowWebcam(false)
+    setShowAudioPipeline(false) // 오디오 파이프라인 비활성화
+  }
+
+  const handlePauseSession = () => {
+    console.log('⏸️ 집중 세션 일시정지/재시작')
+    session.pauseSession()
+    // 일시정지 시에는 스트림은 유지하되, 오디오 파이프라인과 제스처 인식만 일시정지
+    // (HybridAudioPipeline과 useFocusSessionWithGesture에서 자동으로 처리됨)
   }
 
   const handleWebcamToggle = async () => {
@@ -774,11 +961,11 @@ function DashboardContent() {
             setShowWebcam(true)
           } else {
             // 실패 시 권한 레이어 표시
-            setShowPermissionLayer(true)
+            setShowMicrophonePermissionLayer(true)
           }
         }
       } catch (error) {
-        setShowPermissionLayer(true)
+        setShowMicrophonePermissionLayer(true)
       }
     }
   }
@@ -789,7 +976,7 @@ function DashboardContent() {
     
     if (success) {
       setShowWebcam(true)
-      setShowPermissionLayer(false)
+      setShowMicrophonePermissionLayer(false)
       
       // 세션이 아직 시작되지 않았다면 시작
       if (!session.isRunning) {
@@ -797,12 +984,12 @@ function DashboardContent() {
       }
     } else {
       // 스트림 시작 실패해도 권한 레이어는 닫고 세션은 유지
-      setShowPermissionLayer(false)
+      setShowMicrophonePermissionLayer(false)
     }
   }
 
-  const handlePermissionLayerClose = () => {
-    setShowPermissionLayer(false)
+  const handleCameraPermissionLayerClose = () => {
+    setShowMicrophonePermissionLayer(false)
     
     // 권한이 확실히 부여되지 않았고, 스트림도 없는 경우에만 웹캠을 끔
     // 스트림이 있으면 권한이 부여된 것으로 간주
@@ -813,19 +1000,50 @@ function DashboardContent() {
     }
   }
 
-  // 미디어 스트림 상태가 변경될 때마다 권한 레이어 표시 여부 결정
-  useEffect(() => {
-    if (mediaStream.isPermissionGranted && showPermissionLayer) {
-      handlePermissionGranted()
+  const handleMicrophonePermissionLayerClose = () => {
+    setShowMicrophonePermissionLayer(false)
+    
+    // 권한이 확실히 부여되지 않았고, 스트림도 없는 경우에만 마이크를 끔
+    // 스트림이 있으면 권한이 부여된 것으로 간주
+    if (!microphoneStream.isPermissionGranted && !microphoneStream.stream) {
+      microphoneStream.stopStream()
     }
-  }, [mediaStream.isPermissionGranted, showPermissionLayer])
+  }
 
-  // 에러 발생 시 권한 레이어 표시 (단, 권한 관련 에러만)
+  // 카메라 권한 승인 감지 → 마이크 권한 없으면 마이크 Layer, 있으면 바로 집중모드
   useEffect(() => {
-    if (mediaStream.error && session.isRunning && mediaStream.isPermissionDenied) {
-      setShowPermissionLayer(true)
+    // ...existing code...
+    if (
+      showCameraPermissionLayer &&
+      mediaStream.isPermissionGranted
+    ) {
+      setShowCameraPermissionLayer(false)
+      if (!microphoneStream.isPermissionGranted) {
+        setShowMicrophonePermissionLayer(true)
+      } else {
+        startFocusSession()
+      }
     }
-  }, [mediaStream.error, session.isRunning, mediaStream.isPermissionDenied])
+  }, [mediaStream.isPermissionGranted, showCameraPermissionLayer])
+
+  // 마이크 권한 승인 감지 → 자동으로 오디오 파이프라인 시작
+  useEffect(() => {
+    if (
+      showMicrophonePermissionLayer &&
+      microphoneStream.isPermissionGranted
+    ) {
+      setShowMicrophonePermissionLayer(false)
+      console.log('🎤 마이크 권한 허용됨 - 오디오 파이프라인 자동 시작')
+      
+      // 오디오 파이프라인 자동 시작
+      setShowAudioPipeline(true)
+      
+      // 두 권한 모두 있으면 집중 세션도 시작
+      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted) {
+        startFocusSession()
+      }
+    }
+  }, [microphoneStream.isPermissionGranted, showMicrophonePermissionLayer])
 
   // Mock data
   const todayStats = {
@@ -914,7 +1132,13 @@ function DashboardContent() {
                 <DropdownMenuContent align="end" className="w-80">
                   {notifications.map((notif) => (
                     <DropdownMenuItem key={notif.id} className="p-3">
-                      <div className="text-sm">{notif.message}</div>
+                      <div className={`text-sm ${
+                        notif.type === 'error' ? 'text-red-600' : 
+                        notif.type === 'success' ? 'text-green-600' : 
+                        'text-slate-700'
+                      }`}>
+                        {notif.message}
+                      </div>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -973,19 +1197,42 @@ function DashboardContent() {
         )}
       </AnimatePresence>
 
+      {/* Audio Pipeline - 세션 중일 때만 표시 */}
+      <AnimatePresence>
+        {showAudioPipeline && session.isRunning && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <HybridAudioPipeline />
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Camera Permission Layer */}
       <CameraPermissionLayer
-        isVisible={showPermissionLayer}
+        isVisible={showCameraPermissionLayer && !mediaStream.isPermissionGranted}
         isLoading={mediaStream.isLoading}
         error={mediaStream.error}
         isPermissionDenied={mediaStream.isPermissionDenied}
         isPermissionGranted={mediaStream.isPermissionGranted}
         onRequestPermission={mediaStream.requestPermission}
         onRetry={mediaStream.retryPermission}
-        onClose={handlePermissionLayerClose}
+        onClose={handleCameraPermissionLayerClose}
         onDismissError={() => {
           mediaStream.resetError()
-          setShowPermissionLayer(false)
+          setShowCameraPermissionLayer(false)
+        }}
+      />
+      <MicrophonePermissionLayer
+        isVisible={showMicrophonePermissionLayer && !microphoneStream.isPermissionGranted}
+        isLoading={microphoneStream.isLoading}
+        error={microphoneStream.error}
+        isPermissionDenied={microphoneStream.isPermissionDenied}
+        isPermissionGranted={microphoneStream.isPermissionGranted}
+        onRequestPermission={microphoneStream.requestPermission}
+        onRetry={microphoneStream.retryPermission}
+        onClose={handleMicrophonePermissionLayerClose}
+        onDismissError={() => {
+          microphoneStream.resetError()
+          setShowMicrophonePermissionLayer(false)
         }}
       />
 
@@ -1011,7 +1258,7 @@ function DashboardContent() {
                       <Button
                         size="lg"
                         variant="outline"
-                        onClick={session.pauseSession}
+                        onClick={handlePauseSession}
                         className="px-6 py-3 rounded-xl bg-transparent"
                       >
                         {session.isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
@@ -1039,6 +1286,8 @@ function DashboardContent() {
                     <div className="text-2xl font-bold text-slate-900">{session.formatTime(session.elapsed)}</div>
                     <div className="text-sm text-slate-600">세션 시간</div>
                   </div>
+                  
+
                   
                   {/* 웹캠 토글 버튼 (세션 중일 때만 표시) */}
                   {session.isRunning && mediaStream.isPermissionGranted && (
@@ -1297,6 +1546,100 @@ function DashboardContent() {
                   ))}
                 </CardContent>
               </Card>
+
+              {/* AI 집중 상태 분석 히스토리 */}
+              {session.isRunning && (
+                <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+                      <Brain className="w-5 h-5 text-blue-500" />
+                      AI 집중 분석
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {!isModelLoaded ? (
+                      <div className="text-center py-6 text-slate-500">
+                        {isModelLoading ? (
+                          <>
+                            <div className="w-8 h-8 mx-auto mb-2 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <div className="text-sm">KoELECTRA 모델 로딩 중...</div>
+                            <div className="text-xs">잠시만 기다려주세요</div>
+                          </>
+                        ) : modelError ? (
+                          <>
+                            <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" />
+                            <div className="text-sm text-red-600">모델 로딩 실패</div>
+                            <div className="text-xs text-red-500">{modelError}</div>
+                            <Button 
+                              size="sm" 
+                              className="mt-2"
+                              onClick={() => loadModel()}
+                            >
+                              다시 시도
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Activity className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                            <div className="text-sm">모델 초기화 중...</div>
+                            <div className="text-xs">잠시만 기다려주세요</div>
+                          </>
+                        )}
+                      </div>
+                    ) : analysisHistory.length > 0 ? (
+                      <div className="space-y-3">
+                        {analysisHistory.slice(-5).reverse().map((analysis, index) => (
+                          <div key={index} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100">
+                            <div className={`w-3 h-3 rounded-full ${
+                              analysis.status === 'focused' ? 'bg-green-500' : 'bg-red-500'
+                            }`} />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-slate-900">
+                                {analysis.status === 'focused' ? '집중 상태' : '방해 상태'}
+                              </div>
+                              <div className="text-xs text-slate-500 truncate">
+                                "{analysis.text}"
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-slate-900">
+                                {Math.round(analysis.confidence * 100)}%
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                {analysis.timestamp.toLocaleTimeString()}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-slate-500">
+                        <Activity className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                        <div className="text-sm">분석 데이터가 없습니다</div>
+                        <div className="text-xs">집중 세션을 시작하면 AI가 실시간으로 분석합니다</div>
+                      </div>
+                    )}
+                    
+                    {/* 모델 상태 표시 */}
+                    <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                      <span>KoELECTRA 모델 상태:</span>
+                      <div className="flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${
+                          isModelLoaded ? 'bg-green-500' : isModelLoading ? 'bg-yellow-500' : 'bg-red-500'
+                        }`} />
+                        <span>
+                          {isModelLoaded ? '준비됨' : isModelLoading ? '로딩 중' : modelError ? '오류' : '대기 중'}
+                        </span>
+                        {modelError && (
+                          <span className="text-red-500 ml-1" title={modelError}>
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Personalized Insights */}
               <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">

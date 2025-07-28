@@ -77,7 +77,7 @@ export function useGestureRecognition(
             ...prev.slice(0, 49)
           ])
           
-          console.log('[GESTURE] 제스처 인식 결과:', gestureData)
+
         }
       } catch (error) {
         console.error('[GESTURE] 제스처 응답 파싱 오류:', error)

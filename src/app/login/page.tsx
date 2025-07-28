@@ -14,6 +14,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { signIn, signInWithGoogle, signInWithApple } from "@/lib/auth/auth"
+import LoadingPage from "../loading/page"
 
 function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
@@ -353,11 +354,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
-      </div>
-    }>
+    <Suspense fallback={<LoadingPage />}> 
       <LoginForm />
     </Suspense>
   )

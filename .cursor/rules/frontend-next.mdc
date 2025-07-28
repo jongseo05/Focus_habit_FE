@@ -1,0 +1,419 @@
+---
+alwaysApply: true
+---
+
+# Focus Habit Frontend - Cursor Rules
+
+## Project Overview
+This project is a focus habit management web application built with Next.js 14, TypeScript, and Tailwind CSS, featuring real-time audio processing and ML inference capabilities.
+
+## Tech Stack
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS + shadcn/ui
+- **Database**: Supabase
+- **Authentication**: Supabase Auth
+- **State Management**: Zustand
+- **Real-time**: WebSocket
+- **ML/AI**: ONNX.js (KoELECTRA)
+- **Package Manager**: pnpm
+- **Linting**: ESLint + Prettier
+
+## Coding Conventions
+
+### File and Folder Naming Rules
+- Components: PascalCase (e.g., `FocusSessionErrorDisplay.tsx`)
+- Hooks: camelCase + use prefix (e.g., `useAuth.ts`)
+- Utilities: camelCase (e.g., `utils.ts`)
+- Types: camelCase (e.g., `auth.ts`, `focusSession.ts`)
+- Stores: camelCase + Store suffix (e.g., `dashboardStore.ts`)
+- API routes: kebab-case (e.g., `send-study-status`)
+
+### Component Structure
+```typescript
+// Use functional components with proper TypeScript typing
+const ComponentName = ({ prop1, prop2 }: ComponentProps) => {
+  // hooks
+  // state
+  // effects
+  // handlers
+  // render
+};
+```
+
+### TypeScript Rules
+- Explicit type annotations for all functions and variables
+- Use interfaces without `I` prefix
+- Separate type definitions in `types/` folder
+- Define API response types separately
+- Use strict TypeScript configuration
+- Prefer `interface` over `type` for object shapes
+
+### Styling Rules
+- Use Tailwind CSS classes
+- Leverage shadcn/ui components
+- Define custom styles in `globals.css`
+- Prioritize responsive design
+- Use CSS variables for theme consistency
+
+## Architecture Guidelines
+
+### Folder Structure
+- `app/`: Next.js App Router pages
+- `components/`: Reusable components
+- `hooks/`: Custom hooks
+- `lib/`: Utilities and configurations
+- `stores/`: Zustand stores
+- `types/`: TypeScript type definitions
+- `public/`: Static assets including ML models
+
+### State Management
+- Global state: Zustand stores
+- Local state: React useState/useReducer
+- Server state: React Query (TanStack Query)
+- Form state: React Hook Form (when needed)
+
+### API Communication
+- Use Supabase client
+- Define API routes in `app/api/` folder
+- Implement proper error handling
+- Use environment variables for sensitive data
+
+## Security and Performance
+
+### Security
+- Use environment variables for API keys
+- Protect authenticated routes
+- Implement input validation
+- Sanitize user inputs
+- Use HTTPS in production
+
+### Performance
+- Optimize images with Next.js Image
+- Implement code splitting
+- Use React.memo and useMemo appropriately
+- Optimize bundle size
+- Use dynamic imports for heavy components
+- Implement proper loading states
+
+## Special Considerations
+
+### ML/AI Features
+- Use ONNX.js models
+- Implement Web Workers for heavy computations
+- Handle real-time audio processing
+- Optimize model loading and inference
+- Implement fallback mechanisms
+
+### Real-time Features
+- Manage WebSocket connections
+- Monitor connection status
+- Implement reconnection logic
+- Handle connection errors gracefully
+- Use proper cleanup in useEffect
+
+### Accessibility
+- Use ARIA labels
+- Support keyboard navigation
+- Consider color contrast
+- Provide alternative text for images
+- Test with screen readers
+
+## Code Review Checklist
+- [ ] TypeScript type definitions complete
+- [ ] Error handling implemented
+- [ ] Responsive design applied
+- [ ] Accessibility considered
+- [ ] Performance optimized
+- [ ] Security reviewed
+- [ ] Tests written (if applicable)
+- [ ] Documentation updated
+
+## Common Patterns
+
+### Custom Hook Pattern
+```typescript
+export const useCustomHook = () => {
+  // state and logic
+  return { data, loading, error, actions };
+};
+```
+
+### API Call Pattern
+```typescript
+const { data, error, loading } = await supabase
+  .from('table')
+  .select('*')
+  .eq('column', value);
+```
+
+### Error Boundary Pattern
+```typescript
+try {
+  // risky operation
+} catch (error) {
+  console.error('Error:', error);
+  // user-friendly error message
+}
+```
+
+### Zustand Store Pattern
+```typescript
+interface StoreState {
+  data: DataType[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface StoreActions {
+  setData: (data: DataType[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+}
+
+type Store = StoreState & StoreActions;
+
+export const useStore = create<Store>((set) => ({
+  data: [],
+  loading: false,
+  error: null,
+  setData: (data) => set({ data }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
+}));
+```
+
+## Development Environment Setup
+- Use Node.js 18+
+- Use pnpm package manager
+- Configure ESLint + Prettier
+- Enable TypeScript strict mode
+- Set up pre-commit hooks (recommended)
+
+## Deployment Considerations
+- Deploy to Vercel (recommended)
+- Configure environment variables
+- Optimize build process
+- Set up monitoring and analytics
+- Configure error tracking
+- Implement proper logging
+
+## Testing Strategy
+- Unit tests for utilities and hooks
+- Integration tests for API routes
+- E2E tests for critical user flows
+- Performance testing for ML features
+
+## Documentation Standards
+- Document complex business logic
+- Maintain README with setup instructions
+- Document API endpoints
+- Keep component documentation updated
+- Document ML model usage and limitations # Focus Habit Frontend - Cursor Rules
+
+## Project Overview
+This project is a focus habit management web application built with Next.js 14, TypeScript, and Tailwind CSS, featuring real-time audio processing and ML inference capabilities.
+
+## Tech Stack
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS + shadcn/ui
+- **Database**: Supabase
+- **Authentication**: Supabase Auth
+- **State Management**: Zustand
+- **Real-time**: WebSocket
+- **ML/AI**: ONNX.js (KoELECTRA)
+- **Package Manager**: pnpm
+- **Linting**: ESLint + Prettier
+
+## Coding Conventions
+
+### File and Folder Naming Rules
+- Components: PascalCase (e.g., `FocusSessionErrorDisplay.tsx`)
+- Hooks: camelCase + use prefix (e.g., `useAuth.ts`)
+- Utilities: camelCase (e.g., `utils.ts`)
+- Types: camelCase (e.g., `auth.ts`, `focusSession.ts`)
+- Stores: camelCase + Store suffix (e.g., `dashboardStore.ts`)
+- API routes: kebab-case (e.g., `send-study-status`)
+
+### Component Structure
+```typescript
+// Use functional components with proper TypeScript typing
+const ComponentName = ({ prop1, prop2 }: ComponentProps) => {
+  // hooks
+  // state
+  // effects
+  // handlers
+  // render
+};
+```
+
+### TypeScript Rules
+- Explicit type annotations for all functions and variables
+- Use interfaces without `I` prefix
+- Separate type definitions in `types/` folder
+- Define API response types separately
+- Use strict TypeScript configuration
+- Prefer `interface` over `type` for object shapes
+
+### Styling Rules
+- Use Tailwind CSS classes
+- Leverage shadcn/ui components
+- Define custom styles in `globals.css`
+- Prioritize responsive design
+- Use CSS variables for theme consistency
+
+## Architecture Guidelines
+
+### Folder Structure
+- `app/`: Next.js App Router pages
+- `components/`: Reusable components
+- `hooks/`: Custom hooks
+- `lib/`: Utilities and configurations
+- `stores/`: Zustand stores
+- `types/`: TypeScript type definitions
+- `public/`: Static assets including ML models
+
+### State Management
+- Global state: Zustand stores
+- Local state: React useState/useReducer
+- Server state: React Query (TanStack Query)
+- Form state: React Hook Form (when needed)
+
+### API Communication
+- Use Supabase client
+- Define API routes in `app/api/` folder
+- Implement proper error handling
+- Use environment variables for sensitive data
+
+## Security and Performance
+
+### Security
+- Use environment variables for API keys
+- Protect authenticated routes
+- Implement input validation
+- Sanitize user inputs
+- Use HTTPS in production
+
+### Performance
+- Optimize images with Next.js Image
+- Implement code splitting
+- Use React.memo and useMemo appropriately
+- Optimize bundle size
+- Use dynamic imports for heavy components
+- Implement proper loading states
+
+## Special Considerations
+
+### ML/AI Features
+- Use ONNX.js models
+- Implement Web Workers for heavy computations
+- Handle real-time audio processing
+- Optimize model loading and inference
+- Implement fallback mechanisms
+
+### Real-time Features
+- Manage WebSocket connections
+- Monitor connection status
+- Implement reconnection logic
+- Handle connection errors gracefully
+- Use proper cleanup in useEffect
+
+### Accessibility
+- Use ARIA labels
+- Support keyboard navigation
+- Consider color contrast
+- Provide alternative text for images
+- Test with screen readers
+
+## Code Review Checklist
+- [ ] TypeScript type definitions complete
+- [ ] Error handling implemented
+- [ ] Responsive design applied
+- [ ] Accessibility considered
+- [ ] Performance optimized
+- [ ] Security reviewed
+- [ ] Tests written (if applicable)
+- [ ] Documentation updated
+
+## Common Patterns
+
+### Custom Hook Pattern
+```typescript
+export const useCustomHook = () => {
+  // state and logic
+  return { data, loading, error, actions };
+};
+```
+
+### API Call Pattern
+```typescript
+const { data, error, loading } = await supabase
+  .from('table')
+  .select('*')
+  .eq('column', value);
+```
+
+### Error Boundary Pattern
+```typescript
+try {
+  // risky operation
+} catch (error) {
+  console.error('Error:', error);
+  // user-friendly error message
+}
+```
+
+### Zustand Store Pattern
+```typescript
+interface StoreState {
+  data: DataType[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface StoreActions {
+  setData: (data: DataType[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+}
+
+type Store = StoreState & StoreActions;
+
+export const useStore = create<Store>((set) => ({
+  data: [],
+  loading: false,
+  error: null,
+  setData: (data) => set({ data }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
+}));
+```
+
+## Development Environment Setup
+- Use Node.js 18+
+- Use pnpm package manager
+- Configure ESLint + Prettier
+- Enable TypeScript strict mode
+- Set up pre-commit hooks (recommended)
+
+## Deployment Considerations
+- Deploy to Vercel (recommended)
+- Configure environment variables
+- Optimize build process
+- Set up monitoring and analytics
+- Configure error tracking
+- Implement proper logging
+
+## Testing Strategy
+- Unit tests for utilities and hooks
+- Integration tests for API routes
+- E2E tests for critical user flows
+- Performance testing for ML features
+
+## Documentation Standards
+- Document complex business logic
+- Maintain README with setup instructions
+- Document API endpoints
+- Keep component documentation updated
+- Document ML model usage and limitations 

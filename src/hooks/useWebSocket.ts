@@ -42,11 +42,9 @@ export function useWebSocket(
       console.error('[WEBSOCKET] WebSocket 세션 오류:', error)
     },
     onRecoveryStart: (errorType) => {
-      console.log('[WEBSOCKET] WebSocket 복구 시작:', errorType)
       setStatus(WebSocketStatus.RECONNECTING)
     },
     onRecoverySuccess: (errorType) => {
-      console.log('[WEBSOCKET] WebSocket 복구 성공:', errorType)
       setConnectionStable(true)
     },
     onRecoveryFailed: (error) => {
@@ -71,7 +69,6 @@ export function useWebSocket(
   const setupEventHandlers = useCallback((): WebSocketEventHandlers => {
     return {
       onOpen: (event) => {
-        console.log('[WEBSOCKET] WebSocket connected')
         setStatus(WebSocketStatus.CONNECTED)
         setReconnectAttempts(0)
         connectionStartTime.current = Date.now()
@@ -86,9 +83,6 @@ export function useWebSocket(
         eventHandlers?.onOpen?.(event)
       },
       onMessage: (message) => {
-        // 원시 응답값을 콘솔에 출력
-        console.log('[WEBSOCKET] WebSocket Raw Response:', message)
-        
         // 제스처 인식 서버 오류 체크
         if (message.type === 'error' || (message.data && message.data.error)) {
           const gestureError = classifyError(
@@ -102,7 +96,6 @@ export function useWebSocket(
         eventHandlers?.onMessage?.(message)
       },
       onClose: (event) => {
-        console.log('[WEBSOCKET] WebSocket disconnected')
         setStatus(WebSocketStatus.DISCONNECTED)
         setConnectionStable(false)
         lastDisconnectionTime.current = Date.now()
@@ -130,7 +123,6 @@ export function useWebSocket(
         eventHandlers?.onError?.(error)
       },
       onReconnect: (attempt) => {
-        console.log('[WEBSOCKET] WebSocket reconnecting... Attempt', attempt)
         setStatus(WebSocketStatus.RECONNECTING)
         setReconnectAttempts(attempt)
         eventHandlers?.onReconnect?.(attempt)
