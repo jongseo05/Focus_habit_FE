@@ -33,7 +33,6 @@ export class WebSocketClient {
   // WebSocket 연결
   connect(authToken?: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      console.warn('WebSocket is already connected')
       return
     }
 
@@ -86,7 +85,6 @@ export class WebSocketClient {
     }
     
     this.setStatus(WebSocketStatus.DISCONNECTED)
-    console.log('WebSocket disconnected and memory cleaned')
   }
 
   // 메시지 전송 (메모리 관리 개선)
@@ -140,7 +138,6 @@ export class WebSocketClient {
     if (!this.ws) return
 
     this.ws.onopen = (event) => {
-      console.log('WebSocket connected')
       this.setStatus(WebSocketStatus.CONNECTED)
       this.reconnectAttempts = 0
       this.clearReconnectTimeout()
@@ -173,7 +170,6 @@ export class WebSocketClient {
         // 인증 응답 처리
         if (message.type === 'auth_success') {
           this.isAuthenticated = true
-          console.log('WebSocket authentication successful')
         }
 
         this.eventHandlers.onMessage?.(message)
@@ -183,7 +179,6 @@ export class WebSocketClient {
     }
 
     this.ws.onclose = (event) => {
-      console.log('WebSocket disconnected:', event.code, event.reason)
       this.setStatus(WebSocketStatus.DISCONNECTED)
       this.clearPingInterval()
       this.isAuthenticated = false
@@ -264,8 +259,6 @@ export class WebSocketClient {
     this.eventHandlers.onReconnect?.(this.reconnectAttempts)
 
     const reconnectInterval = this.calculateAdaptiveReconnectInterval()
-    console.log(`[적응형 재연결] ${reconnectInterval}ms 후 재시도 (${this.reconnectAttempts}/${this.config.maxReconnectAttempts})`)
-
     this.reconnectTimeoutId = setTimeout(() => {
       this.connect()
     }, reconnectInterval)
@@ -301,8 +294,6 @@ export class WebSocketClient {
   // Pong 메시지 처리 (지연시간 기록 포함)
   private handlePongMessage(message: PongMessage): void {
     const latency = Date.now() - message.timestamp
-    console.log(`WebSocket ping latency: ${latency}ms`)
-    
     // 지연시간 정보를 연결 품질 평가에 활용
     this.recordConnectionAttempt(true, latency)
   }

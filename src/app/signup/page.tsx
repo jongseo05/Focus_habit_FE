@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { signUp } from "@/lib/auth/auth"
 import { validateSignUpForm } from "@/lib/auth/validation"
 import type { SignUpFormData } from "@/types/user"
+import LoadingPage from "../loading/page"
 
 function SignUpForm() {
   
@@ -375,11 +376,7 @@ function SignUpForm() {
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
-      </div>
-    }>
+    <Suspense fallback={<LoadingPage />}> 
       <SignUpForm />
     </Suspense>
   )
