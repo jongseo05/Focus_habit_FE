@@ -117,16 +117,14 @@ export function tokenizeText(text: string, vocab: string[]): number[] {
 }
 
 // KoELECTRA 전처리 (메인 함수) - 동기 버전으로 변경
-export function koelectraPreprocess(text: string, maxLength: number = 512): { input_ids: number[], attention_mask: number[] } {
+export function koelectraPreprocess(text: string, maxLength: number = 512): { input_ids: number[], attention_mask: number[], token_type_ids: number[] } {
   try {
+    console.log('[토크나이저] 전처리 시작:', { text, maxLength, vocabCacheLength: vocabCache?.length || 0 });
+    
     // 1. 어휘 사전과 토크나이저 설정 로드 (캐시된 값 사용)
     if (!vocabCache) {
-      console.warn("어휘 사전이 로드되지 않았습니다. 자동 로드를 시도합니다.");
-      // 비동기 로드를 동기적으로 처리하기 위해 기본값 반환
-      return {
-        input_ids: new Array(maxLength).fill(0),
-        attention_mask: new Array(maxLength).fill(0)
-      };
+      console.error("어휘 사전이 로드되지 않았습니다.");
+      throw new Error("어휘 사전이 초기화되지 않았습니다. initializeTokenizer()를 먼저 호출하세요.");
     }
     
     // 2. BERT 스타일 토크나이징
@@ -146,28 +144,32 @@ export function koelectraPreprocess(text: string, maxLength: number = 512): { in
     const sepIndex = vocabCache.indexOf("[SEP]");
     tokens.push(sepIndex !== -1 ? sepIndex : 3);
     
-    // 4. 패딩 및 attention mask 생성
+    // 4. 패딩 및 attention mask, token_type_ids 생성
     const input_ids: number[] = [];
     const attention_mask: number[] = [];
+    const token_type_ids: number[] = [];
     
     for (let i = 0; i < maxLength; i++) {
       if (i < tokens.length) {
         input_ids.push(tokens[i]);
         attention_mask.push(1); // 실제 토큰
+        token_type_ids.push(0); // 단일 문장이므로 모두 0
       } else {
         const padIndex = vocabCache.indexOf("[PAD]");
         input_ids.push(padIndex !== -1 ? padIndex : 0);
         attention_mask.push(0); // 패딩 토큰
+        token_type_ids.push(0); // 패딩 토큰도 0
       }
     }
     
-    return { input_ids, attention_mask };
+    return { input_ids, attention_mask, token_type_ids };
   } catch (error) {
     console.error("토크나이징 실패:", error);
     // 에러 시 기본값 반환
     return {
       input_ids: new Array(maxLength).fill(0),
-      attention_mask: new Array(maxLength).fill(0)
+      attention_mask: new Array(maxLength).fill(0),
+      token_type_ids: new Array(maxLength).fill(0)
     };
   }
 }

@@ -78,7 +78,15 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
 
   // 모델 초기화
   const initializeModel = useCallback(() => {
-    if (isInitializedRef.current) return
+    console.log('[useKoELECTRA] initializeModel 호출됨:', {
+      isInitialized: isInitializedRef.current,
+      hasModelRef: !!modelRef.current
+    });
+    
+    if (isInitializedRef.current) {
+      console.log('[useKoELECTRA] 이미 초기화됨 - 중단');
+      return
+    }
     
     try {
       const defaultConfig: KoELECTRAConfig = {
@@ -91,10 +99,11 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
         ...config
       }
       
+      console.log('[useKoELECTRA] KoELECTRA 인스턴스 생성 시작');
       modelRef.current = createKoELECTRA(defaultConfig)
       isInitializedRef.current = true
       
-      console.log('[useKoELECTRA] 모델 초기화 완료 (최적화 설정 적용)')
+      console.log('[useKoELECTRA] 모델 초기화 완료 (최적화 설정 적용)');
     } catch (err) {
       console.error('[useKoELECTRA] 모델 초기화 실패:', err)
       setError(err instanceof Error ? err.message : '모델 초기화 실패')
@@ -103,24 +112,45 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
 
   // 모델 로드
   const loadModel = useCallback(async () => {
+    console.log('[useKoELECTRA] loadModel 호출됨');
+    
     if (!modelRef.current) {
+      console.log('[useKoELECTRA] 모델 초기화 필요');
       initializeModel()
     }
     
     if (!modelRef.current) {
+      console.error('[useKoELECTRA] 모델 초기화 실패');
       setError('모델을 초기화할 수 없습니다.')
       return
     }
     
     if (modelRef.current.isLoaded || modelRef.current.isLoading) {
+      console.log('[useKoELECTRA] 모델이 이미 로드 중이거나 로드됨:', {
+        isLoaded: modelRef.current.isLoaded,
+        isLoading: modelRef.current.isLoading
+      });
       return
     }
     
+    console.log('[useKoELECTRA] 모델 로딩 시작');
+    console.log('[useKoELECTRA] setIsLoading(true) 호출');
     setIsLoading(true)
     setError(null)
     
     try {
+      console.log('[useKoELECTRA] modelRef.current.loadModel() 호출');
       await modelRef.current.loadModel()
+      console.log('[useKoELECTRA] 모델 로드 성공');
+      
+      // 모델 상태 재확인
+      console.log('[useKoELECTRA] 모델 상태 재확인:', {
+        modelRefIsLoaded: modelRef.current.isLoaded,
+        modelRefIsLoading: modelRef.current.isLoading,
+        modelRefError: modelRef.current.error
+      });
+      
+      console.log('[useKoELECTRA] setIsLoaded(true) 호출');
       setIsLoaded(true)
       setModelInfo(modelRef.current.getModelInfo())
       
@@ -134,6 +164,7 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       console.error('[useKoELECTRA] 모델 로드 실패:', err)
       setError(err instanceof Error ? err.message : '모델 로드 실패')
     } finally {
+      console.log('[useKoELECTRA] setIsLoading(false) 호출');
       setIsLoading(false)
     }
   }, [initializeModel, enablePerformanceMonitoring])
@@ -253,12 +284,34 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       : 0
   }
 
-  // 자동 로드
+  // 자동 로드 (10초마다 한 번씩만 로그 출력)
   useEffect(() => {
-    if (autoLoad && !isLoaded && !isLoading) {
-      loadModel()
-    }
+    const timeoutId = setTimeout(() => {
+      if (autoLoad && !isLoaded && !isLoading) {
+        console.log('[useKoELECTRA] 자동 로드 시작');
+        loadModel()
+      }
+    }, 10000);
+
+    return () => clearTimeout(timeoutId);
   }, [autoLoad, isLoaded, isLoading, loadModel])
+
+  // 상태 변화 추적 (10초마다 한 번씩만 로그 출력)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      console.log('[useKoELECTRA] 상태 변화 감지:', {
+        isLoaded,
+        isLoading,
+        error,
+        hasModelRef: !!modelRef.current,
+        modelRefLoaded: modelRef.current?.isLoaded,
+        modelRefLoading: modelRef.current?.isLoading,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }, 10000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isLoaded, isLoading, error]);
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {

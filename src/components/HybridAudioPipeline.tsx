@@ -62,10 +62,33 @@ export default function HybridAudioPipeline() {
     isLoaded: isModelLoaded, 
     isLoading: isModelLoading, 
     error: modelError, 
-    inference: koelectraInference
+    inference: koelectraInference,
+    loadModel: loadKoELECTRAModel
   } = useKoELECTRA({ 
     autoLoad: true
   })
+
+  // KoELECTRA 모델 상태 모니터링 (5초마다 한 번씩만 로그 출력)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      console.log('🎤 KoELECTRA 모델 상태 변화:', {
+        isModelLoaded,
+        isModelLoading,
+        modelError,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      
+      // 모델이 로드되지 않고 로딩 중도 아니며 오류가 없는 경우 수동 로드 시도
+      if (!isModelLoaded && !isModelLoading && !modelError) {
+        console.log('🎤 KoELECTRA 모델 수동 로드 시도');
+        loadKoELECTRAModel().catch(err => {
+          console.error('🎤 KoELECTRA 모델 수동 로드 실패:', err);
+        });
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isModelLoaded, isModelLoading, modelError, loadKoELECTRAModel]);
 
   // 오디오 파이프라인 Ref
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -953,6 +976,12 @@ export default function HybridAudioPipeline() {
       if (finalTranscript) {
         speechBufferRef.current += finalTranscript;
         console.log('🎤 최종 텍스트 추가됨:', finalTranscript, '버퍼 상태:', speechBufferRef.current);
+        console.log('🎤 음성 인식 결과 상세:', {
+          finalTranscript,
+          interimTranscript,
+          bufferLength: speechBufferRef.current.length,
+          timestamp: new Date().toLocaleTimeString()
+        });
       }
     };
 
@@ -997,19 +1026,43 @@ export default function HybridAudioPipeline() {
     // 안전하게 시작 (상태 확인 후)
     try {
       console.log('🎤 Speech Recognition 시작 시도...');
+      console.log('🎤 Speech Recognition 설정 확인:', {
+        continuous: recognition.continuous,
+        interimResults: recognition.interimResults,
+        lang: recognition.lang,
+        maxAlternatives: recognition.maxAlternatives
+      });
       recognition.start();
       console.log('🎤 Speech Recognition 시작 성공');
+      setIsSpeechRecognitionActive(true);
     } catch (error) {
       console.warn('🎤 음성 인식 시작 실패:', error);
+      setIsSpeechRecognitionActive(false);
     }
   }, []);
 
   // 발화 세그먼트 처리 - 성능 최적화 적용
   const processSpeechSegment = useCallback(async () => {
-    if (isAnalyzing) return;
+    console.log('🎤 processSpeechSegment 호출됨 - 현재 상태:', {
+      isAnalyzing,
+      bufferText: speechBufferRef.current,
+      bufferLength: speechBufferRef.current.length,
+      isModelLoaded,
+      isModelLoading,
+      modelError
+    });
+    
+    if (isAnalyzing) {
+      console.log('🎤 이미 분석 중 - 건너뜀');
+      return;
+    }
     setIsAnalyzing(true);
     const text = speechBufferRef.current.trim();
-    if (!text) { setIsAnalyzing(false); return; }
+    if (!text) { 
+      console.log('🎤 버퍼가 비어있음 - 분석 건너뜀');
+      setIsAnalyzing(false); 
+      return; 
+    }
 
     const startTime = performance.now();
     
@@ -1035,12 +1088,41 @@ export default function HybridAudioPipeline() {
 
       if (isModelLoaded) {
         try {
+          console.log('🎤 KoELECTRA 추론 시작 - 입력 텍스트:', text);
+          console.log('🎤 KoELECTRA 모델 상태 확인:', { isModelLoaded, isModelLoading, modelError });
           const result = await koelectraInference(text);
+          
+          // 디버깅: 추론 결과 상세 로그
+          console.log('🎤 KoELECTRA 추론 결과 상세:', {
+            logits: result?.logits,
+            logitsLength: result?.logits?.length,
+            logitsValues: result?.logits ? Array.from(result.logits).map(v => v.toFixed(4)) : [],
+            confidence: result?.confidence,
+            processingTime: result?.processingTime,
+            cached: result?.cached
+          });
+          
           if (result && result.confidence >= 0.6) {
-            isStudyRelated = result.logits[1] > result.logits[0]; // 공부 관련 클래스가 더 높은 경우
+            // 디버깅: 클래스 판정 과정
+            const class0Score = result.logits[0];
+            const class1Score = result.logits[1];
+            const isClass1Higher = class1Score > class0Score;
+            
+            console.log('🎤 KoELECTRA 클래스 판정:', {
+              class0Score: class0Score.toFixed(4),
+              class1Score: class1Score.toFixed(4),
+              isClass1Higher,
+              confidence: result.confidence.toFixed(4)
+            });
+            
+            isStudyRelated = isClass1Higher; // 공부 관련 클래스가 더 높은 경우
             koelectraConfidence = result.confidence;
             analysisMethod = 'KoELECTRA';
           } else {
+            console.log('🎤 KoELECTRA 신뢰도 부족 - 키워드 기반으로 대체:', {
+              confidence: result?.confidence?.toFixed(4) || 'undefined',
+              threshold: 0.6
+            });
             // 신뢰도가 낮으면 키워드 기반으로 대체
             isStudyRelated = analyzeStudyRelatedByKeywords(text);
           }
@@ -1049,6 +1131,7 @@ export default function HybridAudioPipeline() {
           isStudyRelated = analyzeStudyRelatedByKeywords(text);
         }
       } else {
+        console.log('🎤 KoELECTRA 모델 미로드 - 키워드 기반으로 대체');
         // 모델이 로드되지 않은 경우 키워드 기반
         isStudyRelated = analyzeStudyRelatedByKeywords(text);
       }
