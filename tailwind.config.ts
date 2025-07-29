@@ -13,6 +13,9 @@ const config: Config = {
           '2xl': '100rem',
         },
       },
+      colors: {
+        'focus-blue': '#2563EB',
+      },
     },
   },
   plugins: [],
