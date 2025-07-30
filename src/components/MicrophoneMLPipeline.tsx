@@ -33,8 +33,8 @@ export default function MicrophoneMLPipeline() {
       const worker = new Worker('/audio/ml-inference-worker.js');
       workerRef.current = worker;
 
-      // WebSocket 연결 (예시: ws://localhost:8080)
-      const ws = new WebSocket('ws://localhost:8080');
+      // WebSocket 연결 (예시: wss://focushabit.site/ws/analysis)
+      const ws = new WebSocket('wss://focushabit.site/ws/analysis');
       wsRef.current = ws;
 
       // Worklet에서 PCM 수신 → Worker로 전달

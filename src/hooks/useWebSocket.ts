@@ -14,7 +14,7 @@ import {
 
 // 기본 WebSocket 설정
 const defaultConfig: WebSocketConfig = {
-  url: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8000/ws/analysis',
+  url: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://focushabit.site/ws/analysis',
   reconnectInterval: parseInt(process.env.NEXT_PUBLIC_WEBSOCKET_RECONNECT_INTERVAL || '5000'),
   maxReconnectAttempts: parseInt(process.env.NEXT_PUBLIC_WEBSOCKET_MAX_RECONNECT_ATTEMPTS || '5'),
   enablePing: true,

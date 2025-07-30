@@ -69,11 +69,11 @@ export function useTodayStats() {
       
       // 오늘의 집중 세션 데이터 조회
       const { data: sessions, error } = await supabase
-        .from('focus_sessions')
+        .from('focus_session')
         .select('*')
-        .gte('start_time', `${today}T00:00:00`)
-        .lt('start_time', `${today}T23:59:59`)
-        .order('start_time', { ascending: false })
+        .gte('started_at', `${today}T00:00:00`)
+        .lt('started_at', `${today}T23:59:59`)
+        .order('started_at', { ascending: false })
       
       if (error) {
         throw new Error(error.message)
@@ -82,13 +82,13 @@ export function useTodayStats() {
       // 통계 계산
       const totalSessions = sessions?.length || 0
       const totalFocusTime = sessions?.reduce((sum, session) => {
-        const start = new Date(session.start_time)
-        const end = new Date(session.end_time)
+        const start = new Date(session.started_at)
+        const end = new Date(session.ended_at || new Date())
         return sum + (end.getTime() - start.getTime()) / (1000 * 60) // 분 단위
       }, 0) || 0
       
       const avgScore = sessions?.length 
-        ? sessions.reduce((sum, s) => sum + s.focus_score, 0) / sessions.length 
+        ? sessions.reduce((sum, s) => sum + (s.focus_score || 0), 0) / sessions.length 
         : 0
       
       const totalDistractions = sessions?.reduce((sum, s) => sum + (s.distractions || 0), 0) || 0
