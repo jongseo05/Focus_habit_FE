@@ -44,6 +44,8 @@ import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream } from "@/hooks/useMediaStream"
 import HybridAudioPipeline from "@/components/HybridAudioPipeline"
 import { useKoELECTRA } from "@/hooks/useKoELECTRA"
+import { supabaseBrowser } from "@/lib/supabase/client"
+import { ReportService } from "@/lib/database/reportService"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -931,13 +933,78 @@ function DashboardContent() {
     }
   }
 
-  const handleStopSession = () => {
+  const handleStopSession = async () => {
     console.log('🛑 집중 세션 완전 종료')
+    
+    try {
+      const supabase = supabaseBrowser()
+      
+      // 1. 현재 활성 세션 ID 가져오기
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        console.error('사용자 인증 정보가 없습니다.')
+        return
+      }
+      
+      console.log('사용자 ID:', user.id)
+
+      // 활성 세션 조회 (더 안전한 방식)
+      const { data: sessions, error: sessionQueryError } = await supabase
+        .from('focus_session')
+        .select('session_id')
+        .eq('user_id', user.id)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1)
+
+      console.log('활성 세션 조회 결과:', { sessions, sessionQueryError })
+      
+      const activeSession = sessions?.[0]
+
+      if (activeSession) {
+        // 2. 세션 종료 처리 (updated_at 제거)
+        const { error: endError } = await supabase
+          .from('focus_session')
+          .update({
+            ended_at: new Date().toISOString(),
+            focus_score: session.focusScore // 현재 집중 점수 저장
+          })
+          .eq('session_id', activeSession.session_id)
+
+        if (endError) {
+          console.error('세션 종료 실패:', endError)
+          console.error('세션 ID:', activeSession.session_id)
+          console.error('업데이트 데이터:', {
+            ended_at: new Date().toISOString(),
+            focus_score: session.focusScore
+          })
+        } else {
+          console.log('✅ 세션이 성공적으로 종료되었습니다.')
+          
+          // 3. 일일 요약 데이터 업데이트
+          const today = new Date().toISOString().split('T')[0]
+          await ReportService.upsertDailySummary(user.id, today) // 클라이언트 사이드에서 호출
+          
+          // 4. 성공 알림 표시
+          const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
+          const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${session.focusScore}점\n\n📈 리포트를 확인하시겠습니까?`
+          
+          if (confirm(message)) {
+            window.open(`/report/daily/${today}`, '_blank')
+          }
+        }
+      }
+    } catch (error) {
+      console.error('세션 종료 중 오류:', error)
+      alert('세션 종료 중 오류가 발생했습니다.')
+    }
+
+    // 5. 로컬 상태 초기화
     session.stopSession()
     mediaStream.stopStream()
     microphoneStream.stopStream()
     setShowWebcam(false)
-    setShowAudioPipeline(false) // 오디오 파이프라인 비활성화
+    setShowAudioPipeline(false)
   }
 
   const handlePauseSession = () => {
