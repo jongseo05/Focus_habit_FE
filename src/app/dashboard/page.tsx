@@ -24,6 +24,7 @@ import {
   Activity,
   Target,
   AlertCircle,
+  BarChart3,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -990,7 +991,7 @@ function DashboardContent() {
           const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${session.focusScore}점\n\n📈 리포트를 확인하시겠습니까?`
           
           if (confirm(message)) {
-            window.open(`/report/daily/${today}`, '_blank')
+            window.open(`/report/daily/date/${today}`, '_blank')
           }
         }
       }
@@ -1215,6 +1216,13 @@ function DashboardContent() {
               <Button variant="ghost" size="sm">
                 <Settings className="w-5 h-5" />
               </Button>
+
+              {/* Daily Report */}
+              <Link href="/report/daily">
+                <Button variant="ghost" size="sm" title="오늘의 리포트 보기">
+                  <BarChart3 className="w-5 h-5" />
+                </Button>
+              </Link>
 
               {/* Data Log Drawer */}
               <Sheet>

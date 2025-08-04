@@ -1,6 +1,6 @@
 "use client"
 
-import { Brain, ArrowLeft } from "lucide-react"
+import { BarChart3, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import ComprehensiveReport from "@/components/ui/comprehensive-report"
@@ -15,7 +15,7 @@ export default function ReportPage() {
             <div className="flex items-center gap-4">
               <Link href="/dashboard" className="flex items-center gap-3 group">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-200">
-                  <Brain className="w-6 h-6 text-white" />
+                  <BarChart3 className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-xl font-bold text-slate-900">FocusAI</span>
               </Link>
@@ -25,7 +25,7 @@ export default function ReportPage() {
 
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm" asChild>
-                <Link href={`/report/daily/${new Date().toISOString().split('T')[0]}`}>
+                <Link href={`/report/daily/date/${new Date().toISOString().split('T')[0]}`}>
                   오늘의 리포트
                 </Link>
               </Button>
