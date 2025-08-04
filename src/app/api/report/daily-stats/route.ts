@@ -8,9 +8,12 @@ export async function GET(request: NextRequest) {
     // 현재 사용자 정보 가져오기
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
+    console.log('Daily stats auth check:', { user: !!user, error: userError })
+    
     if (userError || !user) {
+      console.error('Daily stats authentication failed:', userError)
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - Please log in again' },
         { status: 401 }
       )
     }
