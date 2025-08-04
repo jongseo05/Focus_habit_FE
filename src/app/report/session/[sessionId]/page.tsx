@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, use } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -16,9 +16,10 @@ import {
 import Link from "next/link"
 import { useSessionReport } from "@/hooks/useReport"
 
-export default function SessionReportPage({ params }: { params: { sessionId: string } }) {
+export default function SessionReportPage({ params }: { params: Promise<{ sessionId: string }> }) {
+  const { sessionId } = use(params)
   const [activeTab, setActiveTab] = useState("overview")
-  const { data: sessionData, isLoading, error } = useSessionReport(params.sessionId)
+  const { data: sessionData, isLoading, error } = useSessionReport(sessionId)
 
   // 로딩 상태
   if (isLoading) {
@@ -66,9 +67,9 @@ export default function SessionReportPage({ params }: { params: { sessionId: str
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/report/daily" className="flex items-center gap-2" aria-label="세션 목록으로 돌아가기">
+                <Link href={`/report/daily/date/${new Date(session.started_at).toISOString().split('T')[0]}`} className="flex items-center gap-2" aria-label="일일 리포트로 돌아가기">
                   <ArrowLeft className="w-4 h-4" />
-                  <span className="text-slate-600">세션 목록</span>
+                  <span className="text-slate-600">일일 리포트</span>
                 </Link>
               </Button>
               

@@ -99,12 +99,25 @@ export default function DateSelectPage() {
 
   // 에러 상태
   if (error) {
+    const isAuthError = error.message?.includes('Unauthorized') || error.message?.includes('401')
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-8 h-8 mx-auto mb-4 text-red-500" />
-          <p className="text-red-600 mb-2">일일 통계를 불러오는데 실패했습니다</p>
-          <p className="text-slate-500 text-sm">{error.message}</p>
+          <p className="text-red-600 mb-2">
+            {isAuthError ? '로그인이 필요합니다' : '일일 통계를 불러오는데 실패했습니다'}
+          </p>
+          <p className="text-slate-500 text-sm mb-4">
+            {isAuthError ? '다시 로그인해주세요' : error.message}
+          </p>
+          {isAuthError && (
+            <Button asChild>
+              <Link href="/login">
+                로그인하기
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     )
