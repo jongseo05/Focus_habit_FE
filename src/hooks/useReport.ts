@@ -254,3 +254,413 @@ export function usePrefetchReport() {
     },
   }
 } 
+
+// =====================================================
+// 9. 일일 활동 타임라인 훅
+// =====================================================
+
+export function useDailyActivities(date: string) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'activities', date],
+    queryFn: async () => {
+      const { supabaseBrowser } = await import('@/lib/supabase/client')
+      const supabase = supabaseBrowser()
+      
+      // 사용자 인증 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        throw new Error('인증이 필요합니다')
+      }
+      
+      // 해당 날짜의 세션 ID들 조회
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('started_at', `${date}T00:00:00`)
+        .lt('started_at', `${date}T23:59:59`)
+      
+      if (sessionsError) {
+        throw new Error(sessionsError.message)
+      }
+      
+      const sessionIds = sessions?.map(s => s.session_id) || []
+      
+      if (sessionIds.length === 0) {
+        return []
+      }
+      
+      // 이벤트 데이터 조회
+      const { data: events, error: eventsError } = await supabase
+        .from('focus_event')
+        .select('*')
+        .in('session_id', sessionIds)
+        .order('ts', { ascending: true })
+      
+      if (eventsError) {
+        throw new Error(eventsError.message)
+      }
+      
+      // 활동 데이터 변환
+      return events?.map(event => ({
+        timestamp: new Date(event.ts).toLocaleTimeString('ko-KR', { 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit' 
+        }),
+        action: getEventAction(event.event_type),
+        type: getEventType(event.event_type),
+        impact: getEventImpact(event.event_type),
+        description: getEventDescription(event.event_type, event.payload)
+      })) || []
+    },
+    staleTime: 5 * 60 * 1000, // 5분
+    enabled: !!date,
+  })
+}
+
+// 이벤트 관련 유틸리티 함수들
+function getEventAction(eventType: string): string {
+  const actionMap: Record<string, string> = {
+    'phone': '휴대폰 사용',
+    'distraction': '방해 요소',
+    'break': '휴식',
+    'focus': '집중',
+    'posture': '자세 교정',
+    'audio_analysis': '음성 분석'
+  }
+  return actionMap[eventType] || '기타 활동'
+}
+
+function getEventType(eventType: string): 'positive' | 'negative' | 'neutral' {
+  const typeMap: Record<string, 'positive' | 'negative' | 'neutral'> = {
+    'phone': 'negative',
+    'distraction': 'negative', 
+    'break': 'neutral',
+    'focus': 'positive',
+    'posture': 'positive',
+    'audio_analysis': 'neutral'
+  }
+  return typeMap[eventType] || 'neutral'
+}
+
+function getEventImpact(eventType: string): number {
+  const impactMap: Record<string, number> = {
+    'phone': -5,
+    'distraction': -3,
+    'break': 0,
+    'focus': 8,
+    'posture': 3,
+    'audio_analysis': 0
+  }
+  return impactMap[eventType] || 0
+}
+
+function getEventDescription(eventType: string, payload?: any): string {
+  const descriptionMap: Record<string, string> = {
+    'phone': '집중 세션 중 짧은 휴대폰 확인',
+    'distraction': '외부 방해 요소 감지',
+    'break': '의도적인 휴식 시간',
+    'focus': '25분간 방해 없이 지속적인 주의 집중',
+    'posture': '앉은 자세 개선 감지',
+    'audio_analysis': '음성 분석을 통한 집중도 측정'
+  }
+  return descriptionMap[eventType] || '활동 감지됨'
+}
+
+// =====================================================
+// 10. 일일 스냅샷 훅
+// =====================================================
+
+export function useDailySnapshots(date: string) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'snapshots', date],
+    queryFn: async () => {
+      const { supabaseBrowser } = await import('@/lib/supabase/client')
+      const supabase = supabaseBrowser()
+      
+      // 사용자 인증 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        throw new Error('인증이 필요합니다')
+      }
+      
+      // 해당 날짜의 세션 ID들 조회
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('focus_session')
+        .select('session_id')
+        .eq('user_id', user.id)
+        .gte('started_at', `${date}T00:00:00`)
+        .lt('started_at', `${date}T23:59:59`)
+      
+      if (sessionsError) {
+        throw new Error(sessionsError.message)
+      }
+      
+      const sessionIds = sessions?.map(s => s.session_id) || []
+      
+      if (sessionIds.length === 0) {
+        return []
+      }
+      
+      // 스냅샷 데이터 조회
+      const { data: snapshots, error: snapshotsError } = await supabase
+        .from('snapshot')
+        .select('*')
+        .in('session_id', sessionIds)
+        .order('ts', { ascending: false })
+      
+      if (snapshotsError) {
+        throw new Error(snapshotsError.message)
+      }
+      
+      // 스냅샷 데이터 변환
+      return snapshots?.map(snapshot => ({
+        id: snapshot.snapshot_id,
+        timestamp: new Date(snapshot.ts).toLocaleTimeString('ko-KR'),
+        thumbnail: snapshot.thumb_url || '/placeholder.svg?height=120&width=160',
+        focusScore: snapshot.focus_score || 0,
+        notes: getSnapshotNotes(snapshot.focus_score),
+        type: getSnapshotType(snapshot.focus_score)
+      })) || []
+    },
+    staleTime: 10 * 60 * 1000, // 10분
+    enabled: !!date,
+  })
+}
+
+function getSnapshotNotes(focusScore: number): string {
+  if (focusScore >= 90) return "최고 집중 순간 - 우수한 자세와 주의력"
+  if (focusScore >= 80) return "높은 집중도 유지 중"
+  if (focusScore >= 60) return "보통 수준의 집중도"
+  if (focusScore >= 40) return "집중도가 다소 낮음"
+  return "집중도가 매우 낮음 - 개선 필요"
+}
+
+function getSnapshotType(focusScore: number): 'high_focus' | 'distraction' | 'break' | 'normal' {
+  if (focusScore >= 90) return 'high_focus'
+  if (focusScore >= 70) return 'normal'
+  if (focusScore >= 50) return 'break'
+  return 'distraction'
+} 
+
+// =====================================================
+// 11. 일일 성취도 훅
+// =====================================================
+
+export function useDailyAchievements(date: string) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'achievements', date],
+    queryFn: async () => {
+      const { supabaseBrowser } = await import('@/lib/supabase/client')
+      const supabase = supabaseBrowser()
+      
+      // 사용자 인증 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        throw new Error('인증이 필요합니다')
+      }
+      
+      // 활성 습관 조회
+      const { data: habits, error: habitsError } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+      
+      if (habitsError) {
+        throw new Error(habitsError.message)
+      }
+      
+      // 오늘의 기록 조회
+      const { data: records, error: recordsError } = await supabase
+        .from('habit_records')
+        .select('*')
+        .eq('date', date)
+      
+      if (recordsError) {
+        throw new Error(recordsError.message)
+      }
+      
+      return habits?.map(habit => {
+        const record = records?.find(r => r.habit_id === habit.id)
+        const progress = record?.completed_count || 0
+        const target = getHabitTarget(habit.name)
+        
+        return {
+          id: habit.id,
+          title: habit.name,
+          description: habit.description || '',
+          progress,
+          target,
+          completed: progress >= target,
+          badge: getHabitBadge(habit.name),
+          category: getHabitCategory(habit.name)
+        }
+      }) || []
+    },
+    staleTime: 10 * 60 * 1000, // 10분
+    enabled: !!date,
+  })
+}
+
+function getHabitTarget(habitName: string): number {
+  const targetMap: Record<string, number> = {
+    '집중력 마스터': 7,
+    '일관성 챔피언': 30,
+    '방해 요소 제거자': 50,
+    '저녁 2시간 무휴대폰': 1,
+    '주간 20시간 집중': 20,
+    '연속 7일 목표달성': 7
+  }
+  return targetMap[habitName] || 1
+}
+
+function getHabitBadge(habitName: string): string {
+  const badgeMap: Record<string, string> = {
+    '집중력 마스터': '🎯',
+    '일관성 챔피언': '🏆',
+    '방해 요소 제거자': '📱',
+    '저녁 2시간 무휴대폰': '🌙',
+    '주간 20시간 집중': '⏰',
+    '연속 7일 목표달성': '🔥'
+  }
+  return badgeMap[habitName] || '⭐'
+}
+
+function getHabitCategory(habitName: string): 'focus' | 'consistency' | 'improvement' | 'time' {
+  const categoryMap: Record<string, 'focus' | 'consistency' | 'improvement' | 'time'> = {
+    '집중력 마스터': 'focus',
+    '일관성 챔피언': 'consistency',
+    '방해 요소 제거자': 'improvement',
+    '저녁 2시간 무휴대폰': 'time',
+    '주간 20시간 집중': 'time',
+    '연속 7일 목표달성': 'consistency'
+  }
+  return categoryMap[habitName] || 'focus'
+} 
+
+// 오늘의 집중 세션 목록 조회
+export function useTodaySessions(date: string) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'sessions', date],
+    queryFn: async () => {
+      const { supabaseBrowser } = await import('@/lib/supabase/client')
+      const supabase = supabaseBrowser()
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        throw new Error('인증되지 않은 사용자입니다.')
+      }
+
+      // 오늘 날짜의 집중 세션 조회
+      const { data: sessions, error } = await supabase
+        .from('focus_session')
+        .select(`
+          session_id,
+          started_at,
+          ended_at,
+          context_tag,
+          goal_min,
+          focus_score,
+          distractions
+        `)
+        .eq('user_id', user.id)
+        .gte('started_at', `${date}T00:00:00`)
+        .lt('started_at', `${date}T23:59:59`)
+        .order('started_at', { ascending: false })
+
+      if (error) {
+        throw new Error('세션 데이터를 불러오는데 실패했습니다.')
+      }
+
+      return sessions?.map(session => ({
+        id: session.session_id,
+        title: session.context_tag || `집중 세션 ${new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
+        description: session.context_tag || '집중 세션',
+        startTime: new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+        endTime: session.ended_at ? new Date(session.ended_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행 중',
+        duration: session.goal_min || 0,
+        averageScore: session.focus_score || 0,
+        isActive: !session.ended_at,
+        startedAt: session.started_at,
+        endedAt: session.ended_at
+      })) || []
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: !!date,
+  })
+} 
+
+// 특정 세션의 리포트 데이터 조회
+export function useSessionReport(sessionId: string) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'session', sessionId],
+    queryFn: async () => {
+      const { supabaseBrowser } = await import('@/lib/supabase/client')
+      const supabase = supabaseBrowser()
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        throw new Error('인증되지 않은 사용자입니다.')
+      }
+
+      // 세션 정보 조회
+      const { data: session, error: sessionError } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (sessionError || !session) {
+        throw new Error('세션을 찾을 수 없습니다.')
+      }
+
+      // 세션 기간의 샘플 데이터 조회
+      const { data: samples, error: samplesError } = await supabase
+        .from('focus_sample')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+
+      if (samplesError) {
+        throw new Error('샘플 데이터를 불러오는데 실패했습니다.')
+      }
+
+      // 세션 기간의 이벤트 데이터 조회
+      const { data: events, error: eventsError } = await supabase
+        .from('focus_event')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+
+      if (eventsError) {
+        throw new Error('이벤트 데이터를 불러오는데 실패했습니다.')
+      }
+
+      // 세션 기간의 스냅샷 데이터 조회
+      const { data: snapshots, error: snapshotsError } = await supabase
+        .from('snapshot')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+
+      if (snapshotsError) {
+        throw new Error('스냅샷 데이터를 불러오는데 실패했습니다.')
+      }
+
+      return {
+        session,
+        samples: samples || [],
+        events: events || [],
+        snapshots: snapshots || []
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: !!sessionId,
+  })
+} 

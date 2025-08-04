@@ -280,7 +280,49 @@ export class ReportService {
         : '없음'
     }
 
+    // 방해 요소 분석
+    const distractionEvents = events.filter(e => 
+      e.event_type === 'phone' || e.event_type === 'distraction'
+    )
+    const distractionCount = distractionEvents.length
+
+    // 성과 등급 계산
+    const getGrade = (score: number) => {
+      if (score >= 90) return '우수'
+      if (score >= 80) return '양호'
+      if (score >= 70) return '보통'
+      if (score >= 60) return '미흡'
+      return '부족'
+    }
+
     return {
+      // 총 집중 시간
+      totalFocusTime: {
+        time: `${Math.floor(totalFocusMinutes / 60)}:${String(Math.floor(totalFocusMinutes % 60)).padStart(2, '0')}`,
+        goalProgress: Math.min(Math.round((totalFocusMinutes / 240) * 100), 100), // 4시간 목표 기준
+        weekTrend: 12 // 예시값, 실제로는 주간 데이터와 비교 필요
+      },
+      // 평균 집중도
+      averageFocus: {
+        score: avgScore,
+        grade: getGrade(avgScore),
+        sessionImprovement: 5 // 예시값, 실제로는 이전 세션과 비교 필요
+      },
+      // 방해 요소
+      distractions: {
+        count: distractionCount,
+        mainCause: distractionCount > 0 ? '휴대폰 사용' : '없음',
+        details: distractionEvents.slice(0, 3).map(event => ({
+          type: event.event_type,
+          time: new Date(event.ts).toLocaleTimeString('ko-KR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          }),
+          impact: event.event_type === 'phone' ? '높음' : '보통'
+        })),
+        yesterdayChange: -2 // 예시값, 실제로는 어제 데이터와 비교 필요
+      },
+      // 기존 데이터 (호환성을 위해 유지)
       peak: {
         time: peakSample.ts ? new Date(peakSample.ts).toLocaleTimeString('ko-KR', { 
           hour: '2-digit', 

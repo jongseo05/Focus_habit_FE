@@ -116,11 +116,11 @@ export function useWeeklyDetailedData() {
       const weekEnd = getWeekEndDate()
       
       const { data: sessions, error } = await supabase
-        .from('focus_sessions')
+        .from('focus_session')
         .select('*')
-        .gte('start_time', `${weekStart}T00:00:00`)
-        .lt('start_time', `${weekEnd}T23:59:59`)
-        .order('start_time', { ascending: true })
+        .gte('started_at', `${weekStart}T00:00:00`)
+        .lt('started_at', `${weekEnd}T23:59:59`)
+        .order('started_at', { ascending: true })
       
       if (error) {
         throw new Error(error.message)

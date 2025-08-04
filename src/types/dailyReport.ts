@@ -12,6 +12,30 @@ export interface DailyReportData {
   date: string // YYYY-MM-DD
   focusScorePoints: FocusScorePoint[]
   highlights: {
+    // 총 집중 시간
+    totalFocusTime: {
+      time: string
+      goalProgress: number
+      weekTrend: number
+    }
+    // 평균 집중도
+    averageFocus: {
+      score: number
+      grade: string
+      sessionImprovement: number
+    }
+    // 방해 요소
+    distractions: {
+      count: number
+      mainCause: string
+      details: Array<{
+        type: string
+        time: string
+        impact: string
+      }>
+      yesterdayChange: number
+    }
+    // 기존 데이터 (호환성을 위해 유지)
     peak: {
       time: string
       score: number
