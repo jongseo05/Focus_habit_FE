@@ -16,6 +16,9 @@ const config: Config = {
       colors: {
         'focus-blue': '#2563EB',
       },
+      gridTemplateColumns: {
+        '25': 'repeat(25, minmax(0, 1fr))',
+      },
     },
   },
   plugins: [],

@@ -1,0 +1,191 @@
+// Focus Habit Frontend Database Schema
+// https://dbdiagram.io 에서 바로 사용 가능
+
+// 사용자 프로필 (auth.users 기반 뷰)
+Table user_profile {
+  user_id uuid [pk]
+  email varchar
+  name varchar
+  avatar_url varchar
+  bio text
+  time_zone varchar
+  prefs jsonb
+}
+
+// 집중 세션
+Table focus_session {
+  session_id uuid [pk]
+  user_id uuid [ref: > auth.users.id]
+  started_at timestamp [not null]
+  ended_at timestamp
+  goal_min integer
+  context_tag text
+  session_type text [default: 'study']
+  focus_score numeric
+  distractions integer [default: 0]
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+}
+
+// 집중 샘플 데이터
+Table focus_sample {
+  session_id uuid [ref: > focus_session.session_id]
+  ts timestamp [not null]
+  raw_score smallint
+  score_conf numeric
+  score smallint
+  p_eye real
+  pose_dev real
+  topic_tag text
+  rms_db real
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (session_id, ts) [pk]
+  }
+}
+
+// 집중 이벤트
+Table focus_event {
+  event_id uuid [pk]
+  session_id uuid [ref: > focus_session.session_id]
+  ts timestamp [not null]
+  event_type event_type_enum [not null]
+  payload jsonb
+  created_at timestamp [default: `now()`]
+}
+
+// 이벤트 타입
+Enum event_type_enum {
+  phone
+  distraction
+  break
+  focus
+  posture
+  audio_analysis
+}
+
+// 스냅샷
+Table snapshot {
+  snapshot_id uuid [pk]
+  session_id uuid [ref: > focus_session.session_id]
+  ts timestamp [not null]
+  s3_url text
+  thumb_url text
+  focus_score integer
+  created_at timestamp [default: `now()`]
+}
+
+// 노트
+Table note {
+  note_id uuid [pk]
+  session_id uuid [ref: > focus_session.session_id]
+  ts_ref timestamp [not null]
+  content text [not null]
+  created_at timestamp [default: `now()`]
+}
+
+// 일일 요약
+Table daily_summary {
+  user_id uuid [ref: > auth.users.id]
+  date date [not null]
+  focus_min integer [default: 0]
+  avg_score numeric [default: 0]
+  peak_ts timestamp
+  peak smallint
+  drop_ts timestamp
+  drop smallint
+  phone_min integer [default: 0]
+  quiet_ratio numeric [default: 0]
+  longest_streak integer [default: 0]
+  sessions_count integer [default: 0]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, date) [pk]
+  }
+}
+
+// 주간 요약
+Table weekly_summary {
+  user_id uuid [ref: > auth.users.id]
+  iso_year integer [not null]
+  iso_week integer [not null]
+  avg_score numeric [default: 0]
+  quiet_ratio numeric [default: 0]
+  habit_idx numeric [default: 0]
+  total_focus_min integer [default: 0]
+  total_sessions integer [default: 0]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, iso_year, iso_week) [pk]
+  }
+}
+
+// 보상 클레임
+Table reward_claim {
+  claim_id uuid [pk]
+  user_id uuid [ref: > auth.users.id]
+  date date [not null]
+  exp integer [default: 0]
+  sticker_id text
+  claimed_at timestamp [default: `now()`]
+  created_at timestamp [default: `now()`]
+}
+
+// 루틴 토글
+Table routine_toggle {
+  user_id uuid [ref: > auth.users.id]
+  routine_id text [not null]
+  enabled boolean [default: false]
+  updated_at timestamp [default: `now()`]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, routine_id) [pk]
+  }
+}
+
+// 습관
+Table habits {
+  id uuid [pk]
+  user_id uuid [ref: > auth.users.id]
+  name text [not null]
+  description text
+  category text
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+}
+
+// 습관 기록
+Table habit_records {
+  id uuid [pk]
+  habit_id uuid [ref: > habits.id]
+  date date [not null]
+  completed_count integer [default: 1]
+  notes text
+  created_at timestamp [default: `now()`]
+}
+
+// 뷰: 오늘의 집중 요약
+View today_focus_summary {
+  user_id uuid
+  sessions_count integer
+  total_minutes numeric
+  avg_score numeric
+  max_score numeric
+}
+
+// 뷰: 주간 집중 통계
+View weekly_focus_stats {
+  user_id uuid
+  week_start timestamp
+  sessions_count integer
+  total_minutes numeric
+  avg_score numeric
+} 
