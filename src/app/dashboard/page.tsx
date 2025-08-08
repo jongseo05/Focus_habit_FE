@@ -25,6 +25,7 @@ import {
   Target,
   AlertCircle,
   BarChart3,
+  LogOut,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
 import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
@@ -47,6 +49,7 @@ import HybridAudioPipeline from "@/components/HybridAudioPipeline"
 import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
+import { useSignOut } from "@/hooks/useAuth"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -698,6 +701,8 @@ export default function DashboardPage() {
 function DashboardContent() {
   const session = useFocusSession()
   const { updateElapsed } = useDashboardStore()
+  const signOut = useSignOut()
+  const router = useRouter()
   
   // KoELECTRA 모델 초기화
   const { isLoaded: isModelLoaded, isLoading: isModelLoading, error: modelError, inference, loadModel } = useKoELECTRA({
@@ -757,6 +762,21 @@ function DashboardContent() {
 
     return () => clearInterval(interval);
   }, [isModelLoaded, isModelLoading, modelError]);
+
+  // 로그아웃 성공 시 홈페이지로 리다이렉트
+  useEffect(() => {
+    if (signOut.isSuccess) {
+      router.push('/')
+    }
+  }, [signOut.isSuccess, router])
+
+  // 로그아웃 에러 처리
+  useEffect(() => {
+    if (signOut.error) {
+      console.error('로그아웃 실패:', signOut.error)
+      alert('로그아웃 중 오류가 발생했습니다. 다시 시도해주세요.')
+    }
+  }, [signOut.error])
   
   // 실시간 집중 상태 분석 상태
   const [currentFocusStatus, setCurrentFocusStatus] = useState<'focused' | 'distracted' | 'unknown'>('unknown')
@@ -1212,10 +1232,24 @@ function DashboardContent() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Settings */}
-              <Button variant="ghost" size="sm">
-                <Settings className="w-5 h-5" />
-              </Button>
+              {/* Settings Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <Settings className="w-5 h-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem 
+                    onClick={() => signOut.mutate()}
+                    disabled={signOut.isPending}
+                    className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    {signOut.isPending ? '로그아웃 중...' : '로그아웃'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Daily Report */}
               <Link href="/report/daily">

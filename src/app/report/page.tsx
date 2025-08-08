@@ -1,6 +1,6 @@
 "use client"
 
-import { BarChart3, ArrowLeft } from "lucide-react"
+import { BarChart3, ArrowLeft, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import ComprehensiveReport from "@/components/ui/comprehensive-report"
@@ -23,13 +23,7 @@ export default function ReportPage() {
               <span className="text-slate-600">종합 리포트</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/report/daily/date/${new Date().toISOString().split('T')[0]}`}>
-                  오늘의 리포트
-                </Link>
-              </Button>
-            </div>
+
 
             <Button variant="ghost" size="sm" asChild>
               <Link href="/dashboard" className="flex items-center gap-2">
@@ -40,6 +34,38 @@ export default function ReportPage() {
           </div>
         </div>
       </header>
+
+      {/* Report Navigation */}
+      <div className="border-b border-white/20 bg-white/60 backdrop-blur-sm">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              <span className="text-lg font-semibold text-slate-900">리포트 종류</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link 
+                href="/report" 
+                className="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 transition-colors"
+              >
+                종합 리포트
+              </Link>
+              <Link 
+                href="/report/weekly" 
+                className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                주간 리포트
+              </Link>
+              <Link 
+                href="/report/daily" 
+                className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                일일 리포트
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
