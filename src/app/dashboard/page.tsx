@@ -26,6 +26,7 @@ import {
   AlertCircle,
   BarChart3,
   LogOut,
+  Watch,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1255,6 +1256,13 @@ function DashboardContent() {
               <Link href="/report/daily">
                 <Button variant="ghost" size="sm" title="오늘의 리포트 보기">
                   <BarChart3 className="w-5 h-5" />
+                </Button>
+              </Link>
+
+              {/* Watch Connection */}
+              <Link href="/connect">
+                <Button variant="ghost" size="sm" title="스마트워치 연동">
+                  <Watch className="w-5 h-5" />
                 </Button>
               </Link>
 
