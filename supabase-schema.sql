@@ -194,6 +194,93 @@ CREATE TABLE IF NOT EXISTS habit_records (
 );
 
 -- =====================================================
+-- 8. 워치 연동 관련 테이블들
+-- =====================================================
+
+-- 워치 연결 코드 테이블
+CREATE TABLE IF NOT EXISTS watch_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  code VARCHAR(4) NOT NULL UNIQUE,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  is_used BOOLEAN DEFAULT FALSE,
+  used_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 워치 연결 정보 테이블
+CREATE TABLE IF NOT EXISTS watch_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  watch_id VARCHAR(255) NOT NULL,
+  connected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  disconnected_at TIMESTAMP WITH TIME ZONE,
+  is_active BOOLEAN DEFAULT TRUE,
+  last_heartbeat TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 집중 세션 테이블 업데이트 (device_type 추가)
+ALTER TABLE focus_session 
+ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT 'web',
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+
+-- 집중 샘플 테이블 업데이트 (센서 데이터 추가)
+ALTER TABLE focus_sample 
+ADD COLUMN IF NOT EXISTS heart_rate INTEGER,
+ADD COLUMN IF NOT EXISTS steps INTEGER,
+ADD COLUMN IF NOT EXISTS activity_level VARCHAR(50),
+ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT 'web',
+ADD COLUMN IF NOT EXISTS sample_timestamp TIMESTAMP WITH TIME ZONE;
+
+-- 집계 데이터 테이블 (3초 단위 집계)
+CREATE TABLE IF NOT EXISTS focus_aggregates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES focus_session(session_id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  aggregate_start TIMESTAMP WITH TIME ZONE NOT NULL,
+  aggregate_end TIMESTAMP WITH TIME ZONE NOT NULL,
+  avg_heart_rate NUMERIC,
+  dominant_activity VARCHAR(50),
+  sample_count INTEGER DEFAULT 0,
+  device_type VARCHAR(50) DEFAULT 'watch',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 인덱스 생성
+CREATE INDEX IF NOT EXISTS idx_watch_codes_user_id ON watch_codes(user_id);
+CREATE INDEX IF NOT EXISTS idx_watch_codes_code ON watch_codes(code);
+CREATE INDEX IF NOT EXISTS idx_watch_codes_expires_at ON watch_codes(expires_at);
+CREATE INDEX IF NOT EXISTS idx_watch_connections_user_id ON watch_connections(user_id);
+CREATE INDEX IF NOT EXISTS idx_watch_connections_watch_id ON watch_connections(watch_id);
+CREATE INDEX IF NOT EXISTS idx_focus_sample_session_device ON focus_sample(session_id, device_type);
+CREATE INDEX IF NOT EXISTS idx_focus_sample_timestamp ON focus_sample(sample_timestamp);
+CREATE INDEX IF NOT EXISTS idx_focus_aggregates_session ON focus_aggregates(session_id);
+CREATE INDEX IF NOT EXISTS idx_focus_aggregates_timestamp ON focus_aggregates(aggregate_start, aggregate_end);
+
+-- 워치 연결 정보 업데이트 트리거
+CREATE TRIGGER update_watch_connections_updated_at 
+  BEFORE UPDATE ON watch_connections 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 만료된 코드 정리 함수
+CREATE OR REPLACE FUNCTION cleanup_expired_codes()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM watch_codes 
+  WHERE expires_at < NOW() AND is_used = FALSE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 자동 정리 스케줄 (매일 자정)
+SELECT cron.schedule(
+  'cleanup-expired-codes',
+  '0 0 * * *',
+  'SELECT cleanup_expired_codes();'
+);
+
+-- =====================================================
 -- 12. 인덱스 생성 (나중에 별도로 추가)
 -- =====================================================
 
