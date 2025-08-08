@@ -415,24 +415,6 @@ interface Achievement {
 
 ---
 
-## 🔧 최근 수정사항
-
-### Next.js 15 호환성
-- `params`를 Promise로 처리하도록 수정
-- `React.use()`를 사용하여 params 언래핑
-- API 라우트에서 `await params` 사용
-
-### 데이터베이스 연동
-- 실제 Supabase 데이터 사용
-- Mock 데이터 제거
-- 인증 및 권한 확인 추가
-
-### 에러 처리
-- 401 Unauthorized 에러 처리
-- 500 Internal Server Error 처리
-- 사용자 친화적인 에러 메시지
-
----
 
 ## 📝 향후 개선사항
 
