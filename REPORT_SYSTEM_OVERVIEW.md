@@ -37,12 +37,6 @@
 - **파일**: `src/app/report/page.tsx`
 - **기능**: 종합 리포트 대시보드 (ComprehensiveReport 컴포넌트 포함)
 
-### 주간 리포트 시스템
-```
-/report/weekly/
-└── page.tsx                  # 주간 종합 리포트 (Comprehensive Report 활용)
-```
-
 ### 일일 리포트 시스템
 ```
 /report/daily/
@@ -75,22 +69,7 @@
   - `totalStats`: 전체 통계 요약
   - `success`: 성공 여부
 
-### 2. 주간 리포트 API
-- **경로**: `/api/report/weekly`
-- **메서드**: `GET`
-- **파라미터**: `year`, `week` (선택, 기본값: 현재 년도/주차)
-- **기능**: 특정 주의 종합적인 집중력 분석 및 패턴 분석
-- **반환 데이터**:
-  - `year`, `week`: 년도와 주차
-  - `period`: 주간 기간 (시작일, 종료일)
-  - `overview`: 주간 요약 통계
-  - `breakdown`: 세부 분석 점수 (주의집중, 자세, 휴대폰사용, 일관성)
-  - `timeSeriesData`: 일별 시계열 데이터
-  - `activityData`: 활동 분석 데이터
-  - `achievements`: 성취도 데이터
-  - `feedback`: 맞춤형 피드백
-
-### 3. 일일 상세 리포트 API
+### 2. 일일 상세 리포트 API
 - **경로**: `/api/report/daily/[date]`
 - **메서드**: `GET`
 - **파라미터**: `date` (YYYY-MM-DD 형식)
@@ -104,7 +83,7 @@
   - `totalDistractions`: 총 방해 요소 수
   - `sessions`: 세션 목록
 
-### 4. 기존 리포트 API
+### 3. 기존 리포트 API
 - **경로**: `/api/report/daily`
 - **메서드**: `GET`
 - **파라미터**: `date`, `refresh` (선택)
@@ -124,15 +103,7 @@
   - `gcTime`: 10분
   - `retry`: 3회 (지수 백오프)
 
-#### 2. useWeeklyReport (주간 리포트 훅)
-- **파일**: `src/hooks/useWeeklyReport.ts`
-- **주요 훅들**:
-  - `useWeeklyReport`: 주간 리포트 데이터 조회
-  - `useWeeklyReportForComprehensive`: Comprehensive Report 형식으로 변환
-  - `useWeeklyStats`: 주간 통계 요약
-  - `useWeeklyPatterns`: 주간 패턴 분석
-
-#### 3. useReport (다양한 훅들)
+#### 2. useReport (다양한 훅들)
 - **파일**: `src/hooks/useReport.ts`
 - **주요 훅들**:
   - `useDailyReport`: 일일 리포트 데이터
@@ -168,16 +139,7 @@
   - 증거 자료
   - 성취도
 
-### 3. 주간 리포트 페이지
-- **위치**: `src/app/report/weekly/page.tsx`
-- **기능**: 주간 종합 리포트 (Comprehensive Report 활용)
-- **구성 요소**:
-  - 주차 선택 (년도/주차)
-  - 주간 요약 통계
-  - 패턴 분석
-  - Comprehensive Report 컴포넌트
-
-### 4. 일일 리포트 페이지
+### 3. 일일 리포트 페이지
 - **위치**: `src/app/report/daily/date/[date]/page.tsx`
 - **기능**: 특정 날짜의 상세 리포트
 - **구성 요소**:
@@ -373,12 +335,7 @@ interface Achievement {
 사용자 요청 → /api/report/daily/[date] → Supabase → focus_session + daily_summary → 통계 계산
 ```
 
-### 3. 주간 리포트 조회
-```
-사용자 요청 → useWeeklyReport → /api/report/weekly → Supabase → daily_summary + focus_session + focus_sample + focus_event → 패턴 분석
-```
-
-### 4. 세션별 리포트 조회
+### 3. 세션별 리포트 조회
 ```
 사용자 요청 → useSessionReport → Supabase → focus_session + focus_sample + focus_event + snapshot
 ```
@@ -397,24 +354,36 @@ interface Achievement {
 - 일일 요약 통계 (총 세션, 총 시간, 평균 점수, 최고 점수)
 - 세션별 상세 정보 및 링크
 
-### 3. 주간 종합 분석
-- 주간 집중력 패턴 분석
-- 일별 시계열 차트 및 트렌드 분석
-- 습관 형성도 및 성취도 분석
-- 맞춤형 피드백 및 개선 제안
-
-### 4. 세션별 상세 분석
+### 3. 세션별 상세 분석
 - 개별 세션의 상세 정보
 - 집중력 추이, 활동 내역, 증거 자료, 성취도 탭
 - 세션 기간의 모든 데이터 포인트
 
-### 5. 종합 리포트
+### 4. 종합 리포트
 - 전체적인 집중도 분석
 - 시계열 차트 및 트렌드 분석
 - 성취도 및 피드백 제공
 
 ---
 
+## 🔧 최근 수정사항
+
+### Next.js 15 호환성
+- `params`를 Promise로 처리하도록 수정
+- `React.use()`를 사용하여 params 언래핑
+- API 라우트에서 `await params` 사용
+
+### 데이터베이스 연동
+- 실제 Supabase 데이터 사용
+- Mock 데이터 제거
+- 인증 및 권한 확인 추가
+
+### 에러 처리
+- 401 Unauthorized 에러 처리
+- 500 Internal Server Error 처리
+- 사용자 친화적인 에러 메시지
+
+---
 
 ## 📝 향후 개선사항
 
@@ -435,4 +404,4 @@ interface Achievement {
 
 ---
 
-*마지막 업데이트: 2025년 1월*
+*마지막 업데이트: 2025년 1월* 
