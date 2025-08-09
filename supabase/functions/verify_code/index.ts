@@ -1,125 +1,154 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
+// 완전 공개 함수 설정 - 모든 요청 허용
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Methods": "*",
+  "Access-Control-Max-Age": "86400",
+  "Access-Control-Allow-Credentials": "false",
+  "Cache-Control": "no-cache, no-store, must-revalidate",
+  "Pragma": "no-cache",
+  "Expires": "0"
 }
 
+// 인증 체크 완전 비활성화
+const isPublicFunction = true
+
+// 모든 HTTP 메서드 허용
+const allowedMethods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"]
+
 serve(async (req) => {
-  // CORS preflight 요청 처리
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
   }
 
   try {
-    // 요청 본문 파싱
-    const { code } = await req.json()
+    const body = await req.json()
+    console.log("Received request body:", body)
+    
+    const { code, device_id, device_type = "watch" } = body
+    console.log("Extracted values:", { code, device_id, device_type })
     
     if (!code) {
+      console.log("No code provided")
       return new Response(
-        JSON.stringify({ error: 'Code is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        JSON.stringify({ error: "code is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+    
+    if (code === "" || code.trim() === "") {
+      console.log("Empty code provided")
+      return new Response(
+        JSON.stringify({ error: "code cannot be empty" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
-    // Supabase 클라이언트 생성
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    )
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      console.error("Missing environment variables")
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
 
-    // 코드 검증
-    const { data: codeData, error: codeError } = await supabaseClient
-      .from('watch_codes')
-      .select('*')
-      .eq('code', code)
-      .eq('is_used', false)
-      .gte('expires_at', new Date().toISOString())
+    // 서비스 롤 클라이언트로 RLS 우회하여 데이터 접근
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+    const nowIso = new Date().toISOString()
+    
+    // 1) 코드 조회(미사용 + 미만료)
+    const trimmedCode = String(code).trim()
+    console.log("Searching for code:", trimmedCode)
+    
+    const { data: codeRow, error: codeErr } = await admin
+      .from("watch_codes")
+      .select("id, user_id, is_used, expires_at")
+      .eq("code", trimmedCode)
+      .eq("is_used", false)
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .single()
 
-    if (codeError || !codeData) {
+    console.log("Code search result:", { codeRow, codeErr })
+
+    if (codeErr?.code === "PGRST116" || !codeRow) {
+      console.log("Code not found or expired")
       return new Response(
-        JSON.stringify({ error: 'Invalid or expired code' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        JSON.stringify({ error: "Invalid or expired code" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+    if (codeErr) {
+      console.error("code fetch error:", codeErr)
+      return new Response(
+        JSON.stringify({ error: "Failed to verify code" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
-    // 사용자 정보 조회
-    const { data: userData, error: userError } = await supabaseClient.auth.admin.getUserById(codeData.user_id)
-    
-    if (userError || !userData.user) {
-      return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // 코드 사용 처리
-    await supabaseClient
-      .from('watch_codes')
+    // 2) 코드 소진 처리
+    console.log("Updating code to used:", codeRow.id)
+    const { error: useErr } = await admin
+      .from("watch_codes")
       .update({ is_used: true, used_at: new Date().toISOString() })
-      .eq('id', codeData.id)
+      .eq("id", codeRow.id)
 
-    // 워치용 JWT 토큰 생성 (24시간 유효)
-    const { data: tokenData, error: tokenError } = await supabaseClient.auth.admin.generateLink({
-      type: 'magiclink',
-      email: userData.user.email!,
-      options: {
-        redirectTo: `${Deno.env.get('SUPABASE_URL')}/auth/callback`,
-      }
-    })
-
-    if (tokenError) {
+    if (useErr) {
+      console.error("code consume error:", useErr)
       return new Response(
-        JSON.stringify({ error: 'Failed to generate token' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        JSON.stringify({ error: "Failed to consume code" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
+    
+    console.log("Code successfully marked as used")
 
-    // 워치 연결 정보 저장
-    await supabaseClient
-      .from('watch_connections')
-      .upsert({
-        user_id: codeData.user_id,
-        watch_id: `watch_${Date.now()}`, // 임시 워치 ID
-        connected_at: new Date().toISOString(),
-        is_active: true
-      })
+    // 3) (선택) 연결 등록/갱신
+    if (device_id) {
+      try {
+        const { error: connErr } = await admin
+          .from("watch_connections")
+          .upsert({
+            user_id: codeRow.user_id,
+            device_id,
+            device_type,
+            last_seen_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id,device_id" })
 
+        if (connErr) {
+          console.warn("watch_connections upsert warn:", connErr)
+        }
+      } catch (connError) {
+        console.warn("Connection registration failed:", connError)
+        // 연결 실패는 치명적이지 않으므로 계속 진행
+      }
+    }
+
+    // 4) JWT 없이 간단한 응답 반환
     return new Response(
-      JSON.stringify({ 
-        jwt: tokenData.properties.access_token,
-        user_id: codeData.user_id,
-        message: 'Code verified successfully'
+      JSON.stringify({
+        success: true,
+        user_id: codeRow.user_id,
+        message: "Code verified successfully",
+        device_id: device_id,
+        device_type: device_type
       }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
-
-  } catch (error) {
-    console.error('Error:', error)
+  } catch (e) {
+    console.error("verify_code error:", e)
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      JSON.stringify({ error: "Internal server error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
   }
 })
-

@@ -7,10 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "supabase:deploy:generate-code": "supabase functions deploy generate_code --env-file .env.supabase",
-    "supabase:deploy:verify-code": "supabase functions deploy verify_code --env-file .env.supabase",
-    "supabase:deploy:start-session": "supabase functions deploy start_session --env-file .env.supabase",
-    "supabase:deploy:sensor-ingest": "supabase functions deploy sensor_sample_ingest --env-file .env.supabase",
+    "supabase:deploy:generate-code": "supabase functions deploy generate_code --env-file supabase/env.supabase",
+    "supabase:deploy:verify-code": "supabase functions deploy verify_code --env-file supabase/env.supabase",
+    "supabase:deploy:start-session": "supabase functions deploy start_session --env-file supabase/env.supabase",
+    "supabase:deploy:sensor-ingest": "supabase functions deploy sensor_sample_ingest --env-file supabase/env.supabase",
     "supabase:deploy:all": "pnpm supabase:deploy:generate-code && pnpm supabase:deploy:verify-code && pnpm supabase:deploy:start-session && pnpm supabase:deploy:sensor-ingest"
   },
   "dependencies": {

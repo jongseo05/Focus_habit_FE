@@ -39,15 +39,13 @@ serve(async (req) => {
     // 요청 본문 파싱
     const { device_type = 'web' } = await req.json()
 
-    // 현재 활성 세션이 있는지 확인 (30분 이내)
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-    
+    // 현재 활성 세션이 있는지 확인 (더 정확한 상태 체크)
     const { data: existingSession, error: sessionError } = await supabaseClient
       .from('focus_sessions')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'active')
-      .gte('created_at', thirtyMinutesAgo)
+      .is('ended_at', null) // 명시적으로 종료되지 않은 세션만
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
@@ -64,11 +62,63 @@ serve(async (req) => {
     }
 
     let sessionId: string
+    let isNewSession = false
 
     if (existingSession) {
-      // 기존 세션 재사용
-      sessionId = existingSession.id
-      console.log('Reusing existing session:', sessionId)
+      // 기존 세션의 마지막 활동 시간 확인 (5분 이상 비활성이면 새 세션 생성)
+      const lastActivity = new Date(existingSession.updated_at || existingSession.created_at)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
+      
+      if (lastActivity < fiveMinutesAgo) {
+        // 기존 세션을 비활성으로 변경
+        await supabaseClient
+          .from('focus_sessions')
+          .update({ 
+            status: 'inactive',
+            ended_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingSession.id)
+        
+        // 새 세션 생성
+        const { data: newSession, error: createError } = await supabaseClient
+          .from('focus_sessions')
+          .insert({
+            user_id: user.id,
+            status: 'active',
+            device_type: device_type,
+            started_at: new Date().toISOString()
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          console.error('Session creation error:', createError)
+          return new Response(
+            JSON.stringify({ error: 'Failed to create session' }),
+            { 
+              status: 500, 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            }
+          )
+        }
+
+        sessionId = newSession.id
+        isNewSession = true
+        console.log('Created new session after inactivity:', sessionId)
+      } else {
+        // 기존 세션 재사용 (활동 시간 업데이트)
+        await supabaseClient
+          .from('focus_sessions')
+          .update({ 
+            updated_at: new Date().toISOString(),
+            device_type: device_type // 디바이스 타입 업데이트
+          })
+          .eq('id', existingSession.id)
+        
+        sessionId = existingSession.id
+        console.log('Reusing existing session:', sessionId)
+      }
     } else {
       // 새 세션 생성
       const { data: newSession, error: createError } = await supabaseClient
@@ -94,14 +144,16 @@ serve(async (req) => {
       }
 
       sessionId = newSession.id
+      isNewSession = true
       console.log('Created new session:', sessionId)
     }
 
     return new Response(
       JSON.stringify({ 
         session_id: sessionId,
-        is_new: !existingSession,
-        message: existingSession ? 'Session reused' : 'Session created'
+        is_new: isNewSession,
+        message: isNewSession ? 'Session created' : 'Session reused',
+        device_type: device_type
       }),
       { 
         status: 200, 
