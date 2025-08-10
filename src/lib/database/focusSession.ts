@@ -239,27 +239,28 @@ export class FocusSessionService {
    */
   static async getActiveSession(userId: string): Promise<ApiResponse<FocusSession | null>> {
     try {
-      const supabase = supabaseBrowser()
+      // API를 통해 활성 세션 조회
+      const response = await fetch('/api/focus-session?active=true')
       
-      const { data: session, error } = await supabase
-        .from('focus_session')
-        .select('*')
-        .eq('user_id', userId)
-        .is('ended_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (error && error.code !== 'PGRST116') { // PGRST116는 결과가 없을 때
+      if (!response.ok) {
         return {
           success: false,
-          error: error.message
+          error: `API 호출 실패: ${response.status}`
         }
       }
-
+      
+      const result = await response.json()
+      
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || '활성 세션 조회에 실패했습니다.'
+        }
+      }
+      
       return {
         success: true,
-        data: session as FocusSession | null
+        data: result.data as FocusSession | null
       }
     } catch (error) {
       return {

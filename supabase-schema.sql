@@ -57,6 +57,28 @@ CREATE TABLE IF NOT EXISTS focus_sample (
 );
 
 -- =====================================================
+-- 3.1. ML 피쳐값 테이블 (웹소켓으로 받은 실시간 데이터)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS ml_features (
+  feature_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES focus_session(session_id) ON DELETE CASCADE NOT NULL,
+  ts TIMESTAMP WITH TIME ZONE NOT NULL,
+  head_pose_pitch NUMERIC,
+  head_pose_yaw NUMERIC,
+  head_pose_roll NUMERIC,
+  eye_status VARCHAR(10), -- 'OPEN', 'CLOSED', 'PARTIAL'
+  ear_value NUMERIC,
+  frame_number INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ML 피쳐값 인덱스 생성
+CREATE INDEX IF NOT EXISTS idx_ml_features_session ON ml_features(session_id);
+CREATE INDEX IF NOT EXISTS idx_ml_features_timestamp ON ml_features(ts);
+CREATE INDEX IF NOT EXISTS idx_ml_features_frame ON ml_features(frame_number);
+
+-- =====================================================
 -- 4. 집중 이벤트 테이블
 -- =====================================================
 

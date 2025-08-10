@@ -58,7 +58,7 @@ serve(async (req) => {
 
     // 세션 유효성 확인
     const { data: session, error: sessionError } = await supabaseClient
-      .from('focus_sessions')
+      .from('focus_session')
       .select('*')
       .eq('id', session_id)
       .eq('user_id', user.id)

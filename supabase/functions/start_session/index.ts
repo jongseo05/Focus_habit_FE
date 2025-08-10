@@ -41,7 +41,7 @@ serve(async (req) => {
 
     // 현재 활성 세션이 있는지 확인 (더 정확한 상태 체크)
     const { data: existingSession, error: sessionError } = await supabaseClient
-      .from('focus_sessions')
+      .from('focus_session')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'active')
@@ -72,7 +72,7 @@ serve(async (req) => {
       if (lastActivity < fiveMinutesAgo) {
         // 기존 세션을 비활성으로 변경
         await supabaseClient
-          .from('focus_sessions')
+          .from('focus_session')
           .update({ 
             status: 'inactive',
             ended_at: new Date().toISOString(),
@@ -82,7 +82,7 @@ serve(async (req) => {
         
         // 새 세션 생성
         const { data: newSession, error: createError } = await supabaseClient
-          .from('focus_sessions')
+          .from('focus_session')
           .insert({
             user_id: user.id,
             status: 'active',
@@ -109,7 +109,7 @@ serve(async (req) => {
       } else {
         // 기존 세션 재사용 (활동 시간 업데이트)
         await supabaseClient
-          .from('focus_sessions')
+          .from('focus_session')
           .update({ 
             updated_at: new Date().toISOString(),
             device_type: device_type // 디바이스 타입 업데이트
@@ -122,7 +122,7 @@ serve(async (req) => {
     } else {
       // 새 세션 생성
       const { data: newSession, error: createError } = await supabaseClient
-        .from('focus_sessions')
+        .from('focus_session')
         .insert({
           user_id: user.id,
           status: 'active',

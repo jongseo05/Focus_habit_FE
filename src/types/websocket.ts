@@ -36,21 +36,66 @@ export interface AuthMessage extends WebSocketMessage {
   timestamp: number
 }
 
-// 제스처 인식 응답 메시지
-export interface GestureResponse {
-  gesture: string // 인식된 제스처
-  timestamp: string // ISO 형식 타임스탬프
+// 프레임 전송 메시지 (base64 프레임만)
+export interface FrameMessage extends WebSocketMessage {
+  type: 'frame'
+  data: string // Base64 인코딩된 프레임 데이터만
 }
 
-// WebSocket 구성 옵션
+// 프레임 분석 결과 응답
+export interface FrameAnalysisResult extends WebSocketMessage {
+  type: 'frame_analysis_result'
+  data: {
+    frameId: string
+    features: {
+      headPose: {
+        pitch: number
+        yaw: number
+        roll: number
+      }
+      eyeStatus: {
+        leftEye: 'open' | 'closed' | 'partially_open'
+        rightEye: 'open' | 'closed' | 'partially_open'
+        confidence: number
+      }
+      attention: {
+        isFocused: boolean
+        confidence: number
+        distractionLevel: number
+      }
+      timestamp: number
+    }
+  }
+}
+
+// 에러 메시지
+export interface ErrorMessage extends WebSocketMessage {
+  type: 'error'
+  data: {
+    code: string
+    message: string
+    details?: any
+  }
+}
+
+// 연결 상태 메시지
+export interface StatusMessage extends WebSocketMessage {
+  type: 'status'
+  data: {
+    status: WebSocketStatus
+    message?: string
+    timestamp: number
+  }
+}
+
+// WebSocket 클라이언트 설정
 export interface WebSocketConfig {
   url: string
+  protocols?: string | string[]
   reconnectInterval: number
   maxReconnectAttempts: number
-  enablePing: boolean
   pingInterval: number
-  protocols?: string[]
-  headers?: Record<string, string>
+  enablePing: boolean
 }
 
 // WebSocket 이벤트 핸들러
@@ -58,21 +103,15 @@ export interface WebSocketEventHandlers {
   onOpen?: (event: Event) => void
   onMessage?: (message: WebSocketMessage) => void
   onClose?: (event: CloseEvent) => void
-  onError?: (error: Event) => void
+  onError?: (event: Event) => void
   onReconnect?: (attempt: number) => void
   onMaxReconnectAttemptsReached?: () => void
 }
 
-// WebSocket 훅 반환 타입
-export interface UseWebSocketReturn {
+// WebSocket 연결 상태
+export interface WebSocketConnectionState {
   status: WebSocketStatus
-  lastMessage: WebSocketMessage | null
-  sendMessage: (message: WebSocketMessage) => void
-  sendRawText: (text: string) => void // 원시 텍스트 전송용 (제스처 인식)
-  connect: () => void
-  disconnect: () => void
-  reconnect: () => void
   isConnected: boolean
-  isConnecting: boolean
   reconnectAttempts: number
 }
+

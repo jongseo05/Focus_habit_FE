@@ -70,10 +70,9 @@ const MicrophonePermissionLayer = ({
         //   // e.data: { result, ... }
         // }
         
-        console.log('🎤 마이크 권한 허용 및 오디오 파이프라인 자동 시작')
+
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('마이크 스트림/AudioWorklet 연결 실패:', err)
+        // 에러 처리만 유지
       }
     }
     // 자동으로 닫지 않음 - Dashboard의 useEffect에서 상태 변화를 감지하여 처리

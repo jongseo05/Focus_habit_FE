@@ -28,6 +28,18 @@ export function useUser() {
   })
 }
 
+// useAuth 훅 (기존 훅들과 호환성을 위해)
+export function useAuth() {
+  const { data: user, isLoading, error } = useUser()
+  
+  return {
+    user,
+    isLoading,
+    error,
+    isAuthenticated: !!user
+  }
+}
+
 // 사용자 프로필 조회
 export function useUserProfile(userId?: string) {
   return useQuery({

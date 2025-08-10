@@ -5,35 +5,21 @@ let ort: any = null
 
 // ONNX Runtime 초기화 함수
 async function initializeONNX() {
-  console.log('[KoELECTRA] ONNX Runtime 초기화 시작...')
-  
   if (typeof window === 'undefined') {
     throw new Error('ONNX Runtime은 클라이언트 사이드에서만 사용할 수 있습니다.')
   }
   
   if (ort) {
-    console.log('[KoELECTRA] 기존 ONNX Runtime 인스턴스 재사용')
     return ort
   }
   
   try {
-    console.log('[KoELECTRA] onnxruntime-web 모듈 import 시작...')
     ort = await import('onnxruntime-web')
-    console.log('[KoELECTRA] onnxruntime-web 모듈 import 완료')
     
-    console.log('[KoELECTRA] ONNX Runtime 환경 설정 시작...')
-    // ONNX Runtime 설정 - 성능 최적화
+    // ONNX Runtime 환경 설정 - 성능 최적화
     ort.env.wasm.numThreads = 1
     ort.env.wasm.simd = true // SIMD 활성화로 성능 향상
     ort.env.wasm.wasmPaths = '/'
-    console.log('[KoELECTRA] ONNX Runtime 환경 설정 완료:', {
-      numThreads: ort.env.wasm.numThreads,
-      simd: ort.env.wasm.simd,
-      wasmPaths: ort.env.wasm.wasmPaths
-    })
-    
-    console.log('[KoELECTRA] ✅ ONNX Runtime 초기화 완료')
-    return ort
   } catch (error) {
     console.error('[KoELECTRA] ❌ ONNX Runtime 초기화 실패:', error)
     console.error('[KoELECTRA] 오류 상세 정보:', {
@@ -125,7 +111,7 @@ class LRUCache<K, V> {
   }
 }
 
-class KoELECTRAInferenceEngine implements KoELECTRALoader {
+export class KoELECTRAInferenceEngine implements KoELECTRALoader {
   private _session: any | null = null
   private _isLoaded = false
   private _isLoading = false
@@ -137,8 +123,6 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
   private _processingBatch = false
 
   constructor(config: KoELECTRAConfig) {
-    console.log('[KoELECTRA] KoELECTRAInferenceEngine 생성자 호출됨:', config);
-    
     this._config = {
       enableCache: true,
       cacheSize: 100,
@@ -146,14 +130,9 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
       ...config
     }
     
-    console.log('[KoELECTRA] 최종 설정:', this._config);
-    
     if (this._config.enableCache) {
       this._cache = new LRUCache<string, InferenceResult>(this._config.cacheSize || 100)
-      console.log('[KoELECTRA] 캐시 초기화 완료 - 크기:', this._config.cacheSize || 100);
     }
-    
-    console.log('[KoELECTRA] KoELECTRAInferenceEngine 초기화 완료');
   }
 
   get session(): any | null {
@@ -173,106 +152,55 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
   }
 
   async loadModel(): Promise<void> {
-    console.log('[KoELECTRA] loadModel 호출됨 - 현재 상태:', {
-      isLoaded: this._isLoaded,
-      isLoading: this._isLoading,
-      hasSession: !!this._session,
-      error: this._error
-    });
-    
     if (this._isLoaded || this._isLoading) {
-      console.log('[KoELECTRA] 이미 로드 중이거나 로드됨 - 로딩 중단');
       return
     }
 
-    console.log('[KoELECTRA] 모델 로딩 시작...');
     this._isLoading = true
     this._error = null
 
     try {
-      console.log('[KoELECTRA] 1단계: 브라우저 환경 확인');
+      // 1단계: 브라우저 환경 확인
       if (typeof window === 'undefined') {
-        throw new Error('브라우저 환경에서만 모델을 로드할 수 있습니다.');
+        throw new Error('브라우저 환경에서만 실행 가능합니다.')
       }
-      
-      console.log('[KoELECTRA] 2단계: 모델 파일 존재 확인 - 경로:', this._config.modelPath);
-      
-      // 모델 파일 존재 여부 확인 (브라우저에서는 fetch로 확인)
-      try {
-        const response = await fetch(this._config.modelPath, { method: 'HEAD' });
-        console.log('[KoELECTRA] 모델 파일 응답:', {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries())
-        });
-        
-        if (!response.ok) {
-          throw new Error(`모델 파일을 찾을 수 없습니다: ${this._config.modelPath} (상태: ${response.status})`);
-        }
-        console.log('[KoELECTRA] ✅ 모델 파일 존재 확인됨');
-      } catch (fetchError) {
-        console.error('[KoELECTRA] ❌ 모델 파일 존재 확인 실패:', fetchError);
-        throw new Error(`모델 파일 접근 실패: ${fetchError}`);
+
+      // 2단계: 모델 파일 존재 확인
+      const modelResponse = await fetch(this._config.modelPath)
+      if (!modelResponse.ok) {
+        throw new Error(`모델 파일을 찾을 수 없습니다: ${this._config.modelPath}`)
       }
-      
-      console.log('[KoELECTRA] 3단계: 토크나이저 초기화');
+
+      // 3단계: 토크나이저 초기화
       await initializeTokenizer()
-      console.log('[KoELECTRA] ✅ 토크나이저 초기화 완료');
       
-      console.log('[KoELECTRA] 4단계: ONNX Runtime 초기화');
-      const onnxRuntime = await initializeONNX()
-      console.log('[KoELECTRA] ✅ ONNX Runtime 초기화 완료');
+      // 4단계: ONNX Runtime 초기화
+      const ort = await initializeONNX()
       
-      console.log('[KoELECTRA] 5단계: ONNX 모델 로드 시작');
-      
-      // ONNX 모델 로드 - 성능 최적화 옵션 적용
-      this._session = await onnxRuntime.InferenceSession.create(
-        this._config.modelPath,
-        {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all',
-          executionMode: 'parallel', // 병렬 실행으로 성능 향상
-          enableCpuMemArena: true, // CPU 메모리 아레나 활성화
-          enableMemPattern: true, // 메모리 패턴 최적화
-          extra: {
-            session: {
-              use_ort_model_bytes_directly: true, // 모델 바이트 직접 사용
-              log_severity_level: 0 // 로그 레벨 최소화
-            }
+      // 5단계: ONNX 모델 로드
+      const modelBuffer = await modelResponse.arrayBuffer()
+      this._session = await ort.InferenceSession.create(modelBuffer, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all',
+        enableCpuMemArena: true,
+        enableMemPattern: true,
+        extra: {
+          session: {
+            use_ort_model_bytes_directly: true,
+            use_ep_parallel: true
           }
         }
-      )
+      })
 
-      console.log('[KoELECTRA] ✅ ONNX 모델 로딩 완료');
-      console.log('[KoELECTRA] 입력 정보:', this._session.inputNames)
-      console.log('[KoELECTRA] 출력 정보:', this._session.outputNames)
-
-      // 상태 업데이트 전 최종 확인
-      console.log('[KoELECTRA] 상태 업데이트 전 확인:', {
-        hasSession: !!this._session,
-        sessionInputNames: this._session?.inputNames,
-        sessionOutputNames: this._session?.outputNames
-      });
-
+      // 상태 업데이트
       this._isLoaded = true
       this._isLoading = false
-      console.log('[KoELECTRA] ✅ 모델 상태 업데이트 완료 - isLoaded: true');
-      
-      // 상태 업데이트 후 확인
-      console.log('[KoELECTRA] 상태 업데이트 후 확인:', {
-        isLoaded: this._isLoaded,
-        isLoading: this._isLoading,
-        error: this._error
-      });
+      this._error = null
+
     } catch (error) {
-      console.error('[KoELECTRA] ❌ 모델 로딩 실패:', error)
-      console.error('[KoELECTRA] 오류 상세 정보:', {
-        name: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      this._error = error instanceof Error ? error.message : 'Unknown error'
+      this._error = error instanceof Error ? error.message : '모델 로딩 실패'
       this._isLoading = false
+      this._isLoaded = false
       throw error
     }
   }
@@ -302,28 +230,54 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
 
     const startTime = performance.now()
 
-    // 캐시 확인
-    if (this._cache) {
-      const cached = this._cache.get(text)
-      if (cached) {
-        return { ...cached, cached: true, processingTime: 0 }
+    try {
+      // 캐시 확인
+      if (this._cache) {
+        const cached = this._cache.get(text)
+        if (cached) {
+          return { ...cached, cached: true, processingTime: 0 }
+        }
       }
-    }
 
-    // 배치 처리 활성화된 경우 큐에 추가
-    if (this._config.enableBatching && this._batchQueue.length < 5) {
-      return this.addToBatch(text)
-    }
+      // 텍스트 전처리
+      const preprocessed = koelectraPreprocess(text, this._config.maxLength)
+      
+      // ONNX Runtime 가져오기
+      const onnxRuntime = await initializeONNX()
+      
+      // 입력 텐서 생성
+      const inputTensor = new onnxRuntime.Tensor('int64', preprocessed.input_ids, [1, preprocessed.input_ids.length])
+      const attentionMask = new onnxRuntime.Tensor('int64', preprocessed.attention_mask, [1, preprocessed.attention_mask.length])
+      const tokenTypeIds = new onnxRuntime.Tensor('int64', preprocessed.token_type_ids, [1, preprocessed.token_type_ids.length])
 
-    // 즉시 처리
-    const result = await this.processInference(text)
-    
-    // 캐시에 저장
-    if (this._cache) {
-      this._cache.set(text, result)
-    }
+      // 추론 실행
+      const feeds = {
+        input_ids: inputTensor,
+        attention_mask: attentionMask,
+        token_type_ids: tokenTypeIds
+      }
 
-    return result
+      const results = await this._session.run(feeds)
+      const logits = results.logits.data as Float32Array
+      const confidence = this.calculateConfidence(logits)
+
+      const result: InferenceResult = {
+        logits,
+        confidence,
+        processingTime: performance.now() - startTime,
+        cached: false
+      }
+
+      // 캐시에 저장
+      if (this._cache) {
+        this._cache.set(text, result)
+      }
+
+      return result
+
+    } catch (error) {
+      throw new Error(`추론 실패: ${error}`)
+    }
   }
 
   private async addToBatch(text: string): Promise<InferenceResult> {
@@ -358,7 +312,6 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
     try {
       const results = await this.batchInference(texts)
       // 결과 처리
-      console.log(`[KoELECTRA] 배치 처리 완료: ${texts.length}개 텍스트`)
     } catch (error) {
       console.error('[KoELECTRA] 배치 처리 실패:', error)
     } finally {
@@ -379,18 +332,8 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
     const startTime = performance.now()
 
     try {
-      console.log('[KoELECTRA] 추론 시작 - 입력 텍스트:', text);
-      
       // 텍스트 전처리
       const preprocessed = koelectraPreprocess(text, this._config.maxLength)
-      console.log('[KoELECTRA] 전처리 결과:', {
-        inputIdsLength: preprocessed.input_ids.length,
-        attentionMaskLength: preprocessed.attention_mask.length,
-        tokenTypeIdsLength: preprocessed.token_type_ids.length,
-        inputIdsSample: preprocessed.input_ids.slice(0, 10), // 처음 10개만
-        attentionMaskSample: preprocessed.attention_mask.slice(0, 10),
-        tokenTypeIdsSample: preprocessed.token_type_ids.slice(0, 10)
-      });
       
       // ONNX Runtime 가져오기
       const onnxRuntime = await initializeONNX()
@@ -400,12 +343,6 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
       const attentionMask = new onnxRuntime.Tensor('int64', preprocessed.attention_mask, [1, preprocessed.attention_mask.length])
       const tokenTypeIds = new onnxRuntime.Tensor('int64', preprocessed.token_type_ids, [1, preprocessed.token_type_ids.length])
 
-      console.log('[KoELECTRA] 텐서 생성 완료:', {
-        inputTensorShape: inputTensor.dims,
-        attentionMaskShape: attentionMask.dims,
-        tokenTypeIdsShape: tokenTypeIds.dims
-      });
-
       // 추론 실행
       const feeds = {
         input_ids: inputTensor,
@@ -413,39 +350,21 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
         token_type_ids: tokenTypeIds
       }
 
-      console.log('[KoELECTRA] 모델 추론 실행 중...');
       const results = await this._session.run(feeds)
-      console.log('[KoELECTRA] 모델 추론 완료:', {
-        outputKeys: Object.keys(results),
-        logitsShape: results.logits?.dims,
-        logitsType: results.logits?.type
-      });
-      
       const logits = results.logits.data as Float32Array
-      console.log('[KoELECTRA] 로짓 값:', {
-        logitsLength: logits.length,
-        logitsValues: Array.from(logits),
-        logitsMin: Math.min(...logits),
-        logitsMax: Math.max(...logits),
-        logitsMean: logits.reduce((sum, val) => sum + val, 0) / logits.length
-      });
-
-      const processingTime = performance.now() - startTime
       const confidence = this.calculateConfidence(logits)
-      
-      console.log('[KoELECTRA] 신뢰도 계산 완료:', {
-        confidence: confidence,
-        processingTime: processingTime
-      });
 
-      return {
+      const result: InferenceResult = {
         logits,
         confidence,
-        processingTime
+        processingTime: performance.now() - startTime,
+        cached: false
       }
+
+      return result
+
     } catch (error) {
-      console.error('[KoELECTRA] 추론 실패:', error)
-      throw error
+      throw new Error(`추론 실패: ${error}`)
     }
   }
 
@@ -535,64 +454,44 @@ class KoELECTRAInferenceEngine implements KoELECTRALoader {
   }
 
   private calculateConfidence(logits: Float32Array): number {
-    console.log('[KoELECTRA] 신뢰도 계산 시작:', {
-      logitsLength: logits.length,
-      logitsValues: Array.from(logits).map(v => Number(v.toFixed(4)))
-    });
-    
-    // 로짓 값 검증
-    if (logits.length === 0) {
-      console.error('[KoELECTRA] 로짓 배열이 비어있음');
-      return 0;
+    if (!logits || logits.length === 0) {
+      return 0
     }
-    
-    if (logits.some(isNaN)) {
-      console.error('[KoELECTRA] 로짓에 NaN 값이 포함됨');
-      return 0;
-    }
-    
-    // Softmax 계산
-    const maxLogit = Math.max(...logits)
-    console.log('[KoELECTRA] 최대 로짓:', maxLogit.toFixed(4));
-    
-    // 수치 안정성을 위한 검증
-    if (!isFinite(maxLogit)) {
-      console.error('[KoELECTRA] 최대 로짓이 유효하지 않음:', maxLogit);
-      return 0;
-    }
-    
-    const expLogits = logits.map(logit => {
-      const expValue = Math.exp(logit - maxLogit);
-      if (!isFinite(expValue)) {
-        console.warn('[KoELECTRA] exp 값이 유효하지 않음:', { logit, maxLogit, expValue });
-        return 0;
+
+    // NaN 값 확인
+    for (let i = 0; i < logits.length; i++) {
+      if (isNaN(logits[i])) {
+        return 0
       }
-      return expValue;
-    });
-    
-    console.log('[KoELECTRA] exp(logit - maxLogit) 값들:', expLogits.map(v => Number(v.toFixed(6))));
-    
-    const sumExpLogits = expLogits.reduce((sum, exp) => sum + exp, 0)
-    console.log('[KoELECTRA] exp 합계:', Number(sumExpLogits.toFixed(6)));
-    
+    }
+
+    // 최대 로짓 찾기
+    const maxLogit = Math.max(...logits)
+    if (!isFinite(maxLogit)) {
+      return 0
+    }
+
+    // Softmax 계산
+    const expLogits = logits.map(logit => {
+      const expValue = Math.exp(logit - maxLogit)
+      if (!isFinite(expValue)) {
+        return 0
+      }
+      return expValue
+    })
+
+    const sumExpLogits = expLogits.reduce((sum, val) => sum + val, 0)
     if (sumExpLogits === 0) {
-      console.error('[KoELECTRA] exp 합계가 0임 - 모든 exp 값이 0');
-      return 0;
+      return 0
     }
-    
+
     const probabilities = expLogits.map(exp => exp / sumExpLogits)
-    console.log('[KoELECTRA] 확률 값들:', probabilities.map(v => Number(v.toFixed(6))));
-    
-    // 최대 확률을 신뢰도로 사용
     const maxProbability = Math.max(...probabilities)
-    console.log('[KoELECTRA] 최대 확률 (신뢰도):', maxProbability.toFixed(6));
-    
-    // 신뢰도 검증
-    if (!isFinite(maxProbability) || maxProbability < 0 || maxProbability > 1) {
-      console.error('[KoELECTRA] 신뢰도가 유효하지 않음:', maxProbability);
-      return 0;
+
+    if (!isFinite(maxProbability)) {
+      return 0
     }
-    
+
     return maxProbability
   }
 
@@ -630,17 +529,13 @@ export function createKoELECTRA(config: KoELECTRAConfig = {
   maxLength: 512,
   batchSize: 1
 }): KoELECTRAInferenceEngine {
-  console.log('[KoELECTRA] createKoELECTRA 호출됨:', {
-    config,
-    globalKoELECTRA: !!globalKoELECTRA
-  });
-  
-  if (!globalKoELECTRA) {
-    console.log('[KoELECTRA] 새로운 인스턴스 생성');
-    globalKoELECTRA = new KoELECTRAInferenceEngine(config)
-  } else {
-    console.log('[KoELECTRA] 기존 인스턴스 재사용');
+  // 기존 인스턴스가 있으면 재사용
+  if (globalKoELECTRA) {
+    return globalKoELECTRA
   }
+
+  // 새 인스턴스 생성
+  globalKoELECTRA = new KoELECTRAInferenceEngine(config)
   return globalKoELECTRA
 }
 
