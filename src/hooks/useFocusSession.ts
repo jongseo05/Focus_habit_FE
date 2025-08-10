@@ -101,25 +101,29 @@ export function useActiveFocusSession(userId?: string) {
     queryFn: async (): Promise<FocusSession | null> => {
       if (!userId) return null
       
-      const supabase = supabaseBrowser()
-      const { data, error } = await supabase
-        .from('focus_session')
-        .select('*')
-        .eq('user_id', userId)
-        .is('ended_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (error && error.code !== 'PGRST116') { // PGRST116는 결과가 없을 때
-        throw new Error(error.message)
+      try {
+        // 우리가 만든 API 사용
+        const response = await fetch('/api/focus-session?active=true')
+        
+        if (!response.ok) {
+          throw new Error(`API 호출 실패: ${response.status}`)
+        }
+        
+        const result = await response.json()
+        
+        if (!result.success) {
+          throw new Error(result.error || '활성 세션 조회에 실패했습니다.')
+        }
+        
+        return result.data as FocusSession | null
+      } catch (error) {
+        console.error('활성 세션 조회 오류:', error)
+        throw error
       }
-
-      return data as FocusSession | null
     },
     enabled: !!userId,
     staleTime: 30 * 1000, // 30초
-    refetchInterval: 10 * 1000, // 10초마다 자동 갱신
+    refetchInterval: false, // 자동 갱신 비활성화
   })
 }
 

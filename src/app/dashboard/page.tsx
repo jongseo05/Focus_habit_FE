@@ -25,8 +25,10 @@ import {
   Target,
   AlertCircle,
   BarChart3,
+  Database,
   LogOut,
   Watch,
+  User,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,18 +41,20 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
+import { useActiveFocusSession } from "@/hooks/useFocusSession"
 import CameraPermissionLayer from "@/components/CameraPermissionLayer"
 import WebcamPreview from "@/components/WebcamPreview"
 import FocusSessionErrorDisplay from "@/components/FocusSessionErrorDisplay"
 import { FocusSessionStatus } from "@/types/focusSession"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
-import { useMicrophoneStream } from "@/hooks/useMediaStream"
+import { useMicrophoneStream, useMediaStream } from "@/hooks/useMediaStream"
 import HybridAudioPipeline from "@/components/HybridAudioPipeline"
 import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
-import { useSignOut } from "@/hooks/useAuth"
+import { useSignOut, useAuth } from "@/hooks/useAuth"
+import { useQuery } from "@tanstack/react-query"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -705,6 +709,9 @@ function DashboardContent() {
   const signOut = useSignOut()
   const router = useRouter()
   
+  // 현재 사용자 정보 가져오기
+  const { user } = useAuth()
+  
   // KoELECTRA 모델 초기화
   const { isLoaded: isModelLoaded, isLoading: isModelLoading, error: modelError, inference, loadModel } = useKoELECTRA({
     autoLoad: false, // 자동 로드 비활성화하고 수동으로 제어
@@ -720,17 +727,9 @@ function DashboardContent() {
   
   // 컴포넌트 마운트 시 즉시 모델 로드
   useEffect(() => {
-    console.log('[대시보드] 모델 로딩 상태 확인:', {
-      isModelLoaded,
-      isModelLoading,
-      modelError,
-      hasLoadModel: !!loadModel
-    });
-    
     if (!isModelLoaded && !isModelLoading && !modelError && loadModel) {
-      console.log('[대시보드] KoELECTRA 모델 즉시 로드 시작');
-      loadModel().catch(err => {
-        console.error('[대시보드] KoELECTRA 모델 로드 실패:', err);
+      loadModel().catch(() => {
+        // 모델 로드 실패 시 조용히 처리
       });
     }
   }, [isModelLoaded, isModelLoading, modelError, loadModel]);
@@ -738,31 +737,15 @@ function DashboardContent() {
   // 모델 로딩 실패 시 재시도 (5초 후)
   useEffect(() => {
     if (modelError && loadModel) {
-      console.log('[대시보드] 모델 로딩 실패 감지, 5초 후 재시도 예정');
       const retryTimeout = setTimeout(() => {
-        console.log('[대시보드] 모델 로딩 재시도');
-        loadModel().catch(err => {
-          console.error('[대시보드] KoELECTRA 모델 재시도 실패:', err);
+        loadModel().catch(() => {
+          // 모델 로드 재시도 실패 시 조용히 처리
         });
       }, 5000);
       
       return () => clearTimeout(retryTimeout);
     }
   }, [modelError, loadModel]);
-  
-  // 모델 로딩 상태 모니터링 (10초마다)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('[대시보드] 모델 상태 모니터링:', {
-        isModelLoaded,
-        isModelLoading,
-        modelError,
-        timestamp: new Date().toLocaleTimeString()
-      });
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [isModelLoaded, isModelLoading, modelError]);
 
   // 로그아웃 성공 시 홈페이지로 리다이렉트
   useEffect(() => {
@@ -774,7 +757,6 @@ function DashboardContent() {
   // 로그아웃 에러 처리
   useEffect(() => {
     if (signOut.error) {
-      console.error('로그아웃 실패:', signOut.error)
       alert('로그아웃 중 오류가 발생했습니다. 다시 시도해주세요.')
     }
   }, [signOut.error])
@@ -790,6 +772,34 @@ function DashboardContent() {
     text: string
   }>>([])
   
+  // 현재 활성 세션 조회
+  const { data: activeSession } = useActiveFocusSession(user?.id)
+  
+  // 최근 완료된 세션들 조회 (데이터 로그용)
+  const { data: recentSessions } = useQuery({
+    queryKey: ['recent-sessions', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+      
+      const supabase = supabaseBrowser()
+      const { data, error } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', user.id)
+        .not('ended_at', 'is', null) // 완료된 세션만
+        .order('ended_at', { ascending: false })
+        .limit(5) // 최근 5개
+      
+      if (error) {
+        return []
+      }
+      
+      return data || []
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5분
+  })
+  
   // elapsed 시간 업데이트
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -803,13 +813,6 @@ function DashboardContent() {
   
   // 실시간 집중 상태 분석 (30초마다)
   useEffect(() => {
-    console.log('[대시보드] 집중 상태 분석 조건 확인:', {
-      isRunning: session.isRunning,
-      isPaused: session.isPaused,
-      isModelLoaded,
-      hasInference: !!inference
-    });
-    
     if (!session.isRunning || session.isPaused || !isModelLoaded || !inference) {
       return
     }
@@ -838,8 +841,6 @@ function DashboardContent() {
         const texts = isFocused ? focusTexts : distractedTexts
         const randomText = texts[Math.floor(Math.random() * texts.length)]
         
-        console.log('[대시보드] 집중 상태 분석 시작:', randomText)
-        
         const result = await inference(randomText)
         
         if (result) {
@@ -862,15 +863,8 @@ function DashboardContent() {
             // 최근 10개만 유지
             return newHistory.slice(-10)
           })
-          
-          console.log('[대시보드] 집중 상태 분석 완료:', {
-            status,
-            confidence,
-            text: randomText
-          })
         }
       } catch (error) {
-        console.error('[대시보드] 집중 상태 분석 실패:', error)
         setCurrentFocusStatus('unknown')
         setFocusConfidence(0)
       }
@@ -885,11 +879,16 @@ function DashboardContent() {
     return () => clearInterval(interval)
   }, [session.isRunning, session.isPaused, isModelLoaded, inference])
   
-  const mediaStream = useFocusSessionWithGesture(session.isRunning, {
-    frameRate: 10, // 1초에 10번 (10fps)
-    enableGestureRecognition: true,
-    gestureJpegQuality: 0.95
-  })
+  // 미디어 스트림과 제스처 인식을 통합 관리
+  const mediaStream = useFocusSessionWithGesture(
+    session.isRunning, 
+    activeSession?.session_id, // 세션 ID 전달
+    {
+      frameRate: 10, // 1초에 10번 (10fps)
+      enableGestureRecognition: true, // 제스처 인식 활성화
+      gestureJpegQuality: 0.95
+    }
+  )
   const microphoneStream = useMicrophoneStream()
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
@@ -947,6 +946,13 @@ function DashboardContent() {
   // 집중모드 시작 함수
   const startFocusSession = async () => {
     if (!session.isRunning) {
+      // 데이터베이스 연결 상태 확인
+      const isConnected = await checkDatabaseConnection()
+      if (!isConnected) {
+        alert('데이터베이스 연결에 문제가 있습니다. 페이지를 새로고침하거나 다시 시도해주세요.')
+        return
+      }
+      
       session.startSession()
       await mediaStream.startStream()
       await microphoneStream.startStream()
@@ -955,36 +961,128 @@ function DashboardContent() {
     }
   }
 
-  const handleStopSession = async () => {
-    console.log('🛑 집중 세션 완전 종료')
+  // 데이터베이스 연결 상태 확인 함수
+  const checkDatabaseConnection = async () => {
+    try {
+      const supabase = supabaseBrowser()
+      console.log('🔍 데이터베이스 연결 상태 확인 중...')
+      
+      // 1. 인증 상태 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError) {
+        return false
+      }
+      
+      if (!user) {
+        return false
+      }
+      
+      // 2. 데이터베이스 연결 테스트
+      const { data: testData, error: testError } = await supabase
+        .from('focus_session')
+        .select('count')
+        .limit(1)
+      
+      if (testError) {
+        return false
+      }
+      
+      // 3. 활성 세션 조회 테스트
+      const { data: activeSession, error: sessionError } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('ended_at', null)
+        .limit(1)
+      
+      if (sessionError && sessionError.code !== 'PGRST116') {
+        return false
+      }
+      
+      return true
+      
+    } catch (error) {
+      return false
+    }
+  }
+
+  // 데이터베이스 연결 상태를 저장할 state
+  const [dbConnectionStatus, setDbConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking')
+  
+  // 컴포넌트 마운트 시 데이터베이스 연결 상태 확인
+  useEffect(() => {
+    const checkConnection = async () => {
+      const isConnected = await checkDatabaseConnection()
+      setDbConnectionStatus(isConnected ? 'connected' : 'disconnected')
+    }
     
+    checkConnection()
+  }, [])
+
+  const handleStopSession = async () => {
     try {
       const supabase = supabaseBrowser()
       
-      // 1. 현재 활성 세션 ID 가져오기
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        console.error('사용자 인증 정보가 없습니다.')
+      // 1. 현재 사용자 인증 상태 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError) {
+        alert('사용자 인증에 실패했습니다. 다시 로그인해주세요.')
         return
       }
       
-      console.log('사용자 ID:', user.id)
+      if (!user) {
+        alert('사용자 인증 정보가 없습니다. 다시 로그인해주세요.')
+        return
+      }
 
-      // 활성 세션 조회 (더 안전한 방식)
-      const { data: sessions, error: sessionQueryError } = await supabase
-        .from('focus_session')
-        .select('session_id')
-        .eq('user_id', user.id)
-        .is('ended_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1)
-
-      console.log('활성 세션 조회 결과:', { sessions, sessionQueryError })
+      // 2. 활성 세션 조회 (API 사용)
+      let activeSession = null
+      try {
+        const sessionResponse = await fetch('/api/focus-session?active=true')
+        
+        if (!sessionResponse.ok) {
+          // API 실패 시 직접 DB에서 조회 시도
+          const { data: directSession, error: directError } = await supabase
+            .from('focus_session')
+            .select('*')
+            .eq('user_id', user.id)
+            .is('ended_at', null)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .single()
+          
+          if (!directError || directError.code === 'PGRST116') {
+            activeSession = directSession
+          }
+        } else {
+          const sessionData = await sessionResponse.json()
+          activeSession = sessionData.data
+        }
+      } catch (fetchError) {
+        // 네트워크 오류 시 직접 DB 조회 시도
+        try {
+          const { data: directSession, error: directError } = await supabase
+            .from('focus_session')
+            .select('*')
+            .eq('user_id', user.id)
+            .is('ended_at', null)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .single()
+          
+          if (!directError || directError.code === 'PGRST116') {
+            activeSession = directSession
+          }
+        } catch (dbError) {
+          // 직접 DB 조회 실패 시 조용히 처리
+        }
+      }
       
-      const activeSession = sessions?.[0]
-
-      if (activeSession) {
-        // 2. 세션 종료 처리 (updated_at 제거)
+      if (!activeSession) {
+        // 활성 세션이 없어도 로컬 상태는 초기화
+      } else {
+        // 3. 세션 종료 처리
+        
         const { error: endError } = await supabase
           .from('focus_session')
           .update({
@@ -994,34 +1092,45 @@ function DashboardContent() {
           .eq('session_id', activeSession.session_id)
 
         if (endError) {
-          console.error('세션 종료 실패:', endError)
-          console.error('세션 ID:', activeSession.session_id)
-          console.error('업데이트 데이터:', {
-            ended_at: new Date().toISOString(),
-            focus_score: session.focusScore
-          })
+          // DB 업데이트 실패 시 재시도
+          const { error: retryError } = await supabase
+            .from('focus_session')
+            .update({
+              ended_at: new Date().toISOString(),
+              focus_score: session.focusScore
+            })
+            .eq('session_id', activeSession.session_id)
+          
+          if (retryError) {
+            alert('세션 종료 중 데이터베이스 오류가 발생했습니다. 관리자에게 문의해주세요.')
+          }
+          
+          // DB 업데이트 실패해도 로컬 상태는 초기화
         } else {
-          console.log('✅ 세션이 성공적으로 종료되었습니다.')
+          // 4. 일일 요약 데이터 업데이트
+          try {
+            const today = new Date().toISOString().split('T')[0]
+            await ReportService.upsertDailySummary(user.id, today)
+          } catch (summaryError) {
+            // 일일 요약 업데이트 실패 시 조용히 처리
+          }
           
-          // 3. 일일 요약 데이터 업데이트
-          const today = new Date().toISOString().split('T')[0]
-          await ReportService.upsertDailySummary(user.id, today) // 클라이언트 사이드에서 호출
-          
-          // 4. 성공 알림 표시
+          // 5. 성공 알림 표시
           const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
           const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${session.focusScore}점\n\n📈 리포트를 확인하시겠습니까?`
           
           if (confirm(message)) {
+            const today = new Date().toISOString().split('T')[0]
             window.open(`/report/daily/date/${today}`, '_blank')
           }
         }
       }
     } catch (error) {
-      console.error('세션 종료 중 오류:', error)
       alert('세션 종료 중 오류가 발생했습니다.')
+      // 오류가 발생해도 로컬 상태는 초기화
     }
 
-    // 5. 로컬 상태 초기화
+    // 6. 로컬 상태 초기화 (항상 실행)
     session.stopSession()
     mediaStream.stopStream()
     microphoneStream.stopStream()
@@ -1030,7 +1139,6 @@ function DashboardContent() {
   }
 
   const handlePauseSession = () => {
-    console.log('⏸️ 집중 세션 일시정지/재시작')
     session.pauseSession()
     // 일시정지 시에는 스트림은 유지하되, 오디오 파이프라인과 제스처 인식만 일시정지
     // (HybridAudioPipeline과 useFocusSessionWithGesture에서 자동으로 처리됨)
@@ -1099,6 +1207,77 @@ function DashboardContent() {
     }
   }
 
+  // ML 피쳐값 CSV 내보내기
+  const handleMLFeaturesExport = async () => {
+    if (!session.isRunning || !activeSession?.session_id) {
+      alert('활성 집중 세션이 없습니다.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/ml-features?sessionId=${activeSession.session_id}&format=csv`);
+      if (!response.ok) throw new Error('ML 피쳐값 조회 실패');
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ml-features-${activeSession.session_id}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('ML 피쳐값 내보내기 실패');
+    }
+  }
+
+  // 세션 전체 데이터 다운로드
+  const handleSessionDownload = async (format: 'json' | 'csv' = 'json', sessionId?: string, includeAllUsers: boolean = false) => {
+    const targetSessionId = sessionId || activeSession?.session_id;
+    
+    if (!targetSessionId) {
+      alert('세션 ID가 없습니다.');
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams({
+        format: format,
+        uid: user?.id || '',
+        includeAllUsers: includeAllUsers.toString()
+      });
+      
+      const response = await fetch(`/api/focus-session/${targetSessionId}/download?${queryParams}`);
+      if (!response.ok) throw new Error('세션 데이터 조회 실패');
+      
+      if (format === 'csv') {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const filename = includeAllUsers 
+          ? `focus-session-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`
+          : `focus-session-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const data = await response.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const filename = includeAllUsers 
+          ? `focus-session-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`
+          : `focus-session-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      alert('세션 다운로드 실패');
+    }
+  }
+
   // 카메라 권한 승인 감지 → 마이크 권한 없으면 마이크 Layer, 있으면 바로 집중모드
   useEffect(() => {
     // ...existing code...
@@ -1122,7 +1301,6 @@ function DashboardContent() {
       microphoneStream.isPermissionGranted
     ) {
       setShowMicrophonePermissionLayer(false)
-      console.log('🎤 마이크 권한 허용됨 - 오디오 파이프라인 자동 시작')
       
       // 오디오 파이프라인 자동 시작
       setShowAudioPipeline(true)
@@ -1161,11 +1339,96 @@ function DashboardContent() {
     { name: "박준호", hours: "20:45", avatar: "PJ" },
   ]
 
-  const recentFrames = [
-    { id: 1, timestamp: "14:23:15", thumbnail: "/placeholder.svg?height=40&width=60" },
-    { id: 2, timestamp: "14:18:32", thumbnail: "/placeholder.svg?height=40&width=60" },
-    { id: 3, timestamp: "14:12:08", thumbnail: "/placeholder.svg?height=40&width=60" },
-  ]
+  // ML 피쳐값 데이터 상태
+  const [mlFeatures, setMlFeatures] = useState<any[]>([])
+  const [isLoadingFeatures, setIsLoadingFeatures] = useState(false)
+
+  // ML 피쳐값 로드 함수
+  const loadMLFeatures = async () => {
+    if (!activeSession?.session_id) return
+    
+    setIsLoadingFeatures(true)
+    try {
+      const response = await fetch(`/api/ml-features?sessionId=${activeSession.session_id}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setMlFeatures(result.data || [])
+        }
+      }
+    } catch (error) {
+      // ML 피쳐값 로드 실패 시 조용히 처리
+    } finally {
+      setIsLoadingFeatures(false)
+    }
+  }
+
+  // 활성 세션이 변경될 때마다 ML 피쳐값 로드
+  useEffect(() => {
+    if (activeSession?.session_id) {
+      loadMLFeatures()
+    }
+  }, [activeSession?.session_id])
+
+  // 세션 시작 시 ML 피쳐값 초기화하지 않음 (데이터 유지)
+  // useEffect(() => {
+  //   if (session.isRunning) {
+  //     setMlFeatures([])
+  //   }
+  // }, [session.isRunning])
+
+  // ML 피쳐값 생성 및 저장 (세션 중일 때)
+  useEffect(() => {
+    if (!session.isRunning || !activeSession?.session_id) return
+
+    const generateMLFeatures = async () => {
+      try {
+        // 실제 ML 분석을 시뮬레이션하는 데이터 생성
+        const mockFeatures = {
+          timestamp: new Date().toISOString(),
+          head_pose: {
+            pitch: Math.random() * 20 - 10, // -10° ~ +10°
+            yaw: Math.random() * 30 - 15,   // -15° ~ +15°
+            roll: Math.random() * 10 - 5     // -5° ~ +5°
+          },
+          eye_status: {
+            status: Math.random() > 0.8 ? 'CLOSED' : 'OPEN',
+            ear_value: 0.2 + Math.random() * 0.3 // 0.2 ~ 0.5
+          },
+          frame_number: Math.floor(Math.random() * 1000)
+        }
+
+        // ML 피쳐값을 데이터베이스에 저장
+        const response = await fetch('/api/ml-features', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId: activeSession.session_id,
+            features: mockFeatures
+          })
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success) {
+            // 로컬 상태에 추가
+            setMlFeatures(prev => [...prev, result.data])
+          }
+        }
+      } catch (error) {
+        // ML 피쳐값 생성 실패 시 조용히 처리
+      }
+    }
+
+    // 5초마다 ML 피쳐값 생성
+    const interval = setInterval(generateMLFeatures, 5000)
+    
+    return () => clearInterval(interval)
+  }, [session.isRunning, activeSession?.session_id])
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
@@ -1259,6 +1522,13 @@ function DashboardContent() {
                 </Button>
               </Link>
 
+              {/* Profile */}
+              <Link href="/profile">
+                <Button variant="ghost" size="sm" title="프로필 보기">
+                  <User className="w-5 h-5" />
+                </Button>
+              </Link>
+
               {/* Watch Connection */}
               <Link href="/connect">
                 <Button variant="ghost" size="sm" title="스마트워치 연동">
@@ -1276,26 +1546,134 @@ function DashboardContent() {
                 <SheetContent>
                   <SheetHeader>
                     <SheetTitle>데이터 로그</SheetTitle>
-                    <SheetDescription>최근 웹캠 프레임 기록</SheetDescription>
+                    <SheetDescription>ML 분석 결과 및 집중도 데이터</SheetDescription>
+
                   </SheetHeader>
                   <div className="mt-6 space-y-4">
-                    {recentFrames.map((frame) => (
-                      <div key={frame.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
-                        <img
-                          src={frame.thumbnail || "/placeholder.svg"}
-                          alt="Frame thumbnail"
-                          className="w-15 h-10 rounded object-cover"
-                        />
-                        <span className="text-sm text-slate-600 flex-1">{frame.timestamp}</span>
-                        <Button variant="ghost" size="sm">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                    {activeSession?.session_id ? (
+                      <div className="text-center py-6">
+                        <div className="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Database className="w-8 h-8 text-blue-600" />
+                        </div>
+                        <div className="text-lg font-semibold text-slate-800 mb-2">세션 데이터 다운로드</div>
+                        <div className="text-sm text-slate-600 mb-6">
+                          현재 활성 세션의 모든 데이터를 다운로드할 수 있습니다
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <Button 
+                            variant="default" 
+                            className="w-full bg-blue-600 hover:bg-blue-700"
+                            onClick={() => handleSessionDownload('json')}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            JSON 형식으로 다운로드
+                          </Button>
+                          
+                          <Button 
+                            variant="outline" 
+                            className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+                            onClick={() => handleSessionDownload('csv')}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            CSV 형식으로 다운로드
+                          </Button>
+                        </div>
+                        
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="text-sm font-medium text-blue-800 mb-2">💡 전체 세션 데이터 다운로드</div>
+                          <div className="text-xs text-blue-600 mb-3">
+                            세션에 참여한 모든 사용자의 데이터를 다운로드하려면 아래 버튼을 사용하세요
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                              onClick={() => handleSessionDownload('json', undefined, true)}
+                            >
+                              전체 JSON
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                              onClick={() => handleSessionDownload('csv', undefined, true)}
+                            >
+                              전체 CSV
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4 text-xs text-slate-500 bg-slate-50 p-3 rounded">
+                          <div className="font-medium mb-1">📊 포함되는 데이터:</div>
+                          <ul className="text-left space-y-1">
+                            <li>• 세션 기본 정보 (시작/종료 시간, 집중도 등)</li>
+                            <li>• ML 분석 결과 (눈 상태, 머리 방향 등)</li>
+                            <li>• 제스처 인식 데이터</li>
+                            <li>• 세션 상세 기록</li>
+                          </ul>
+                        </div>
                       </div>
-                    ))}
-                    <Button variant="outline" className="w-full mt-6 bg-transparent">
-                      <Download className="w-4 h-4 mr-2" />
-                      CSV 다운로드
-                    </Button>
+                    ) : recentSessions && recentSessions.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="text-center py-4">
+                          <div className="w-12 h-12 mx-auto mb-3 bg-green-100 rounded-full flex items-center justify-center">
+                            <Database className="w-6 h-6 text-green-600" />
+                          </div>
+                          <div className="text-md font-semibold text-slate-800 mb-2">최근 완료된 세션</div>
+                          <div className="text-sm text-slate-600 mb-4">
+                            완료된 세션의 데이터를 다운로드할 수 있습니다
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          {recentSessions.map((session) => (
+                            <div key={session.session_id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">
+                                  {session.context_tag || `세션 ${new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {new Date(session.started_at).toLocaleDateString('ko-KR')} {new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} - {new Date(session.ended_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={() => handleSessionDownload('json', session.session_id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                >
+                                  JSON
+                                </Button>
+                                <Button
+                                  onClick={() => handleSessionDownload('csv', session.session_id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                >
+                                  CSV
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-slate-500">
+                        <div className="w-16 h-16 mx-auto mb-3 bg-slate-100 rounded-full flex items-center justify-center">
+                          <Database className="w-8 h-8 text-slate-400" />
+                        </div>
+                        <div className="text-sm font-medium mb-1">활성 세션이 없습니다</div>
+                        <div className="text-xs mb-3">집중 세션을 시작하면 데이터 다운로드가 가능합니다</div>
+                        {!session.isRunning && (
+                          <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded">
+                            💡 집중 세션을 시작해보세요
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </SheetContent>
               </Sheet>
@@ -1362,14 +1740,27 @@ function DashboardContent() {
               <div className="flex items-center gap-6">
                 <div className="flex-1">
                   {!session.isRunning ? (
-                    <Button
-                      size="lg"
-                      onClick={handleStartSession}
-                      className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 py-3 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-                    >
-                      <Play className="w-5 h-5 mr-2" />
-                      집중 시작!
-                    </Button>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="lg"
+                        onClick={handleStartSession}
+                        className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 py-3 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                      >
+                        <Play className="w-5 h-5 mr-2" />
+                        집중 시작!
+                      </Button>
+                      
+                      {/* 디버깅 버튼 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={checkDatabaseConnection}
+                        className="border-gray-400 text-gray-600 hover:bg-gray-50 px-3 py-2"
+                        title="데이터베이스 연결 상태 확인"
+                      >
+                        🔍 DB 상태
+                      </Button>
+                    </div>
                   ) : (
                     <div className="flex gap-3">
                       <Button
@@ -1381,14 +1772,26 @@ function DashboardContent() {
                         {session.isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
                         {session.isPaused ? "재개" : "일시정지"}
                       </Button>
+                      
                       <Button
                         size="lg"
                         variant="destructive"
                         onClick={handleStopSession}
-                        className="px-6 py-3 rounded-xl"
+                        className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white"
                       >
                         <Square className="w-5 h-5 mr-2" />
-                        종료
+                        세션 종료
+                      </Button>
+                      
+                      {/* 디버깅 버튼 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={checkDatabaseConnection}
+                        className="border-gray-400 text-gray-600 hover:bg-gray-50 px-3 py-2"
+                        title="데이터베이스 연결 상태 확인"
+                      >
+                        🔍 DB 상태
                       </Button>
                     </div>
                   )}

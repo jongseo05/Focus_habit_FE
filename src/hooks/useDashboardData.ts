@@ -197,7 +197,7 @@ export function useCreateFocusSession() {
     }) => {
       const supabase = supabaseBrowser()
       const { data, error } = await supabase
-        .from('focus_sessions')
+        .from('focus_session')
         .insert(sessionData)
         .select()
         .single()

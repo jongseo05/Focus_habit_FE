@@ -78,13 +78,7 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
 
   // 모델 초기화
   const initializeModel = useCallback(() => {
-    console.log('[useKoELECTRA] initializeModel 호출됨:', {
-      isInitialized: isInitializedRef.current,
-      hasModelRef: !!modelRef.current
-    });
-    
     if (isInitializedRef.current) {
-      console.log('[useKoELECTRA] 이미 초기화됨 - 중단');
       return
     }
     
@@ -99,58 +93,38 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
         ...config
       }
       
-      console.log('[useKoELECTRA] KoELECTRA 인스턴스 생성 시작');
       modelRef.current = createKoELECTRA(defaultConfig)
       isInitializedRef.current = true
       
-      console.log('[useKoELECTRA] 모델 초기화 완료 (최적화 설정 적용)');
     } catch (err) {
-      console.error('[useKoELECTRA] 모델 초기화 실패:', err)
       setError(err instanceof Error ? err.message : '모델 초기화 실패')
     }
   }, [config])
 
   // 모델 로드
   const loadModel = useCallback(async () => {
-    console.log('[useKoELECTRA] loadModel 호출됨');
     
     if (!modelRef.current) {
-      console.log('[useKoELECTRA] 모델 초기화 필요');
       initializeModel()
     }
     
     if (!modelRef.current) {
-      console.error('[useKoELECTRA] 모델 초기화 실패');
       setError('모델을 초기화할 수 없습니다.')
       return
     }
     
     if (modelRef.current.isLoaded || modelRef.current.isLoading) {
-      console.log('[useKoELECTRA] 모델이 이미 로드 중이거나 로드됨:', {
-        isLoaded: modelRef.current.isLoaded,
-        isLoading: modelRef.current.isLoading
-      });
       return
     }
     
-    console.log('[useKoELECTRA] 모델 로딩 시작');
-    console.log('[useKoELECTRA] setIsLoading(true) 호출');
     setIsLoading(true)
     setError(null)
     
     try {
-      console.log('[useKoELECTRA] modelRef.current.loadModel() 호출');
       await modelRef.current.loadModel()
-      console.log('[useKoELECTRA] 모델 로드 성공');
       
       // 모델 상태 재확인
-      console.log('[useKoELECTRA] 모델 상태 재확인:', {
-        modelRefIsLoaded: modelRef.current.isLoaded,
-        modelRefIsLoading: modelRef.current.isLoading,
-        modelRefError: modelRef.current.error
-      });
       
-      console.log('[useKoELECTRA] setIsLoaded(true) 호출');
       setIsLoaded(true)
       setModelInfo(modelRef.current.getModelInfo())
       
@@ -159,12 +133,9 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
         performanceRef.current.startTime = Date.now()
       }
       
-      console.log('[useKoELECTRA] 모델 로드 완료')
     } catch (err) {
-      console.error('[useKoELECTRA] 모델 로드 실패:', err)
       setError(err instanceof Error ? err.message : '모델 로드 실패')
     } finally {
-      console.log('[useKoELECTRA] setIsLoading(false) 호출');
       setIsLoading(false)
     }
   }, [initializeModel, enablePerformanceMonitoring])
@@ -184,14 +155,12 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
         inferenceTimes: []
       }
       
-      console.log('[useKoELECTRA] 모델 언로드 완료')
     }
   }, [])
 
   // 추론 실행
   const inference = useCallback(async (text: string): Promise<InferenceResult | null> => {
     if (!modelRef.current || !modelRef.current.isLoaded) {
-      console.warn('[useKoELECTRA] 모델이 로드되지 않았습니다.')
       return null
     }
     
@@ -220,7 +189,6 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       
       return result
     } catch (err) {
-      console.error('[useKoELECTRA] 추론 실패:', err)
       setError(err instanceof Error ? err.message : '추론 실패')
       return null
     }
@@ -229,7 +197,6 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
   // 배치 추론
   const batchInference = useCallback(async (texts: string[]): Promise<InferenceResult[]> => {
     if (!modelRef.current || !modelRef.current.isLoaded) {
-      console.warn('[useKoELECTRA] 모델이 로드되지 않았습니다.')
       return []
     }
     
@@ -258,7 +225,6 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
       
       return results
     } catch (err) {
-      console.error('[useKoELECTRA] 배치 추론 실패:', err)
       setError(err instanceof Error ? err.message : '배치 추론 실패')
       return []
     }
@@ -269,7 +235,6 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
     if (modelRef.current) {
       modelRef.current.clearCache()
       setCacheStats({ hits: 0, misses: 0, size: 0 })
-      console.log('[useKoELECTRA] 캐시 클리어 완료')
     }
   }, [])
 
@@ -288,7 +253,6 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (autoLoad && !isLoaded && !isLoading) {
-        console.log('[useKoELECTRA] 자동 로드 시작');
         loadModel()
       }
     }, 10000);
@@ -299,15 +263,15 @@ export function useKoELECTRA(options: UseKoELECTRAOptions = {}): UseKoELECTRARet
   // 상태 변화 추적 (10초마다 한 번씩만 로그 출력)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      console.log('[useKoELECTRA] 상태 변화 감지:', {
-        isLoaded,
-        isLoading,
-        error,
-        hasModelRef: !!modelRef.current,
-        modelRefLoaded: modelRef.current?.isLoaded,
-        modelRefLoading: modelRef.current?.isLoading,
-        timestamp: new Date().toLocaleTimeString()
-      });
+      // console.log('[useKoELECTRA] 상태 변화 감지:', {
+      //   isLoaded,
+      //   isLoading,
+      //   error,
+      //   hasModelRef: !!modelRef.current,
+      //   modelRefLoaded: modelRef.current?.isLoaded,
+      //   modelRefLoading: modelRef.current?.isLoading,
+      //   timestamp: new Date().toLocaleTimeString()
+      // });
     }, 10000);
 
     return () => clearTimeout(timeoutId);
@@ -364,7 +328,6 @@ export function useKoELECTRASimple() {
   
   const processText = useCallback(async (text: string) => {
     if (!isLoaded) {
-      console.warn('[useKoELECTRASimple] 모델이 로드되지 않았습니다.')
       return
     }
     
@@ -373,7 +336,7 @@ export function useKoELECTRASimple() {
       const inferenceResult = await inference(text)
       setResult(inferenceResult)
     } catch (err) {
-      console.error('[useKoELECTRASimple] 텍스트 처리 실패:', err)
+      // console.error('[useKoELECTRASimple] 텍스트 처리 실패:', err)
     } finally {
       setIsProcessing(false)
     }

@@ -39,6 +39,7 @@ interface FocusSessionWithGestureReturn {
 
 export function useFocusSessionWithGesture(
   isSessionRunning: boolean,
+  sessionId?: string,
   options: FocusSessionWithGestureOptions = {}
 ): FocusSessionWithGestureReturn {
   const { 
@@ -108,9 +109,47 @@ export function useFocusSessionWithGesture(
     }
   })
   
+    // 프레임 스트리머와 숨겨진 비디오 엘리먼트 참조
+  const frameStreamerRef = useRef<FrameStreamer | null>(null)
+  const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
+  
+  // 제스처 피쳐 데이터를 DB에 저장하는 함수
+  const saveGestureFeatures = useCallback(async (features: any) => {
+    if (!sessionId) {
+      console.warn('[GESTURE] 세션 ID가 없어서 피쳐 데이터를 저장할 수 없습니다.')
+      return
+    }
+    
+    try {
+      const response = await fetch('/api/gesture-features', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          features
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      if (result.success) {
+        console.log('✅ 제스처 피쳐 데이터 저장 성공:', features)
+      } else {
+        console.warn('⚠️ 제스처 피쳐 데이터 저장 실패:', result.error)
+      }
+    } catch (error) {
+      console.error('❌ 제스처 피쳐 데이터 저장 오류:', error)
+    }
+  }, [sessionId])
+
   // 제스처 인식을 위한 WebSocket
   const { sendRawText, isConnected } = useWebSocket({}, {
-    onMessage: (rawData) => {
+    onMessage: useCallback((rawData: any) => {
       try {
         // 실제 응답 구조에 맞게 파싱
         const data = rawData as any
@@ -129,30 +168,41 @@ export function useFocusSessionWithGesture(
               yaw: data.head_pose?.yaw || 'N/A'
             }
           }
-        }        } catch (error) {
-          console.error('[GESTURE] 제스처 응답 파싱 오류:', error, '| 원시 데이터:', rawData)
           
-          // 응답 파싱 오류를 제스처 서버 오류로 분류
-          const gestureError = classifyError(error, 'gesture')
-          handleError(gestureError)
+          // 제스처 인식 결과를 DB에 저장
+          if (sessionId && data.timestamp) {
+            const features = {
+              frameNumber: gestureFramesSent,
+              eyeStatus: data.eye_status?.status,
+              earValue: data.eye_status?.ear_value,
+              headPose: {
+                pitch: data.head_pose?.pitch,
+                roll: data.head_pose?.roll,
+                yaw: data.head_pose?.yaw
+              }
+            }
+            
+            saveGestureFeatures(features)
+          }
+          
+          console.log('🤖 제스처 인식 결과:', analysis)
         }
-    },
+      } catch (error) {
+        // 응답 파싱 오류를 제스처 서버 오류로 분류
+        const gestureError = classifyError(error, 'gesture')
+        handleError(gestureError)
+      }
+    }, [sessionId, gestureFramesSent, saveGestureFeatures]),
     onOpen: () => {
     },
     onClose: () => {
     },
     onError: (error) => {
-      console.error('[GESTURE] 제스처 인식 WebSocket 오류:', error)
-      
       // WebSocket 오류를 에러 핸들러에 전달
       const wsError = classifyError(error, 'websocket')
       handleError(wsError)
     }
   })
-  
-  // 프레임 스트리머와 숨겨진 비디오 엘리먼트 참조
-  const frameStreamerRef = useRef<FrameStreamer | null>(null)
-  const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
   
   // 제스처 인식 시작
   const startGestureRecognition = useCallback(() => {
@@ -235,7 +285,8 @@ export function useFocusSessionWithGesture(
     enableGestureRecognition, 
     frameRate, 
     gestureJpegQuality,
-    sendRawText
+    sendRawText,
+    saveGestureFeatures
   ])
   
   // 제스처 인식 중지

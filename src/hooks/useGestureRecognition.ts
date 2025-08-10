@@ -1,7 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useWebSocket } from './useWebSocket'
 import { FrameStreamer } from '@/lib/websocket/utils'
-import { GestureResponse } from '@/types/websocket'
 
 interface UseGestureRecognitionOptions {
   frameRate?: number // 초당 프레임 수 (기본값: 10)
@@ -24,12 +23,18 @@ interface UseGestureRecognitionReturn {
   lastGestureTime: string | null
   gestureHistory: Array<{ gesture: string; timestamp: string }>
   
+  // 프레임 분석 결과
+  frameAnalysisResults: Array<any>
+  lastFrameAnalysis: any | null
+  
   // 제어 함수
   startCamera: () => Promise<void>
   stopCamera: () => void
   startStreaming: () => void
   stopStreaming: () => void
   setFrameRate: (fps: number) => void
+  exportToCSV: () => void
+  exportToJSON: () => void
   
   // 참조
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -53,37 +58,134 @@ export function useGestureRecognition(
   const [currentGesture, setCurrentGesture] = useState<string | null>(null)
   const [lastGestureTime, setLastGestureTime] = useState<string | null>(null)
   const [gestureHistory, setGestureHistory] = useState<Array<{ gesture: string; timestamp: string }>>([])
+  
+  // 프레임 분석 결과 저장
+  const [frameAnalysisResults, setFrameAnalysisResults] = useState<Array<any>>([])
+  const [lastFrameAnalysis, setLastFrameAnalysis] = useState<any | null>(null)
 
   // 참조
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameStreamerRef = useRef<FrameStreamer | null>(null)
 
   // WebSocket 연결
-  const { sendRawText, isConnected } = useWebSocket({}, {
-    onMessage: (rawData) => {
+  const { sendFrame, isConnected } = useWebSocket({}, {
+    onMessage: (message: any) => {
       try {
-        // 백엔드에서 JSON 응답을 직접 받음
-        // { "gesture": "...", "timestamp": "..." }
-        const data = rawData as unknown
-        if (typeof data === 'object' && data && 'gesture' in data && 'timestamp' in data) {
-          const gestureData = data as { gesture: string; timestamp: string }
+        // 프레임 분석 결과 처리
+        if (message.type === 'frame_analysis_result') {
+          const analysisData = message.data
+          
+          // 분석 결과 저장
+          setLastFrameAnalysis(analysisData)
+          setFrameAnalysisResults(prev => [...prev, analysisData])
+          
+          // 제스처 인식 결과도 처리 (기존 로직)
+          if (analysisData.features && analysisData.features.gesture) {
+            const gestureData = {
+              gesture: analysisData.features.gesture,
+              timestamp: new Date().toISOString()
+            }
+            setCurrentGesture(gestureData.gesture)
+            setLastGestureTime(gestureData.timestamp)
+            setGestureHistory(prev => [
+              gestureData,
+              ...prev.slice(0, 49)
+            ])
+          }
+        }
+        // 기존 제스처 인식 응답 처리 (하위 호환성)
+        else if (typeof message === 'object' && message && 'gesture' in message && 'timestamp' in message) {
+          const gestureData = message as { gesture: string; timestamp: string }
           setCurrentGesture(gestureData.gesture)
           setLastGestureTime(gestureData.timestamp)
-          
-          // 히스토리에 추가 (최근 50개만 유지)
           setGestureHistory(prev => [
-            { gesture: gestureData.gesture, timestamp: gestureData.timestamp },
+            gestureData,
             ...prev.slice(0, 49)
           ])
-          
-
         }
       } catch (error) {
-        console.error('[GESTURE] 제스처 응답 파싱 오류:', error)
+        // 에러 로그 제거
       }
     }
   })
+
+  // CSV 내보내기
+  const exportToCSV = useCallback(() => {
+    if (frameAnalysisResults.length === 0) {
+      alert('내보낼 분석 결과가 없습니다.')
+      return
+    }
+
+    try {
+      // CSV 헤더 생성
+      const headers = ['timestamp', 'frameId', 'headPose_pitch', 'headPose_yaw', 'headPose_roll', 'leftEye', 'rightEye', 'eyeConfidence', 'isFocused', 'attentionConfidence', 'distractionLevel']
+      
+      // CSV 데이터 생성
+      const csvData = frameAnalysisResults.map(result => {
+        const features = result.features
+        return [
+          new Date(features.timestamp).toISOString(),
+          result.frameId || '',
+          features.headPose?.pitch || '',
+          features.headPose?.yaw || '',
+          features.headPose?.roll || '',
+          features.eyeStatus?.leftEye || '',
+          features.eyeStatus?.rightEye || '',
+          features.eyeStatus?.confidence || '',
+          features.attention?.isFocused || '',
+          features.attention?.confidence || '',
+          features.attention?.distractionLevel || ''
+        ].join(',')
+      })
+
+      const csvContent = [headers.join(','), ...csvData].join('\n')
+      
+      // 파일 다운로드
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `frame_analysis_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      console.log('[EXPORT] CSV 파일 내보내기 완료')
+    } catch (error) {
+      console.error('[EXPORT] CSV 내보내기 실패:', error)
+      alert('CSV 내보내기에 실패했습니다.')
+    }
+  }, [frameAnalysisResults])
+
+  // JSON 내보내기
+  const exportToJSON = useCallback(() => {
+    if (frameAnalysisResults.length === 0) {
+      alert('내보낼 분석 결과가 없습니다.')
+      return
+    }
+
+    try {
+      const jsonContent = JSON.stringify(frameAnalysisResults, null, 2)
+      
+      // 파일 다운로드
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `frame_analysis_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      console.log('[EXPORT] JSON 파일 내보내기 완료')
+    } catch (error) {
+      console.error('[EXPORT] JSON 내보내기 실패:', error)
+      alert('JSON 내보내기에 실패했습니다.')
+    }
+  }, [frameAnalysisResults])
 
   // 카메라 시작
   const startCamera = useCallback(async () => {
@@ -131,16 +233,16 @@ export function useGestureRecognition(
   }, [])
 
   // 프레임 전송 함수
-  const sendFrame = useCallback((base64: string) => {
+  const sendFrameToServer = useCallback((base64: string) => {
     if (!isConnected) {
       console.warn('[WEBSOCKET] WebSocket not connected')
       return
     }
 
     // 백엔드 요구사항에 맞춰 순수 Base64 문자열만 전송
-    sendRawText(base64)
+    sendFrame(base64)
     setFramesSent(prev => prev + 1)
-  }, [isConnected, sendRawText])
+  }, [isConnected, sendFrame])
 
   // 스트리밍 시작
   const startStreaming = useCallback(() => {
@@ -155,7 +257,7 @@ export function useGestureRecognition(
 
     frameStreamerRef.current = new FrameStreamer(
       videoRef.current,
-      sendFrame,
+      sendFrameToServer,
       (error) => {
         console.error('[FRAME_STREAMING] Frame streaming error:', error)
         setIsStreaming(false)
@@ -206,12 +308,18 @@ export function useGestureRecognition(
     lastGestureTime,
     gestureHistory,
     
+    // 프레임 분석 결과
+    frameAnalysisResults,
+    lastFrameAnalysis,
+    
     // 제어 함수
     startCamera,
     stopCamera,
     startStreaming,
     stopStreaming,
     setFrameRate: setFrameRateCallback,
+    exportToCSV,
+    exportToJSON,
     
     // 참조
     videoRef
