@@ -421,3 +421,23 @@ export interface ApiError {
   message: string
   errors?: ValidationError[]
 } 
+
+// =====================================================
+// 4. ML 피쳐값 관련 타입
+// =====================================================
+
+export interface MLFeatures {
+  feature_id: UUID
+  session_id: UUID
+  ts: Timestamp
+  head_pose_pitch?: number
+  head_pose_yaw?: number
+  head_pose_roll?: number
+  eye_status?: string
+  ear_value?: number
+  frame_number?: number
+  focus_status?: 'focused' | 'normal' | 'distracted'
+  focus_confidence?: number
+  focus_score?: number
+  created_at: Timestamp
+} 

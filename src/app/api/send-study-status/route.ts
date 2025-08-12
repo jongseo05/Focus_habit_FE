@@ -27,22 +27,24 @@ export async function POST(request: NextRequest) {
     // 현재 활성 세션 조회 또는 생성
     let sessionId: string
     
-    // 사용자의 활성 세션 조회
-    const { data: activeSession, error: sessionError } = await supabase
-      .from('focus_session')
-      .select('session_id')
-      .eq('user_id', user.id)
-      .is('ended_at', null)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (sessionError && sessionError.code !== 'PGRST116') {
-      console.error('Session error:', sessionError)
-      return NextResponse.json(
-        { error: 'Failed to get active session' },
-        { status: 500 }
-      )
+    // 사용자의 활성 세션 조회 (API 사용)
+    let activeSession: any = null
+    
+    try {
+      const sessionResponse = await fetch(`${request.nextUrl.origin}/api/focus-session?active=true`, {
+        headers: {
+          'Authorization': `Bearer ${request.headers.get('authorization')?.split(' ')[1]}`
+        }
+      })
+      
+      if (sessionResponse.ok) {
+        const sessionData = await sessionResponse.json()
+        if (sessionData.success && sessionData.data) {
+          activeSession = { session_id: sessionData.data.session_id }
+        }
+      }
+    } catch (error) {
+      console.error('Session API call error:', error)
     }
 
     if (!activeSession) {

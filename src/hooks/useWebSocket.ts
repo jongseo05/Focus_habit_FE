@@ -8,9 +8,24 @@ import {
   WebSocketStatus,
   WebSocketMessage,
   WebSocketConfig,
-  WebSocketEventHandlers,
-  UseWebSocketReturn
+  WebSocketEventHandlers
 } from '@/types/websocket'
+
+// WebSocket 훅 반환 타입 정의
+interface UseWebSocketReturn {
+  status: WebSocketStatus
+  lastMessage: WebSocketMessage | null
+  sendMessage: (message: WebSocketMessage) => void
+  sendFrame: (frameData: string) => void // 프레임 전송 추가
+  sendRawText: (text: string) => void // 원시 텍스트 전송 추가
+  connect: () => void
+  disconnect: () => void
+  reconnect: () => void
+  isConnected: boolean
+  isConnecting: boolean
+  reconnectAttempts: number
+  connectionStable: boolean
+}
 
 // 기본 WebSocket 설정
 const defaultConfig: WebSocketConfig = {
@@ -39,7 +54,7 @@ export function useWebSocket(
   // 집중 세션 에러 핸들러
   const { handleError, classifyError } = useFocusSessionErrorHandler({
     onError: (error) => {
-      console.error('[WEBSOCKET] WebSocket 세션 오류:', error)
+      // 에러 처리
     },
     onRecoveryStart: (errorType) => {
       setStatus(WebSocketStatus.RECONNECTING)
@@ -48,7 +63,6 @@ export function useWebSocket(
       setConnectionStable(true)
     },
     onRecoveryFailed: (error) => {
-      console.error('[WEBSOCKET] WebSocket 복구 실패:', error)
       setStatus(WebSocketStatus.ERROR)
     }
   })
@@ -60,7 +74,6 @@ export function useWebSocket(
       const { data: { session } } = await supabase.auth.getSession()
       return session?.access_token || null
     } catch (error) {
-      console.error('[AUTH] Failed to get auth token:', error)
       return null
     }
   }, [])
@@ -113,7 +126,6 @@ export function useWebSocket(
         eventHandlers?.onClose?.(event)
       },
       onError: (error) => {
-        console.error('[WEBSOCKET] WebSocket error:', error)
         setStatus(WebSocketStatus.ERROR)
         setConnectionStable(false)
         
@@ -128,7 +140,6 @@ export function useWebSocket(
         eventHandlers?.onReconnect?.(attempt)
       },
       onMaxReconnectAttemptsReached: () => {
-        console.error('[WEBSOCKET] WebSocket max reconnect attempts reached')
         setStatus(WebSocketStatus.ERROR)
         
         const wsError = classifyError(
@@ -145,7 +156,6 @@ export function useWebSocket(
   // WebSocket 연결
   const connect = useCallback(async () => {
     if (wsClientRef.current?.isConnected()) {
-      // 이미 연결되어 있으면 리턴 (경고 로그 제거)
       return
     }
 
@@ -165,7 +175,6 @@ export function useWebSocket(
       wsClientRef.current.connect(authToken || undefined)
       
     } catch (error) {
-      console.error('[WEBSOCKET] Failed to connect WebSocket:', error)
       setStatus(WebSocketStatus.ERROR)
     }
   }, [setupEventHandlers, getAuthToken])
@@ -181,20 +190,23 @@ export function useWebSocket(
     setLastMessage(null)
   }, [])
 
+  // 프레임 전송
+  const sendFrame = useCallback((frameData: string) => {
+    if (wsClientRef.current) {
+      wsClientRef.current.sendFrame(frameData)
+    }
+  }, [])
+
   // 메시지 전송
   const sendMessage = useCallback((message: WebSocketMessage) => {
-    if (!wsClientRef.current) {
-      console.error('[WEBSOCKET] WebSocket client is not initialized')
-      return
+    if (wsClientRef.current) {
+      wsClientRef.current.sendMessage(message)
     }
-
-    wsClientRef.current.sendMessage(message)
   }, [])
 
   // 원시 텍스트 전송 (제스처 인식용)
   const sendRawText = useCallback((text: string) => {
     if (!wsClientRef.current?.isConnected()) {
-      console.error('[WEBSOCKET] WebSocket is not connected')
       return
     }
 
@@ -217,20 +229,18 @@ export function useWebSocket(
   // 사용자 로그인 상태 변경 시 처리
   useEffect(() => {
     if (user) {
-      // 사용자가 로그인했을 때 자동 연결 (이미 연결되어 있으면 connect에서 리턴)
       connect()
     } else {
-      // 사용자가 로그아웃했을 때 연결 해제
       disconnect()
     }
-  }, [user]) // connect, disconnect 의존성 제거하여 무한 루프 방지
+  }, [user])
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       disconnect()
     }
-  }, []) // 의존성 배열을 비워서 언마운트 시에만 실행
+  }, [])
 
   // 상태 계산
   const isConnected = status === WebSocketStatus.CONNECTED
@@ -240,12 +250,14 @@ export function useWebSocket(
     status,
     lastMessage,
     sendMessage,
+    sendFrame,
     sendRawText,
     connect,
     disconnect,
     reconnect,
-    isConnected,
-    isConnecting,
-    reconnectAttempts
+    isConnected: status === WebSocketStatus.CONNECTED,
+    isConnecting: status === WebSocketStatus.CONNECTING,
+    reconnectAttempts,
+    connectionStable
   }
 }

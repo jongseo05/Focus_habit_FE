@@ -351,7 +351,6 @@ export class FrameStreamer {
   // 스트리밍 시작 (고급 최적화 버전)
   start(): void {
     if (this.isStreaming) {
-      console.warn('[FRAME_STREAMING] Frame streaming is already running')
       return
     }
     
@@ -363,21 +362,18 @@ export class FrameStreamer {
       try {
         // 비디오 상태 확인
         if (!this.video || this.video.readyState < 2) {
-          console.warn('[VIDEO] 비디오가 준비되지 않았습니다. readyState:', this.video?.readyState)
           this.handleContinuousFailure('Video not ready')
           return
         }
 
         // 비디오 크기 확인
         if (this.video.videoWidth === 0 || this.video.videoHeight === 0) {
-          console.warn('[VIDEO] 비디오 크기가 0입니다. 스트림에 문제가 있을 수 있습니다.')
           this.handleContinuousFailure('Video dimensions are zero')
           return
         }
         
         // 비디오 재생 상태 확인
         if (this.video.paused || this.video.ended) {
-          console.warn('[VIDEO] 비디오가 일시정지되었거나 종료되었습니다.')
           this.handleContinuousFailure('Video is paused or ended')
           return
         }
@@ -428,12 +424,9 @@ export class FrameStreamer {
         }
         
       } catch (error) {
-        console.error('[FRAME_STREAMING] Frame capture error:', error)
         this.handleContinuousFailure(`Capture error: ${(error as Error).message}`)
       }
     }, interval)
-    
-
   }
   
   // 메모리 관리를 위한 제한된 배열 추가 메서드

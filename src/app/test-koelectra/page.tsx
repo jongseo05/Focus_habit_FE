@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useKoELECTRA } from '@/hooks/useKoELECTRA'
 import { initializeTokenizer, koelectraPreprocess } from '@/lib/tokenizer/koelectra'
+import { WebSocketStatus } from '@/components/WebSocketStatus'
 
 export default function TestKoELECTRAPage() {
   const [testResults, setTestResults] = useState<string[]>([])
@@ -349,6 +350,12 @@ export default function TestKoELECTRAPage() {
             </div>
           ))
         )}
+      </div>
+      
+      {/* WebSocket 상태 */}
+      <div className="mt-6">
+        <h2 className="text-xl font-semibold mb-4">WebSocket 연결 상태</h2>
+        <WebSocketStatus />
       </div>
     </div>
   )
