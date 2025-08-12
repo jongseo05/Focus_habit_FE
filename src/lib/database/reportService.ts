@@ -143,6 +143,17 @@ export class ReportService {
         throw new Error(`이벤트 데이터 조회 실패: ${eventsError.message}`)
       }
 
+      // 4. ML 피쳐 데이터 조회
+      const { data: mlFeatures, error: mlFeaturesError } = await supabaseClient
+        .from('ml_features')
+        .select('*')
+        .in('session_id', sessions?.map((s: any) => s.session_id) || [])
+        .order('ts', { ascending: true })
+
+      if (mlFeaturesError) {
+        throw new Error(`ML 피쳐 데이터 조회 실패: ${mlFeaturesError.message}`)
+      }
+
       // 5. 집중 상태 통계 계산
       const focusStatusStats = this.calculateFocusStatusStats(mlFeatures || [])
 
