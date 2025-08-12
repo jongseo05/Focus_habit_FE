@@ -1656,9 +1656,9 @@ const calculateAndSaveFocusScore = async () => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Daily Report */}
-              <Link href="/report/daily">
-                <Button variant="ghost" size="sm" title="오늘의 리포트 보기">
+              {/* Comprehensive Report */}
+              <Link href="/report">
+                <Button variant="ghost" size="sm" title="종합 리포트 보기">
                   <BarChart3 className="w-5 h-5" />
                 </Button>
               </Link>

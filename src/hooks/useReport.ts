@@ -577,18 +577,33 @@ export function useTodaySessions(date: string) {
         throw new Error('세션 데이터를 불러오는데 실패했습니다.')
       }
 
-      return sessions?.map(session => ({
-        id: session.session_id,
-        title: session.context_tag || `집중 세션 ${new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
-        description: session.context_tag || '집중 세션',
-        startTime: new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-        endTime: session.ended_at ? new Date(session.ended_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행 중',
-        duration: session.goal_min || 0,
-        averageScore: session.focus_score || 0,
-        isActive: !session.ended_at,
-        startedAt: session.started_at,
-        endedAt: session.ended_at
-      })) || []
+      return sessions?.map(session => {
+        // 실제 세션 시간 계산
+        let actualDuration = 0
+        if (session.ended_at) {
+          const startTime = new Date(session.started_at)
+          const endTime = new Date(session.ended_at)
+          actualDuration = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60)) // 분 단위
+        } else {
+          // 진행 중인 세션의 경우 현재 시간까지의 경과 시간
+          const startTime = new Date(session.started_at)
+          const currentTime = new Date()
+          actualDuration = Math.round((currentTime.getTime() - startTime.getTime()) / (1000 * 60)) // 분 단위
+        }
+
+        return {
+          id: session.session_id,
+          title: session.context_tag || `집중 세션 ${new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
+          description: session.context_tag || '집중 세션',
+          startTime: new Date(session.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+          endTime: session.ended_at ? new Date(session.ended_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행 중',
+          duration: actualDuration,
+          averageScore: session.focus_score || 0,
+          isActive: !session.ended_at,
+          startedAt: session.started_at,
+          endedAt: session.ended_at
+        }
+      }) || []
     },
     staleTime: 5 * 60 * 1000,
     enabled: !!date,
@@ -620,7 +635,7 @@ export function useSessionReport(sessionId: string) {
         throw new Error('세션을 찾을 수 없습니다.')
       }
 
-      // 세션 기간의 샘플 데이터 조회
+      // 세션 기간의 샘플 데이터 조회 (focus_sample 테이블)
       const { data: samples, error: samplesError } = await supabase
         .from('focus_sample')
         .select('*')
@@ -628,8 +643,34 @@ export function useSessionReport(sessionId: string) {
         .order('ts', { ascending: true })
 
       if (samplesError) {
-        throw new Error('샘플 데이터를 불러오는데 실패했습니다.')
+        console.error('샘플 데이터 조회 실패:', samplesError)
       }
+
+      // 세션 기간의 ML 피쳐 데이터 조회 (ml_features 테이블 - 집중 상태 포함)
+      const { data: mlFeatures, error: mlFeaturesError } = await supabase
+        .from('ml_features')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+
+      if (mlFeaturesError) {
+        console.error('ML 피쳐 데이터 조회 실패:', mlFeaturesError)
+      }
+
+      // 데이터 통합: focus_sample과 ml_features를 합쳐서 samples로 반환
+      const allSamples = [
+        ...(samples || []),
+        ...(mlFeatures || []).map(ml => ({
+          ...ml,
+          // focus_sample 테이블과 호환성을 위한 매핑
+          score: ml.focus_score,
+          ear_value: ml.ear_value,
+          eye_status: ml.eye_status,
+          head_pose_pitch: ml.head_pose_pitch,
+          head_pose_yaw: ml.head_pose_yaw,
+          head_pose_roll: ml.head_pose_roll
+        }))
+      ].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
 
       // 세션 기간의 이벤트 데이터 조회
       const { data: events, error: eventsError } = await supabase
@@ -639,7 +680,7 @@ export function useSessionReport(sessionId: string) {
         .order('ts', { ascending: true })
 
       if (eventsError) {
-        throw new Error('이벤트 데이터를 불러오는데 실패했습니다.')
+        console.error('이벤트 데이터 조회 실패:', eventsError)
       }
 
       // 세션 기간의 스냅샷 데이터 조회
@@ -650,14 +691,24 @@ export function useSessionReport(sessionId: string) {
         .order('ts', { ascending: true })
 
       if (snapshotsError) {
-        throw new Error('스냅샷 데이터를 불러오는데 실패했습니다.')
+        console.error('스냅샷 데이터 조회 실패:', snapshotsError)
       }
+
+      console.log('📊 세션 데이터 조회 결과:', {
+        sessionId,
+        samplesCount: samples?.length || 0,
+        mlFeaturesCount: mlFeatures?.length || 0,
+        totalSamplesCount: allSamples.length,
+        eventsCount: events?.length || 0,
+        snapshotsCount: snapshots?.length || 0
+      })
 
       return {
         session,
-        samples: samples || [],
+        samples: allSamples,
         events: events || [],
-        snapshots: snapshots || []
+        snapshots: snapshots || [],
+        mlFeatures: mlFeatures || []
       }
     },
     staleTime: 5 * 60 * 1000,
