@@ -67,6 +67,24 @@ export async function GET(
       console.error('Daily summary fetch error:', summaryError)
     }
 
+    // ML 피쳐 데이터 가져오기 (집중 상태 포함)
+    const sessionIds = sessions?.map(s => s.session_id) || []
+    let mlFeaturesData: any[] = []
+    
+    if (sessionIds.length > 0) {
+      const { data: mlFeatures, error: mlFeaturesError } = await supabase
+        .from('ml_features')
+        .select('session_id, ts, focus_status, focus_score, focus_confidence')
+        .in('session_id', sessionIds)
+        .order('ts', { ascending: true })
+
+      if (mlFeaturesError) {
+        console.error('ML features fetch error:', mlFeaturesError)
+      } else {
+        mlFeaturesData = mlFeatures || []
+      }
+    }
+
     // 통계 계산
     let totalSessions = sessions?.length || 0
     let totalFocusTime = 0
@@ -74,6 +92,13 @@ export async function GET(
     let peakScore = 0
     let totalDistractions = 0
     let validScores = 0
+
+    // 집중 상태 통계
+    let focusedCount = 0
+    let normalCount = 0
+    let distractedCount = 0
+    let totalMlScore = 0
+    let validMlScores = 0
 
     sessions?.forEach(session => {
       // 집중 시간 계산
@@ -99,7 +124,30 @@ export async function GET(
       totalDistractions += session.distractions || 0
     })
 
+    // ML 피쳐 데이터 통계 계산
+    mlFeaturesData.forEach(feature => {
+      if (feature.focus_status) {
+        switch (feature.focus_status) {
+          case 'focused':
+            focusedCount++
+            break
+          case 'normal':
+            normalCount++
+            break
+          case 'distracted':
+            distractedCount++
+            break
+        }
+      }
+      
+      if (feature.focus_score) {
+        totalMlScore += feature.focus_score
+        validMlScores++
+      }
+    })
+
     let averageScore = validScores > 0 ? totalScore / validScores : 0
+    let averageMlScore = validMlScores > 0 ? totalMlScore / validMlScores : 0
 
     // daily_summary가 있으면 그 데이터를 우선 사용
     if (dailySummary) {
@@ -115,7 +163,11 @@ export async function GET(
       averageScore,
       peakScore,
       totalDistractions,
-      sessions: sessions || []
+      sessions: sessions || [],
+      focusedCount,
+      normalCount,
+      distractedCount,
+      averageMlScore
     }
 
     return NextResponse.json(dailyReport)

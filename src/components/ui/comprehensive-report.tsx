@@ -22,8 +22,7 @@ import {
   Lightbulb,
   Loader2,
 } from "lucide-react"
-import { useWeeklyReportForComprehensive } from "@/hooks/useWeeklyReport"
-import { mockComprehensiveReportData } from "@/lib/mockData"
+import { useComprehensiveReport } from "@/hooks/useComprehensiveReport"
 import { TrendGraph } from "@/components/ui/trend-graph"
 
 // Types for report data
@@ -149,8 +148,14 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
     )
   }
 
-  // undefined 또는 null 요소 필터링
-  const validData = data.filter(d => d && typeof d.focusScore === 'number')
+  // undefined 또는 null 요소 필터링 및 유효성 검사
+  const validData = data.filter(d => 
+    d && 
+    typeof d.focusScore === 'number' && 
+    !isNaN(d.focusScore) && 
+    d.focusScore >= 0 && 
+    d.focusScore <= 100
+  )
   
   if (validData.length === 0) {
     return (
@@ -172,16 +177,16 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
       acc[dateKey] = {
         timestamp: item.timestamp,
         focusScore: item.focusScore,
-        sessionDuration: item.sessionDuration,
-        distractions: item.distractions,
-        dayOfWeek: item.dayOfWeek,
+        sessionDuration: item.sessionDuration || 0,
+        distractions: item.distractions || 0,
+        dayOfWeek: item.dayOfWeek || '일',
         count: 1
       }
     } else {
       // 같은 날짜의 데이터가 있으면 평균값 계산
       acc[dateKey].focusScore = Math.round((acc[dateKey].focusScore + item.focusScore) / 2)
-      acc[dateKey].sessionDuration = Math.round((acc[dateKey].sessionDuration + item.sessionDuration) * 10) / 20
-      acc[dateKey].distractions = Math.round((acc[dateKey].distractions + item.distractions) / 2)
+      acc[dateKey].sessionDuration = Math.round((acc[dateKey].sessionDuration + (item.sessionDuration || 0)) * 10) / 20
+      acc[dateKey].distractions = Math.round((acc[dateKey].distractions + (item.distractions || 0)) / 2)
       acc[dateKey].count += 1
     }
     
@@ -193,6 +198,18 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   )
 
+  // 최소 2개 이상의 데이터 포인트가 필요
+  if (uniqueData.length < 2) {
+    return (
+      <div className="flex justify-center items-center h-64 bg-slate-50 rounded-xl">
+        <div className="text-center text-slate-500">
+          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+          <p>트렌드를 표시하기 위해 더 많은 데이터가 필요합니다</p>
+        </div>
+      </div>
+    )
+  }
+
   // 종합 리포트용: Y축을 50~100점으로 고정하여 추세만 표시
   const fixedMinScore = 50
   const fixedMaxScore = 100
@@ -203,6 +220,7 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
     const clampedScore = Math.max(fixedMinScore, Math.min(fixedMaxScore, score))
     return (clampedScore - fixedMinScore) / fixedScoreRange
   }
+  
   const avgScore = Math.round(uniqueData.reduce((sum, d) => sum + d.focusScore, 0) / uniqueData.length)
   const improvement = uniqueData.length > 1 
     ? Math.round(((uniqueData[uniqueData.length - 1].focusScore - uniqueData[0].focusScore) / uniqueData[0].focusScore) * 100)
@@ -211,12 +229,16 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
   // Generate smooth curve points for area/line chart
   const generateSmoothPath = (data: TimeSeriesData[], width: number, height: number) => {
     const points = data.map((item, index) => {
-      if (!item || typeof item.focusScore !== 'number') return null
-      return {
-        x: (index / (data.length - 1)) * width,
-        y: height - (normalizedScore(item.focusScore) * height),
-      }
-    }).filter(point => point !== null)
+      if (!item || typeof item.focusScore !== 'number' || isNaN(item.focusScore)) return null
+      
+      const x = (index / (data.length - 1)) * width
+      const y = height - (normalizedScore(item.focusScore) * height)
+      
+      // NaN 값 방지
+      if (isNaN(x) || isNaN(y)) return null
+      
+      return { x, y }
+    }).filter((point): point is { x: number; y: number } => point !== null && !isNaN(point.x) && !isNaN(point.y))
 
     // Create smooth curve using quadratic bezier curves
     if (points.length === 0) {
@@ -228,8 +250,10 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
     for (let i = 1; i < points.length; i++) {
       const prev = points[i - 1]
       const curr = points[i]
-      const cpx = (prev.x + curr.x) / 2
-      path += ` Q ${cpx} ${prev.y} ${curr.x} ${curr.y}`
+      if (prev && curr) {
+        const cpx = (prev.x + curr.x) / 2
+        path += ` Q ${cpx} ${prev.y} ${curr.x} ${curr.y}`
+      }
     }
 
     return { path, points }
@@ -263,8 +287,6 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
     
     return pixelPosition
   }
-
-
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "from-emerald-400 to-emerald-500"
@@ -348,28 +370,32 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
 
           {/* Chart area/line */}
           <g transform="translate(40, 20)">
-            {chartType === "area" ? (
+            {chartType === "area" && path && (
               <path
                 d={`${path} L ${chartWidth} ${chartHeight} L 0 ${chartHeight} Z`}
                 fill="url(#blueGradient)"
                 className="transition-all duration-500"
               />
-            ) : null}
+            )}
 
-            <path
-              d={path}
-              fill="none"
-              stroke="#3B82F6"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="transition-all duration-500"
-            />
+            {path && (
+              <path
+                d={path}
+                fill="none"
+                stroke="#3B82F6"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-all duration-500"
+              />
+            )}
 
-                         {/* Data points */}
-             {points.length > 0 && points.map((point, index) => {
-               const dataPoint = uniqueData[index]
-               const isHovered = hoveredPoint === index
+            {/* Data points */}
+            {points.length > 0 && points.map((point, index) => {
+              const dataPoint = uniqueData[index]
+              if (!dataPoint || !point || isNaN(point.x) || isNaN(point.y)) return null
+              
+              const isHovered = hoveredPoint === index
 
               return (
                 <g key={index}>
@@ -420,13 +446,11 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
               )
             })}
           </g>
-
-                     {/* X축 라벨 제거됨 */}
         </svg>
 
         {/* Enhanced Tooltip */}
         <AnimatePresence>
-          {hoveredPoint !== null && (
+          {hoveredPoint !== null && uniqueData[hoveredPoint] && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -440,36 +464,36 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
               }}
             >
               <div className="space-y-2">
-                                 <div className="flex items-center justify-between">
-                   <span className="font-semibold text-slate-900">{uniqueData[hoveredPoint].dayOfWeek}요일</span>
-                   <span className="text-sm text-slate-500">{new Date(uniqueData[hoveredPoint].timestamp).toLocaleDateString()}</span>
-                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-900">{uniqueData[hoveredPoint].dayOfWeek}요일</span>
+                  <span className="text-sm text-slate-500">{new Date(uniqueData[hoveredPoint].timestamp).toLocaleDateString()}</span>
+                </div>
 
                 <div className="space-y-1">
-                                     <div className="flex justify-between items-center">
-                     <span className="text-sm text-slate-600">집중도</span>
-                     <span
-                       className={`font-bold text-lg ${
-                         uniqueData[hoveredPoint].focusScore >= 80
-                           ? "text-emerald-600"
-                           : uniqueData[hoveredPoint].focusScore >= 60
-                             ? "text-blue-600"
-                             : "text-orange-600"
-                       }`}
-                     >
-                       {uniqueData[hoveredPoint].focusScore}점
-                     </span>
-                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-600">집중도</span>
+                    <span
+                      className={`font-bold text-lg ${
+                        uniqueData[hoveredPoint].focusScore >= 80
+                          ? "text-emerald-600"
+                          : uniqueData[hoveredPoint].focusScore >= 60
+                            ? "text-blue-600"
+                            : "text-orange-600"
+                      }`}
+                    >
+                      {uniqueData[hoveredPoint].focusScore}점
+                    </span>
+                  </div>
 
-                   <div className="flex justify-between items-center text-sm">
-                     <span className="text-slate-600">세션 시간</span>
-                     <span className="font-medium text-slate-900">{uniqueData[hoveredPoint].sessionDuration}분</span>
-                   </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600">세션 시간</span>
+                    <span className="font-medium text-slate-900">{uniqueData[hoveredPoint].sessionDuration}분</span>
+                  </div>
 
-                   <div className="flex justify-between items-center text-sm">
-                     <span className="text-slate-600">방해 요소</span>
-                     <span className="font-medium text-slate-900">{uniqueData[hoveredPoint].distractions}회</span>
-                   </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600">방해 요소</span>
+                    <span className="font-medium text-slate-900">{uniqueData[hoveredPoint].distractions}회</span>
+                  </div>
                 </div>
               </div>
 
@@ -486,12 +510,12 @@ const TimeSeriesChart = ({ data, period }: { data: TimeSeriesData[]; period: "we
 
         {/* Chart insights */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                     <div className="bg-emerald-50 rounded-lg p-3">
-             <div className="text-lg font-bold text-emerald-600">
-               {Math.max(...uniqueData.map((d) => d.focusScore))}점
-             </div>
-             <div className="text-xs text-emerald-700">주간 최고점</div>
-           </div>
+          <div className="bg-emerald-50 rounded-lg p-3">
+            <div className="text-lg font-bold text-emerald-600">
+              {Math.max(...uniqueData.map((d) => d.focusScore))}점
+            </div>
+            <div className="text-xs text-emerald-700">주간 최고점</div>
+          </div>
           <div className="bg-blue-50 rounded-lg p-3">
             <div className="text-lg font-bold text-blue-600">
               {avgScore}점
@@ -860,26 +884,41 @@ const FeedbackSection = ({ feedback }: { feedback: FeedbackItem[] }) => {
 
 // Main Report Component
 export default function ComprehensiveReport() {
-  const { data: weeklyReport, isLoading, error } = useWeeklyReportForComprehensive()
+  const { data: reportData, isLoading, error } = useComprehensiveReport('week')
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-full">
-        <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">리포트 데이터를 불러오는 중...</p>
+        </div>
       </div>
     )
   }
 
   if (error) {
-    return <div className="text-center py-8 text-red-500">데이터를 불러오는데 실패했습니다: {error.message}</div>
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center text-red-500">
+          <p>리포트 데이터를 불러오는데 실패했습니다.</p>
+          <p className="text-sm text-muted-foreground mt-2">잠시 후 다시 시도해주세요.</p>
+        </div>
+      </div>
+    )
   }
 
-  if (!weeklyReport) {
-    return <div className="text-center py-8 text-slate-500">데이터가 없습니다.</div>
+  if (!reportData) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center text-muted-foreground">
+          <p>리포트 데이터가 없습니다.</p>
+        </div>
+      </div>
+    )
   }
 
-     const mockFocusScore: FocusScoreData = mockComprehensiveReportData.focusScore
-   const mockFeedback: FeedbackItem[] = mockComprehensiveReportData.feedback
+  const { focusScore, timeSeries, activities, snapshots, achievements, feedback } = reportData
 
   return (
     <div className="space-y-8">
@@ -917,7 +956,7 @@ export default function ComprehensiveReport() {
             <div className="flex items-center justify-center relative">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-100/50 to-indigo-100/30 rounded-full blur-3xl"></div>
               <div className="relative">
-                <CircularProgress value={mockFocusScore.overall} size={200} strokeWidth={16} />
+                <CircularProgress value={focusScore.overall} size={200} strokeWidth={16} />
               </div>
             </div>
 
@@ -925,11 +964,11 @@ export default function ComprehensiveReport() {
             <div className="space-y-8">
               <div className="flex items-center gap-4 p-4 bg-white/60 backdrop-blur-sm rounded-2xl border border-white/40">
                 <div className="flex items-center gap-3">
-                  {mockFocusScore.trend === "up" ? (
+                  {focusScore.trend === "up" ? (
                     <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
                       <TrendingUp className="w-6 h-6 text-white" />
                     </div>
-                  ) : mockFocusScore.trend === "down" ? (
+                  ) : focusScore.trend === "down" ? (
                     <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center">
                       <TrendingDown className="w-6 h-6 text-white" />
                     </div>
@@ -942,15 +981,15 @@ export default function ComprehensiveReport() {
                     <div className="text-sm text-slate-600">이번 주 변화</div>
                     <div
                       className={`text-xl font-bold ${
-                        mockFocusScore.trend === "up"
+                        focusScore.trend === "up"
                           ? "text-green-600"
-                          : mockFocusScore.trend === "down"
+                          : focusScore.trend === "down"
                             ? "text-red-600"
                             : "text-slate-600"
                       }`}
                     >
-                      {mockFocusScore.change > 0 ? "+" : ""}
-                      {mockFocusScore.change}%
+                      {focusScore.change > 0 ? "+" : ""}
+                      {focusScore.change}%
                     </div>
                   </div>
                 </div>
@@ -961,25 +1000,25 @@ export default function ComprehensiveReport() {
                   {
                     key: "attention",
                     label: "주의 집중력",
-                    value: mockFocusScore.breakdown.attention,
+                    value: focusScore.breakdown.attention,
                     color: "from-blue-500 to-blue-600",
                   },
                   {
                     key: "posture",
                     label: "자세 유지",
-                    value: mockFocusScore.breakdown.posture,
+                    value: focusScore.breakdown.posture,
                     color: "from-green-500 to-green-600",
                   },
                   {
                     key: "phoneUsage",
                     label: "휴대폰 절제",
-                    value: mockFocusScore.breakdown.phoneUsage,
+                    value: focusScore.breakdown.phoneUsage,
                     color: "from-orange-500 to-orange-600",
                   },
                   {
                     key: "consistency",
                     label: "일관성",
-                    value: mockFocusScore.breakdown.consistency,
+                    value: focusScore.breakdown.consistency,
                     color: "from-purple-500 to-purple-600",
                   },
                 ].map((item) => (
@@ -1005,7 +1044,43 @@ export default function ComprehensiveReport() {
       </Card>
 
       {/* Trend Graph */}
-      <TrendGraph />
+      <Card className="rounded-3xl shadow-md hover:shadow-lg transition-shadow duration-200 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+            <TrendingUp className="w-6 h-6 text-green-500" />
+            집중력 트렌드
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TimeSeriesChart data={timeSeries} period="weekly" />
+        </CardContent>
+      </Card>
+
+      {/* Activity Timeline */}
+      <Card className="rounded-3xl shadow-md hover:shadow-lg transition-shadow duration-200 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+            <BarChart3 className="w-6 h-6 text-blue-500" />
+            활동 타임라인
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ActivityTimeline activities={activities} />
+        </CardContent>
+      </Card>
+
+      {/* Achievements */}
+      <Card className="rounded-3xl shadow-md hover:shadow-lg transition-shadow duration-200 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+            <Trophy className="w-6 h-6 text-yellow-500" />
+            성취 현황
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AchievementGrid achievements={achievements} />
+        </CardContent>
+      </Card>
 
       {/* Personalized Feedback */}
       <Card className="rounded-3xl shadow-md hover:shadow-lg transition-shadow duration-200 bg-white/80 backdrop-blur-sm">
@@ -1016,7 +1091,7 @@ export default function ComprehensiveReport() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <FeedbackSection feedback={mockFeedback} />
+          <FeedbackSection feedback={feedback} />
         </CardContent>
       </Card>
     </div>
