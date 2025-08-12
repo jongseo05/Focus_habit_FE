@@ -693,9 +693,11 @@ export default function DailyReportPage() {
             {sessions && sessions.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <AnimatePresence>
-                  {sessions.map((session, index) => (
-                    <SessionCard key={session.id} session={session} index={index} />
-                  ))}
+                  {sessions
+                    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+                    .map((session, index) => (
+                      <SessionCard key={session.id} session={session} index={index} />
+                    ))}
                 </AnimatePresence>
               </div>
             ) : (
