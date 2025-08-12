@@ -68,7 +68,8 @@ const useFocusSession = () => {
     startSession, 
     pauseSession, 
     stopSession, 
-    formatTime 
+    updateFocusScore,
+    formatTime
   } = useDashboardStore()
 
   return {
@@ -80,6 +81,7 @@ const useFocusSession = () => {
     startSession,
     pauseSession,
     stopSession,
+    updateFocusScore
   }
 }
 
@@ -880,9 +882,11 @@ function DashboardContent() {
   }, [session.isRunning, session.isPaused, isModelLoaded, inference])
   
   // 미디어 스트림과 제스처 인식을 통합 관리
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  
   const mediaStream = useFocusSessionWithGesture(
     session.isRunning, 
-    activeSession?.session_id, // 세션 ID 전달
+    currentSessionId || activeSession?.session_id, // 현재 세션 ID 우선 사용
     {
       frameRate: 10, // 1초에 10번 (10fps)
       enableGestureRecognition: true, // 제스처 인식 활성화
@@ -953,11 +957,60 @@ function DashboardContent() {
         return
       }
       
-      session.startSession()
-      await mediaStream.startStream()
-      await microphoneStream.startStream()
-      setShowWebcam(true)
-      setShowAudioPipeline(true) // 오디오 파이프라인 활성화
+      try {
+        console.log('🚀 데이터베이스 세션 생성 시작')
+        
+        // 1. 로컬 세션 시작
+        session.startSession()
+        
+        // 2. 데이터베이스에 세션 생성
+        const supabase = supabaseBrowser()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError || !user) {
+          alert('사용자 인증에 실패했습니다. 다시 로그인해주세요.')
+          return
+        }
+        
+        const { data: newSession, error: sessionError } = await supabase
+          .from('focus_session')
+          .insert({
+            user_id: user.id,
+            started_at: new Date().toISOString(),
+            goal_min: 30,
+            context_tag: '집중 세션',
+            session_type: 'study'
+          })
+          .select()
+          .single()
+        
+        if (sessionError) {
+          console.error('Session creation failed:', sessionError)
+          console.error('Error details:', {
+            code: sessionError.code,
+            message: sessionError.message,
+            details: sessionError.details,
+            hint: sessionError.hint
+          })
+          alert(`세션 생성에 실패했습니다: ${sessionError.message}`)
+          return
+        }
+        
+        console.log('✅ 데이터베이스 세션 생성 성공:', newSession)
+        
+        // 세션 ID를 상태에 저장
+        setCurrentSessionId(newSession.session_id)
+        
+        // 3. 미디어 스트림 시작
+        await mediaStream.startStream()
+        await microphoneStream.startStream()
+        setShowWebcam(true)
+        setShowAudioPipeline(true)
+        
+      } catch (error) {
+        console.error('❌ 세션 시작 중 오류:', error)
+        alert('세션 시작 중 오류가 발생했습니다. 다시 시도해주세요.')
+      }
     }
   }
 
@@ -1081,48 +1134,42 @@ function DashboardContent() {
       if (!activeSession) {
         // 활성 세션이 없어도 로컬 상태는 초기화
       } else {
-        // 3. 세션 종료 처리
-        
-        const { error: endError } = await supabase
-          .from('focus_session')
-          .update({
-            ended_at: new Date().toISOString(),
-            focus_score: session.focusScore // 현재 집중 점수 저장
-          })
-          .eq('session_id', activeSession.session_id)
-
-        if (endError) {
-          // DB 업데이트 실패 시 재시도
-          const { error: retryError } = await supabase
-            .from('focus_session')
-            .update({
-              ended_at: new Date().toISOString(),
-              focus_score: session.focusScore
+        // 3. 세션 종료 및 리포트 생성
+        try {
+          // API를 통해 세션 종료 처리
+          const response = await fetch('/api/focus-session/end', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: activeSession.session_id,
+                             finalFocusScore: session.focusScore
             })
-            .eq('session_id', activeSession.session_id)
-          
-          if (retryError) {
-            alert('세션 종료 중 데이터베이스 오류가 발생했습니다. 관리자에게 문의해주세요.')
+          })
+
+          if (response.ok) {
+            const result = await response.json()
+            
+            if (result.success) {
+              // 4. 성공 알림 표시
+                             const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
+               const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${result.data.summary.averageFocusScore || session.focusScore}점\n• 수집된 데이터: ${result.data.summary.sampleCount}개 샘플, ${result.data.summary.eventCount}개 이벤트, ${result.data.summary.mlFeatureCount}개 ML 피쳐\n\n📈 리포트를 확인하시겠습니까?`
+              
+              if (confirm(message)) {
+                const today = new Date().toISOString().split('T')[0]
+                window.open(`/report/daily/date/${today}`, '_blank')
+              }
+            } else {
+              console.error('세션 종료 실패:', result.error)
+              alert(`세션 종료 중 오류가 발생했습니다: ${result.error}`)
+            }
+          } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
           }
-          
-          // DB 업데이트 실패해도 로컬 상태는 초기화
-        } else {
-          // 4. 일일 요약 데이터 업데이트
-          try {
-            const today = new Date().toISOString().split('T')[0]
-            await ReportService.upsertDailySummary(user.id, today)
-          } catch (summaryError) {
-            // 일일 요약 업데이트 실패 시 조용히 처리
-          }
-          
-          // 5. 성공 알림 표시
-          const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
-          const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${session.focusScore}점\n\n📈 리포트를 확인하시겠습니까?`
-          
-          if (confirm(message)) {
-            const today = new Date().toISOString().split('T')[0]
-            window.open(`/report/daily/date/${today}`, '_blank')
-          }
+        } catch (error) {
+          console.error('세션 종료 처리 중 예외 발생:', error)
+          alert('세션 종료 중 예상치 못한 오류가 발생했습니다. 관리자에게 문의해주세요.')
         }
       }
     } catch (error) {
@@ -1136,6 +1183,7 @@ function DashboardContent() {
     microphoneStream.stopStream()
     setShowWebcam(false)
     setShowAudioPipeline(false)
+    setCurrentSessionId(null) // 세션 ID 초기화
   }
 
   const handlePauseSession = () => {
@@ -1339,8 +1387,14 @@ function DashboardContent() {
     { name: "박준호", hours: "20:45", avatar: "PJ" },
   ]
 
-  // ML 피쳐값 데이터 상태
+  // ML 피쳐값 및 집중도 점수 데이터 상태
   const [mlFeatures, setMlFeatures] = useState<any[]>([])
+  const [focusScores, setFocusScores] = useState<Array<{
+    ts: string
+    score: number
+    confidence: number
+    analysis: string
+  }>>([])
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false)
 
   // ML 피쳐값 로드 함수
@@ -1377,56 +1431,126 @@ function DashboardContent() {
   //   }
   // }, [session.isRunning])
 
-  // ML 피쳐값 생성 및 저장 (세션 중일 때)
+  // AI 집중도 점수 계산 및 저장 함수 (useEffect 외부로 이동)
+const calculateAndSaveFocusScore = async () => {
+  try {
+    // AI 집중도 엔진 import
+    const { FocusScoreEngine } = await import('@/lib/focusScoreEngine')
+    
+          // 현재 시간 기반 지표 계산 (elapsed 시간 사용)
+      const currentTime = Date.now()
+      const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
+      
+      // 1초마다 실행되므로 너무 자주 로그 출력하지 않도록 제한
+      if (Math.floor(session.elapsed) % 10 === 0) { // 10초마다만 로그 출력
+        console.log('📊 실시간 집중도 수집 중:', { 
+          elapsed: session.elapsed, 
+        sessionDuration, 
+        timestamp: new Date().toISOString() 
+      })
+    }
+      
+      // AI 집중도 계산을 위한 피쳐 데이터 구성
+      const focusFeatures = {
+        // 시각적 지표 (ML 피쳐값에서 가져오거나 기본값 사용)
+        visual: {
+          eyeStatus: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.eye_status 
+            ? mlFeatures[mlFeatures.length - 1].eye_status 
+            : 'OPEN',
+          earValue: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.ear_value 
+            ? mlFeatures[mlFeatures.length - 1].ear_value 
+            : 0.3,
+          headPose: {
+            pitch: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_pitch 
+              ? mlFeatures[mlFeatures.length - 1].head_pose_pitch 
+              : 0,
+            yaw: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_yaw 
+              ? mlFeatures[mlFeatures.length - 1].head_pose_yaw 
+              : 0,
+            roll: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_roll 
+              ? mlFeatures[mlFeatures.length - 1].head_pose_roll 
+              : 0
+          },
+          gazeDirection: 'FORWARD' as const
+        },
+        
+        // 청각적 지표 (음성 분석 결과에서 가져오거나 기본값 사용)
+        audio: {
+          isSpeaking: false, // 실제로는 음성 분석 결과 사용
+          speechContent: '',
+          isStudyRelated: true,
+          confidence: 0.8,
+          audioLevel: 20 // 기본 조용함
+        },
+        
+        // 행동 지표 (실제로는 사용자 활동 모니터링에서 가져와야 함)
+        behavior: {
+          mouseActivity: true, // 기본값
+          keyboardActivity: true, // 기본값
+          tabSwitches: 0, // 실제로는 탭 전환 감지 필요
+          idleTime: 0 // 실제로는 유휴 시간 감지 필요
+        },
+        
+        // 시간 지표
+        time: {
+          sessionDuration,
+          lastBreakTime: Math.floor(sessionDuration * 0.8), // 예시값
+          consecutiveFocusTime: Math.floor(sessionDuration * 0.9) // 예시값
+        }
+      }
+
+      // AI 집중도 점수 계산 및 저장
+      if (!activeSession?.session_id) {
+        console.error('❌ 활성 세션 ID가 없습니다')
+        return
+      }
+      
+      const focusScoreResult = await FocusScoreEngine.trackFocusScore(
+        activeSession.session_id,
+        focusFeatures
+      )
+
+      // 로컬 상태 업데이트
+      setMlFeatures(prev => [...prev, {
+        ts: new Date().toISOString(),
+        score: focusScoreResult.score,
+        confidence: focusScoreResult.confidence,
+        topic_tag: 'ai_focus_analysis',
+        created_at: new Date().toISOString()
+      }])
+
+      // 집중도 점수 히스토리 업데이트
+      setFocusScores(prev => [...prev, {
+        ts: new Date().toISOString(),
+        score: focusScoreResult.score,
+        confidence: focusScoreResult.confidence,
+        analysis: focusScoreResult.analysis.primaryFactor
+      }])
+
+      // 집중도 점수 업데이트
+      session.updateFocusScore(focusScoreResult.score)
+
+      console.log('🤖 AI 집중도 분석 완료:', {
+        score: focusScoreResult.score,
+        confidence: focusScoreResult.confidence,
+        breakdown: focusScoreResult.breakdown,
+        analysis: focusScoreResult.analysis
+      })
+
+    } catch (error) {
+      console.error('❌ AI 집중도 점수 계산 실패:', error)
+    }
+  }
+
+  // AI 집중도 점수 계산 및 저장 (세션 중일 때)
   useEffect(() => {
     if (!session.isRunning || !activeSession?.session_id) return
-
-    const generateMLFeatures = async () => {
-      try {
-        // 실제 ML 분석을 시뮬레이션하는 데이터 생성
-        const mockFeatures = {
-          timestamp: new Date().toISOString(),
-          head_pose: {
-            pitch: Math.random() * 20 - 10, // -10° ~ +10°
-            yaw: Math.random() * 30 - 15,   // -15° ~ +15°
-            roll: Math.random() * 10 - 5     // -5° ~ +5°
-          },
-          eye_status: {
-            status: Math.random() > 0.8 ? 'CLOSED' : 'OPEN',
-            ear_value: 0.2 + Math.random() * 0.3 // 0.2 ~ 0.5
-          },
-          frame_number: Math.floor(Math.random() * 1000)
-        }
-
-        // ML 피쳐값을 데이터베이스에 저장
-        const response = await fetch('/api/ml-features', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: activeSession.session_id,
-            features: mockFeatures
-          })
-        })
-
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success) {
-            // 로컬 상태에 추가
-            setMlFeatures(prev => [...prev, result.data])
-          }
-        }
-      } catch (error) {
-        // ML 피쳐값 생성 실패 시 조용히 처리
-      }
-    }
-
-    // 5초마다 ML 피쳐값 생성
-    const interval = setInterval(generateMLFeatures, 5000)
+    
+    // 1초마다 AI 집중도 점수 계산 및 저장
+    const interval = setInterval(calculateAndSaveFocusScore, 1000)
     
     return () => clearInterval(interval)
-  }, [session.isRunning, activeSession?.session_id])
+     }, [session.isRunning, activeSession?.session_id, mlFeatures, session])
 
 
 
@@ -1468,6 +1592,23 @@ function DashboardContent() {
                       ({mediaStream.gestureFramesSent}프레임)
                     </span>
                   )}
+                </div>
+              )}
+
+              {/* AI 집중도 점수 표시 (세션 중일 때만) */}
+              {session.isRunning && (
+                <div className="flex items-center gap-2 text-sm">
+                  <div className={`w-2 h-2 rounded-full ${
+                    session.focusScore >= 80 ? 'bg-green-500' :
+                    session.focusScore >= 60 ? 'bg-yellow-500' :
+                    'bg-red-500'
+                  } animate-pulse`}></div>
+                  <span className="text-slate-600 hidden sm:inline">
+                    AI 집중도: {session.focusScore}점
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    (실시간)
+                  </span>
                 </div>
               )}
 
@@ -1803,7 +1944,7 @@ function DashboardContent() {
                     <div className="text-sm text-slate-600 mt-1">집중도</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-slate-900">{session.formatTime(session.elapsed)}</div>
+                                         <div className="text-2xl font-bold text-slate-900">{session.formatTime(session.elapsed)}</div>
                     <div className="text-sm text-slate-600">세션 시간</div>
                   </div>
                   

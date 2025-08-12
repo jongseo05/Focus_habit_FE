@@ -74,3 +74,39 @@ export interface FocusSessionConfig {
   gracefulDegradation: boolean // 점진적 성능 저하 허용
   fallbackMode: boolean // 대체 모드 활성화
 }
+
+// 제스처 인식 관련 타입들
+export interface FocusSessionWithGestureOptions {
+  frameRate?: number
+  enableGestureRecognition?: boolean
+  gestureJpegQuality?: number
+  onGestureDetected?: (gesture: string) => void
+  onFocusStatusChanged?: (status: 'focused' | 'normal' | 'distracted') => void
+}
+
+export interface GestureFeatures {
+  frameNumber: number
+  eyeStatus?: string
+  earValue?: number
+  headPose?: {
+    pitch?: number
+    roll?: number
+    yaw?: number
+  }
+  focusStatus?: 'focused' | 'normal' | 'distracted'
+  focusConfidence?: number
+  focusScore?: number
+}
+
+export interface FocusSessionWithGestureReturn {
+  isGestureActive: boolean
+  isStreaming: boolean
+  isPermissionGranted: boolean
+  startStream: () => Promise<void>
+  stopStream: () => void
+  toggleStream: () => void
+  error: string | null
+  lastGesture: string | null
+  focusStatus: 'focused' | 'normal' | 'distracted' | null
+  focusScore: number
+}
