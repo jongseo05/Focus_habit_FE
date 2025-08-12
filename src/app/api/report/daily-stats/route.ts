@@ -70,6 +70,23 @@ export async function GET(request: NextRequest) {
       console.error('Session fetch error:', sessionError)
     }
 
+    // ML 피쳐 데이터 가져오기 (집중 상태 포함)
+    const sessionIds = sessionStats?.map(s => s.session_id) || []
+    let mlFeaturesData: any[] = []
+    
+    if (sessionIds.length > 0) {
+      const { data: mlFeatures, error: mlFeaturesError } = await supabase
+        .from('ml_features')
+        .select('session_id, focus_status, focus_score')
+        .in('session_id', sessionIds)
+
+      if (mlFeaturesError) {
+        console.error('ML features fetch error:', mlFeaturesError)
+      } else {
+        mlFeaturesData = mlFeatures || []
+      }
+    }
+
     // 날짜별로 데이터 정리
     const dateStatsMap = new Map()
     
@@ -100,7 +117,11 @@ export async function GET(request: NextRequest) {
           hasData: false,
           phoneMin: 0,
           quietRatio: 0,
-          longestStreak: 0
+          longestStreak: 0,
+          focusedCount: 0,
+          normalCount: 0,
+          distractedCount: 0,
+          averageMlScore: 0
         }
         
         existing.sessions += 1
@@ -109,6 +130,40 @@ export async function GET(request: NextRequest) {
         existing.hasData = true
         
         dateStatsMap.set(sessionDate, existing)
+      }
+    })
+
+    // ML 피쳐 데이터로 집중 상태 통계 추가
+    mlFeaturesData.forEach(feature => {
+      // 해당 피쳐의 세션 날짜 찾기
+      const session = sessionStats?.find(s => s.session_id === feature.session_id)
+      if (session) {
+        const sessionDate = new Date(session.started_at).toISOString().split('T')[0]
+        const existing = dateStatsMap.get(sessionDate)
+        
+        if (existing) {
+          // 집중 상태 카운트
+          if (feature.focus_status) {
+            switch (feature.focus_status) {
+              case 'focused':
+                existing.focusedCount = (existing.focusedCount || 0) + 1
+                break
+              case 'normal':
+                existing.normalCount = (existing.normalCount || 0) + 1
+                break
+              case 'distracted':
+                existing.distractedCount = (existing.distractedCount || 0) + 1
+                break
+            }
+          }
+          
+          // ML 점수 누적 (평균 계산을 위해)
+          if (feature.focus_score) {
+            const currentTotal = (existing.averageMlScore || 0) * (existing.mlScoreCount || 0)
+            existing.mlScoreCount = (existing.mlScoreCount || 0) + 1
+            existing.averageMlScore = (currentTotal + feature.focus_score) / existing.mlScoreCount
+          }
+        }
       }
     })
 
@@ -127,7 +182,11 @@ export async function GET(request: NextRequest) {
         hasData: false,
         phoneMin: 0,
         quietRatio: 0,
-        longestStreak: 0
+        longestStreak: 0,
+        focusedCount: 0,
+        normalCount: 0,
+        distractedCount: 0,
+        averageMlScore: 0
       }
       
       allDates.push(stats)

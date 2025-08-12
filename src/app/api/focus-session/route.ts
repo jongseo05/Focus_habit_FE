@@ -73,10 +73,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET: 집중 세션 목록 조회
+// GET: 집중 세션 목록 조회 또는 활성 세션 조회
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const active = searchParams.get('active') // 활성 세션 조회 플래그
     const start_date = searchParams.get('start_date')
     const end_date = searchParams.get('end_date')
     const session_type = searchParams.get('session_type')
@@ -95,7 +96,32 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // 세션 목록 조회
+    // 활성 세션 조회 요청인 경우
+    if (active === 'true') {
+      const { data: activeSession, error: activeError } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (activeError && activeError.code !== 'PGRST116') { // PGRST116: 결과가 없음
+        console.error('Active session query error:', activeError)
+        return NextResponse.json(
+          { error: 'Failed to fetch active session' },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: activeSession || null
+      })
+    }
+
+    // 기존 세션 목록 조회 로직
     const result = await FocusSessionService.getSessionsServer({
       user_id: user.id,
       start_date: start_date || undefined,

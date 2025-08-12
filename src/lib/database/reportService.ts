@@ -48,7 +48,18 @@ export class ReportService {
         throw new Error(`샘플 데이터 조회 실패: ${samplesError.message}`)
       }
 
-      // 3. 해당 날짜의 이벤트 데이터 조회
+      // 3. 해당 날짜의 ML 피쳐 데이터 조회 (집중 상태 포함)
+      const { data: mlFeatures, error: mlFeaturesError } = await supabase
+        .from('ml_features')
+        .select('*')
+        .in('session_id', sessions?.map(s => s.session_id) || [])
+        .order('ts', { ascending: true })
+
+      if (mlFeaturesError) {
+        throw new Error(`ML 피쳐 데이터 조회 실패: ${mlFeaturesError.message}`)
+      }
+
+      // 4. 해당 날짜의 이벤트 데이터 조회
       const { data: events, error: eventsError } = await supabase
         .from('focus_event')
         .select('*')
@@ -59,12 +70,17 @@ export class ReportService {
         throw new Error(`이벤트 데이터 조회 실패: ${eventsError.message}`)
       }
 
-      // 4. 리포트 데이터 생성
+      // 5. 집중 상태 통계 계산
+      const focusStatusStats = this.calculateFocusStatusStats(mlFeatures || [])
+
+      // 6. 리포트 데이터 생성
       const reportData = this.buildDailyReportData(
         date,
         sessions || [],
         samples || [],
-        events || []
+        events || [],
+        mlFeatures || [],
+        focusStatusStats
       )
 
       return {
@@ -127,12 +143,17 @@ export class ReportService {
         throw new Error(`이벤트 데이터 조회 실패: ${eventsError.message}`)
       }
 
-      // 4. 리포트 데이터 생성
+      // 5. 집중 상태 통계 계산
+      const focusStatusStats = this.calculateFocusStatusStats(mlFeatures || [])
+
+      // 6. 리포트 데이터 생성
       const reportData = this.buildDailyReportData(
         date,
         sessions || [],
         samples || [],
-        events || []
+        events || [],
+        mlFeatures || [],
+        focusStatusStats
       )
 
       return {
@@ -152,85 +173,128 @@ export class ReportService {
   }
 
   /**
-   * 일일 리포트 데이터 구성
+   * 집중 상태 통계 계산
    */
-  private static buildDailyReportData(
-    date: string,
-    sessions: FocusSession[],
-    samples: FocusSample[],
-    events: FocusEvent[]
-  ): DailyReportType {
-    // 1. 집중 점수 포인트 생성 (24시간 기준)
-    const focusScorePoints = this.generateFocusScorePoints(date, samples, events)
+  private static calculateFocusStatusStats(mlFeatures: any[]) {
+    if (!mlFeatures || mlFeatures.length === 0) {
+      return {
+        focusedCount: 0,
+        normalCount: 0,
+        distractedCount: 0,
+        totalCount: 0,
+        averageFocusScore: 0,
+        focusRatio: 0
+      }
+    }
 
-    // 2. 하이라이트 데이터 계산
-    const highlights = this.calculateHighlights(sessions, samples, events)
+    const focusedCount = mlFeatures.filter(f => f.focus_status === 'focused').length
+    const normalCount = mlFeatures.filter(f => f.focus_status === 'normal').length
+    const distractedCount = mlFeatures.filter(f => f.focus_status === 'distracted').length
+    const totalCount = mlFeatures.length
 
-    // 3. AI 조언 생성
-    const aiAdvice = this.generateAIAdvice(sessions, samples, events)
+    const validScores = mlFeatures.filter(f => f.focus_score !== null && f.focus_score !== undefined)
+    const averageFocusScore = validScores.length > 0
+      ? Math.round(validScores.reduce((sum, f) => sum + f.focus_score, 0) / validScores.length)
+      : 0
 
-    // 4. 보상 데이터 계산
-    const reward = this.calculateReward(sessions, samples)
+    const focusRatio = totalCount > 0 ? Math.round((focusedCount / totalCount) * 100) : 0
 
     return {
-      date,
-      focusScorePoints,
-      highlights,
-      aiAdvice,
-      reward
+      focusedCount,
+      normalCount,
+      distractedCount,
+      totalCount,
+      averageFocusScore,
+      focusRatio
     }
   }
 
   /**
-   * 24시간 집중 점수 포인트 생성
+   * 일일 리포트 데이터 구성
+   */
+  private static buildDailyReportData(
+    date: string,
+    sessions: any[],
+    samples: any[],
+    events: any[],
+    mlFeatures: any[],
+    focusStatusStats: any
+  ): DailyReportType {
+    // ML 피쳐 데이터를 활용한 집중 점수 계산
+    const focusScorePoints = this.generateFocusScorePoints(samples, mlFeatures, events)
+
+    return {
+      date,
+      focusScorePoints,
+      highlights: this.calculateHighlights(sessions, samples, events, mlFeatures),
+      aiAdvice: this.generateAIAdvice(sessions, samples, events, mlFeatures),
+      reward: this.calculateReward(sessions, samples, mlFeatures)
+    }
+  }
+
+  /**
+   * 집중 점수 포인트 생성
    */
   private static generateFocusScorePoints(
-    date: string,
     samples: FocusSample[],
+    mlFeatures: any[],
     events: FocusEvent[]
   ): FocusScorePoint[] {
     const points: FocusScorePoint[] = []
-    
-    // 24시간을 5분 간격으로 생성 (288개 포인트)
-    for (let i = 0; i < 288; i++) {
-      const minute = i * 5
-      const timestamp = new Date(date + `T00:00:00`).getTime() + (minute * 60 * 1000)
-      const timestampISO = new Date(timestamp).toISOString()
-      
-      // 해당 시간대의 샘플 데이터 찾기
-      const timeSamples = samples.filter(sample => {
-        const sampleTime = new Date(sample.ts).getTime()
-        return sampleTime >= timestamp && sampleTime < timestamp + (5 * 60 * 1000)
-      })
-      
-      // 해당 시간대의 이벤트 찾기
-      const timeEvents = events.filter(event => {
-        const eventTime = new Date(event.ts).getTime()
-        return eventTime >= timestamp && eventTime < timestamp + (5 * 60 * 1000)
-      })
-      
-      // 평균 점수 계산
-      let score = 50 // 기본값
-      if (timeSamples.length > 0) {
-        score = Math.round(
-          timeSamples.reduce((sum, s) => sum + s.score, 0) / timeSamples.length
-        )
+
+    // 기존 샘플 데이터 처리
+    samples.forEach(sample => {
+      if (sample.ts && sample.score !== null && sample.score !== undefined) {
+        points.push({
+          ts: sample.ts,
+          score: sample.score,
+          events: []
+        })
       }
-      
-             // 이벤트 타입 추출 (dailyReport 타입에 맞게 변환)
-       const eventTypes = timeEvents.map(event => {
-         if (event.event_type === 'audio_analysis') return 'focus'
-         return event.event_type as 'phone' | 'distraction' | 'break' | 'focus' | 'posture'
-       })
-      
-      points.push({
-        ts: timestampISO,
-        score,
-        events: eventTypes
-      })
-    }
-    
-    return points
+    })
+
+    // ML 피쳐 데이터 처리
+    mlFeatures.forEach(feature => {
+      if (feature.ts && feature.focus_score !== null && feature.focus_score !== undefined) {
+        points.push({
+          ts: feature.ts,
+          score: feature.focus_score,
+          events: []
+        })
+      }
+    })
+
+    // 시간순 정렬
+    return points.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+  }
+
+  /**
+   * 총 집중 시간 계산 (클라이언트 사이드)
+   */
+  private static calculateTotalFocusTime(sessions: FocusSession[]): string {
+    let totalMinutes = 0;
+    sessions.forEach(session => {
+      const start = new Date(session.started_at);
+      const end = new Date(session.ended_at || new Date());
+      totalMinutes += (end.getTime() - start.getTime()) / (1000 * 60);
+    });
+    return `${Math.floor(totalMinutes / 60)}:${String(Math.floor(totalMinutes % 60)).padStart(2, '0')}`;
+  }
+
+  /**
+   * 평균 집중 점수 계산 (클라이언트 사이드)
+   */
+  private static calculateAverageScore(samples: FocusSample[], mlFeatures: any[]): number {
+    const allScores = [...samples.map(s => s.score), ...mlFeatures.map(f => f.focus_score)];
+    return allScores.length > 0 ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length) : 0;
+  }
+
+  /**
+   * 최고 점수 계산 (클라이언트 사이드)
+   */
+  private static calculatePeakScore(samples: FocusSample[], mlFeatures: any[]): number {
+    const allScores = [...samples.map(s => s.score), ...mlFeatures.map(f => f.focus_score)];
+    return allScores.length > 0 ? Math.max(...allScores) : 0;
   }
 
   /**
@@ -239,7 +303,8 @@ export class ReportService {
   private static calculateHighlights(
     sessions: FocusSession[],
     samples: FocusSample[],
-    events: FocusEvent[]
+    events: FocusEvent[],
+    mlFeatures: any[]
   ) {
     // 총 집중 시간 계산
     const totalFocusMinutes = sessions.reduce((sum, session) => {
@@ -349,7 +414,8 @@ export class ReportService {
   private static generateAIAdvice(
     sessions: FocusSession[],
     samples: FocusSample[],
-    events: FocusEvent[]
+    events: FocusEvent[],
+    mlFeatures: any[]
   ) {
     // 기본 조언
     let message = "오늘도 좋은 집중 세션을 보내셨습니다."
@@ -394,7 +460,8 @@ export class ReportService {
    */
   private static calculateReward(
     sessions: FocusSession[],
-    samples: FocusSample[]
+    samples: FocusSample[],
+    mlFeatures: any[]
   ) {
     // 총 집중 시간 기반 경험치 계산
     const totalMinutes = sessions.reduce((sum, session) => {
@@ -458,7 +525,7 @@ export class ReportService {
   }
 
   /**
-   * 일일 요약 데이터 생성/업데이트
+   * 일일 요약 데이터 생성/업데이트 (클라이언트 사이드)
    */
   static async upsertDailySummary(
     userId: string,
@@ -494,6 +561,73 @@ export class ReportService {
 
       // 일일 요약 데이터 업서트
       const { data: summary, error: upsertError } = await supabase
+        .from('daily_summary')
+        .upsert({
+          user_id: userId,
+          date,
+          focus_min: Math.round(focusMin),
+          avg_score: Math.round(avgScore * 100) / 100,
+          sessions_count: sessionsCount
+        })
+        .select()
+        .single()
+
+      if (upsertError) {
+        throw new Error(`일일 요약 업데이트 실패: ${upsertError.message}`)
+      }
+
+      return {
+        success: true,
+        data: summary as DailySummary,
+        message: '일일 요약이 업데이트되었습니다.'
+      }
+
+    } catch (error) {
+      console.error('일일 요약 업데이트 실패:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        data: undefined
+      }
+    }
+  }
+
+  /**
+   * 일일 요약 데이터 생성/업데이트 (서버 사이드)
+   */
+  static async upsertDailySummaryServer(
+    userId: string,
+    date: string,
+    supabaseClient: any
+  ): Promise<ApiResponse<DailySummary>> {
+    try {
+      // 해당 날짜의 데이터 집계
+      const { data: sessions, error: sessionsError } = await supabaseClient
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('started_at', `${date}T00:00:00`)
+        .lt('started_at', `${date}T23:59:59`)
+
+      if (sessionsError) {
+        throw new Error(`세션 조회 실패: ${sessionsError.message}`)
+      }
+
+      // 집계 데이터 계산
+      const focusMin = sessions?.reduce((sum: any, session: any) => {
+        const start = new Date(session.started_at)
+        const end = new Date(session.ended_at || new Date())
+        return sum + (end.getTime() - start.getTime()) / (1000 * 60)
+      }, 0) || 0
+
+      const avgScore = sessions?.length 
+        ? sessions.reduce((sum: any, s: any) => sum + (s.focus_score || 0), 0) / sessions.length 
+        : 0
+
+      const sessionsCount = sessions?.length || 0
+
+      // 일일 요약 데이터 업서트
+      const { data: summary, error: upsertError } = await supabaseClient
         .from('daily_summary')
         .upsert({
           user_id: userId,

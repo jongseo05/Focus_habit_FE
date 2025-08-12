@@ -120,7 +120,7 @@ export const TrendGraph = () => {
     queryKey: ['trend-data'],
     queryFn: fetchTrendData,
     staleTime: 5 * 60 * 1000, // 5분
-    cacheTime: 10 * 60 * 1000, // 10분
+    gcTime: 10 * 60 * 1000, // 10분
   })
 
   if (isLoading) {
