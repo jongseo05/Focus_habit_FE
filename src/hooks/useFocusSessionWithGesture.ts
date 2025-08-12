@@ -162,7 +162,7 @@ export function useFocusSessionWithGesture(
           head_pose_pitch: features.headPose?.pitch,
           head_pose_yaw: features.headPose?.yaw,
           head_pose_roll: features.headPose?.roll,
-          eye_status: features.eyeStatus?.substring(0, 10), // 10자로 제한
+          eye_status: features.eyeStatus ? features.eyeStatus.substring(0, 10) : 'UNKNOWN', // 10자로 제한
           ear_value: features.earValue,
           frame_number: features.frameNumber,
           focus_status: features.focusStatus,
@@ -183,7 +183,7 @@ export function useFocusSessionWithGesture(
           ts: new Date().toISOString(),
           score: features.focusScore,
           ear_value: features.earValue,
-          eye_status: features.eyeStatus?.substring(0, 10), // 10자로 제한
+          eye_status: features.eyeStatus ? features.eyeStatus.substring(0, 10) : 'UNKNOWN', // 10자로 제한
           head_pose_pitch: features.headPose?.pitch,
           head_pose_yaw: features.headPose?.yaw,
           head_pose_roll: features.headPose?.roll

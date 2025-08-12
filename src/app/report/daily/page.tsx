@@ -19,6 +19,16 @@ import {
   Calendar,
   Zap,
   Brain,
+  Lightbulb,
+  Timer,
+  TrendingDown,
+  Eye,
+  Coffee,
+  Award,
+  AlertTriangle,
+  Info,
+  Activity,
+  Target as TargetIcon,
 } from "lucide-react"
 import Link from "next/link"
 import { useTodaySessions } from "@/hooks/useReport"
@@ -229,6 +239,363 @@ const EmptyState = () => {
   )
 }
 
+// Data-Driven Feedback Component
+const DataDrivenFeedback = ({ sessions }: { sessions: any[] }) => {
+  if (!sessions || sessions.length === 0) return null
+
+  const totalDuration = sessions.reduce((sum, s) => sum + s.duration, 0)
+  const avgScore = Math.round(sessions.reduce((sum, s) => sum + s.averageScore, 0) / sessions.length)
+  const bestSession = sessions.reduce((best, current) => 
+    current.averageScore > best.averageScore ? current : best
+  )
+  const worstSession = sessions.reduce((worst, current) => 
+    current.averageScore < worst.averageScore ? current : worst
+  )
+
+  // 집중력 패턴 분석
+  const getFocusPatternAnalysis = () => {
+    const scoreVariance = Math.sqrt(
+      sessions.reduce((sum, s) => sum + Math.pow(s.averageScore - avgScore, 2), 0) / sessions.length
+    )
+    
+    let declinePoint = "안정적 유지"
+    let declineDesc = "집중력이 안정적으로 유지됨"
+    
+    if (scoreVariance > 15) {
+      declinePoint = "30분 후 저하"
+      declineDesc = "세션 중반 이후 집중력 감소"
+    } else if (scoreVariance > 10) {
+      declinePoint = "45분 후 저하"
+      declineDesc = "세션 후반 집중력 감소"
+    }
+
+    // 최적 집중 구간 계산
+    const highFocusSessions = sessions.filter(s => s.averageScore >= 80)
+    const avgHighFocusDuration = highFocusSessions.length > 0 
+      ? Math.round(highFocusSessions.reduce((sum, s) => sum + s.duration, 0) / highFocusSessions.length)
+      : 45
+
+    return {
+      declinePoint,
+      declineDesc,
+      optimalInterval: `${Math.max(30, Math.min(90, avgHighFocusDuration))}분`,
+      optimalDesc: "고집중도(80점 이상) 구간"
+    }
+  }
+
+  // 실용적 조언
+  const getPracticalAdvice = () => {
+    const totalHours = Math.round(totalDuration / 60)
+    
+    let restTiming = "30분 후 휴식"
+    let restDesc = "적당한 휴식으로 회복"
+    
+    if (avgScore < 60) {
+      restTiming = "25분 후 휴식"
+      restDesc = "빈번한 휴식으로 집중력 유지"
+    } else if (avgScore >= 80) {
+      restTiming = "45분 후 휴식"
+      restDesc = "긴 집중 구간 활용"
+    }
+
+    let nextStrategy = "현재 길이 유지"
+    let strategyDesc = "집중도에 따른 권장 전략"
+    
+    if (sessions.length < 3) {
+      nextStrategy = "세션 수 증가"
+      strategyDesc = "하루 3-4회 세션 권장"
+    } else if (avgScore < 70) {
+      nextStrategy = "세션 길이 단축"
+      strategyDesc = "짧은 세션으로 집중도 향상"
+    }
+
+    return {
+      restTiming,
+      restDesc,
+      nextStrategy,
+      strategyDesc
+    }
+  }
+
+  // 성과 개선 팁
+  const getPerformanceTips = () => {
+    const scoreVariance = Math.sqrt(
+      sessions.reduce((sum, s) => sum + Math.pow(s.averageScore - avgScore, 2), 0) / sessions.length
+    )
+    
+    let stability = "매우 안정적"
+    let stabilityDesc = "일관된 집중력 유지"
+    
+    if (scoreVariance > 20) {
+      stability = "불안정"
+      stabilityDesc = "집중력 편차가 큼"
+    } else if (scoreVariance > 10) {
+      stability = "보통"
+      stabilityDesc = "적당한 안정성"
+    }
+
+    let priority = "집중도 향상"
+    if (avgScore >= 80) {
+      priority = "지속성 유지"
+    } else if (totalDuration < 180) {
+      priority = "학습 시간 증가"
+    } else if (sessions.length < 3) {
+      priority = "세션 빈도 증가"
+    }
+
+    return {
+      stability,
+      stabilityDesc,
+      priority
+    }
+  }
+
+  // 환경 최적화
+  const getEnvironmentOptimization = () => {
+    const avgSessionDuration = Math.round(totalDuration / sessions.length)
+    
+    let sessionLength = "짧은 세션 권장"
+    let sessionDesc = "단기 집중에 집중"
+    
+    if (avgSessionDuration > 60) {
+      sessionLength = "긴 세션 유지"
+      sessionDesc = "장기 집중력 활용"
+    } else if (avgSessionDuration > 30) {
+      sessionLength = "중간 세션 적합"
+      sessionDesc = "균형잡힌 세션 길이"
+    }
+
+    // 시간대별 분석
+    const timeSlots = {
+      morning: sessions.filter(s => s.startTime.includes('09') || s.startTime.includes('10')).length,
+      afternoon: sessions.filter(s => s.startTime.includes('14') || s.startTime.includes('15')).length,
+      evening: sessions.filter(s => s.startTime.includes('19') || s.startTime.includes('20')).length,
+      night: sessions.filter(s => s.startTime.includes('21') || s.startTime.includes('22')).length
+    }
+
+    const bestTimeSlot = Object.entries(timeSlots).reduce((a, b) => timeSlots[a[0] as keyof typeof timeSlots] > timeSlots[b[0] as keyof typeof timeSlots] ? a : b)
+    const timeSlotMap = {
+      morning: "09시대",
+      afternoon: "14시대", 
+      evening: "19시대",
+      night: "21시대"
+    }
+
+    return {
+      sessionLength,
+      sessionDesc,
+      optimalTime: timeSlotMap[bestTimeSlot[0] as keyof typeof timeSlotMap] || "19시대"
+    }
+  }
+
+  const focusPattern = getFocusPatternAnalysis()
+  const practicalAdvice = getPracticalAdvice()
+  const performanceTips = getPerformanceTips()
+  const environmentOpt = getEnvironmentOptimization()
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-yellow-500" />
+          데이터 기반 피드백
+        </h2>
+        <Badge variant="secondary" className="text-sm">
+          AI 분석
+        </Badge>
+      </div>
+
+      {/* 4칸 피드백 그리드 - 가로 꽉 차게 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+        {/* 집중력 패턴 분석 */}
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200 flex-1">
+          <CardContent className="p-4 h-full">
+            <div className="flex items-start gap-3 h-full">
+              <div className="flex-shrink-0 mt-1">
+                <Activity className="w-5 h-5 text-blue-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-slate-900 text-sm mb-3">
+                  집중력 패턴 분석
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-lg font-bold text-blue-600">
+                      {focusPattern.declinePoint}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {focusPattern.declineDesc}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-blue-600">
+                      {focusPattern.optimalInterval}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {focusPattern.optimalDesc}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 실용적 조언 */}
+        <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200 flex-1">
+          <CardContent className="p-4 h-full">
+            <div className="flex items-start gap-3 h-full">
+              <div className="flex-shrink-0 mt-1">
+                <TargetIcon className="w-5 h-5 text-green-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-slate-900 text-sm mb-3">
+                  실용적 조언
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-lg font-bold text-green-600">
+                      {practicalAdvice.restTiming}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {practicalAdvice.restDesc}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-green-600">
+                      {practicalAdvice.nextStrategy}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {practicalAdvice.strategyDesc}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 성과 개선 팁 */}
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 border-purple-200 flex-1">
+          <CardContent className="p-4 h-full">
+            <div className="flex items-start gap-3 h-full">
+              <div className="flex-shrink-0 mt-1">
+                <TrendingUp className="w-5 h-5 text-purple-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-slate-900 text-sm mb-3">
+                  성과 개선 팁
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-lg font-bold text-purple-600">
+                      {performanceTips.stability}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {performanceTips.stabilityDesc}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-purple-600">
+                      {performanceTips.priority}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      개선 우선순위
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 환경 최적화 */}
+        <Card className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200 flex-1">
+          <CardContent className="p-4 h-full">
+            <div className="flex items-start gap-3 h-full">
+              <div className="flex-shrink-0 mt-1">
+                <Timer className="w-5 h-5 text-orange-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-slate-900 text-sm mb-3">
+                  환경 최적화
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-lg font-bold text-orange-600">
+                      {environmentOpt.sessionLength}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {environmentOpt.sessionDesc}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-orange-600">
+                      {environmentOpt.optimalTime}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      시간대 최적화
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 수치적 요약 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">{avgScore}점</div>
+            <div className="text-sm text-slate-600">평균 집중도</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {avgScore >= 80 ? "우수" : avgScore >= 60 ? "양호" : "개선 필요"}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-emerald-600">
+              {Math.round(totalDuration / 60)}시간
+            </div>
+            <div className="text-sm text-slate-600">총 학습 시간</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {sessions.length}개 세션
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-purple-600">
+              {Math.round(totalDuration / sessions.length)}분
+            </div>
+            <div className="text-sm text-slate-600">평균 세션 길이</div>
+            <div className="text-xs text-slate-500 mt-1">
+              세션당 평균
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-orange-600">
+              {bestSession.averageScore}점
+            </div>
+            <div className="text-sm text-slate-600">최고 집중도</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {bestSession.title}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
 // Main Component
 export default function DailyReportPage() {
   const today = new Date().toISOString().split('T')[0]
@@ -307,62 +674,10 @@ export default function DailyReportPage() {
           transition={{ duration: 0.5 }}
           className="w-full"
         >
-          {/* Summary Stats */}
+          {/* Data-Driven Feedback Section */}
           {sessions && sessions.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-              <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-blue-600">{sessions.length}</div>
-                      <div className="text-sm text-blue-700">총 세션 수</div>
-                    </div>
-                    <Target className="w-8 h-8 text-blue-500" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-emerald-600">
-                        {Math.round(sessions.reduce((sum, s) => sum + s.duration, 0) / 60)}시간
-                      </div>
-                      <div className="text-sm text-emerald-700">총 집중 시간</div>
-                    </div>
-                    <Clock className="w-8 h-8 text-emerald-500" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 border-purple-200">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-purple-600">
-                        {Math.round(sessions.reduce((sum, s) => sum + s.averageScore, 0) / sessions.length)}점
-                      </div>
-                      <div className="text-sm text-purple-700">평균 집중도</div>
-                    </div>
-                    <TrendingUp className="w-8 h-8 text-purple-500" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-orange-600">
-                        {sessions.filter(s => s.isActive).length}
-                      </div>
-                      <div className="text-sm text-orange-700">진행 중</div>
-                    </div>
-                    <Play className="w-8 h-8 text-orange-500" />
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="mb-8">
+              <DataDrivenFeedback sessions={sessions} />
             </div>
           )}
 
