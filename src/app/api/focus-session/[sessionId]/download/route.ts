@@ -8,14 +8,14 @@ const supabase = createClient(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
     const { searchParams } = new URL(request.url)
     const format = searchParams.get('format') || 'json'
     const uid = searchParams.get('uid') // URL 파라미터로 uid 받기 (선택사항)
     const includeAllUsers = searchParams.get('includeAllUsers') === 'true' // 전체 사용자 데이터 포함 여부
-    const sessionId = params.sessionId
+    const { sessionId } = await params
 
     if (!sessionId) {
       return NextResponse.json(

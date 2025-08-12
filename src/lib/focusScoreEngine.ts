@@ -306,7 +306,7 @@ export class FocusScoreEngine {
   /**
    * 머리 자세 점수 계산
    */
-  private static calculateHeadPoseScore(headPose: FocusFeatures['visual']['headPose']): number {
+  private static calculateHeadPoseScore(headPose: NonNullable<FocusFeatures['visual']>['headPose']): number {
     let score = 20
 
     // 각도가 클수록 점수 감소

@@ -1,7 +1,7 @@
 'use client'
 
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { WebSocketStatus } from '@/types/websocket'
+import { WebSocketStatus as WSStatus } from '@/types/websocket'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,31 +18,31 @@ export function WebSocketStatus() {
     reconnect
   } = useWebSocket()
 
-  const getStatusColor = (status: WebSocketStatus) => {
+  const getStatusColor = (status: WSStatus) => {
     switch (status) {
-      case WebSocketStatus.CONNECTED:
+      case WSStatus.CONNECTED:
         return 'bg-green-500'
-      case WebSocketStatus.CONNECTING:
-      case WebSocketStatus.RECONNECTING:
+      case WSStatus.CONNECTING:
+      case WSStatus.RECONNECTING:
         return 'bg-yellow-500'
-      case WebSocketStatus.ERROR:
+      case WSStatus.ERROR:
         return 'bg-red-500'
       default:
         return 'bg-gray-500'
     }
   }
 
-  const getStatusText = (status: WebSocketStatus) => {
+  const getStatusText = (status: WSStatus) => {
     switch (status) {
-      case WebSocketStatus.CONNECTED:
+      case WSStatus.CONNECTED:
         return '연결됨'
-      case WebSocketStatus.CONNECTING:
+      case WSStatus.CONNECTING:
         return '연결 중'
-      case WebSocketStatus.RECONNECTING:
+      case WSStatus.RECONNECTING:
         return '재연결 중'
-      case WebSocketStatus.ERROR:
+      case WSStatus.ERROR:
         return '오류'
-      case WebSocketStatus.DISCONNECTED:
+      case WSStatus.DISCONNECTED:
         return '연결 끊김'
       default:
         return '알 수 없음'
