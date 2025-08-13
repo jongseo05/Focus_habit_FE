@@ -10,7 +10,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { 
   Users, 
-  Trophy, 
   Target, 
   Clock, 
   Crown, 
@@ -255,14 +254,10 @@ export default function SocialPage() {
           </div>
 
           <Tabs defaultValue="rooms" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="rooms" className="flex items-center gap-2">
                 <Hash className="h-4 w-4" />
                 스터디룸
-              </TabsTrigger>
-              <TabsTrigger value="competitions" className="flex items-center gap-2">
-                <Trophy className="h-4 w-4" />
-                집중도 대결
               </TabsTrigger>
               <TabsTrigger value="friends" className="flex items-center gap-2">
                 <Heart className="h-4 w-4" />
@@ -401,20 +396,7 @@ export default function SocialPage() {
               )}
             </TabsContent>
 
-            {/* 집중도 대결 탭 */}
-            <TabsContent value="competitions" className="space-y-6">
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <Trophy className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    집중도 대결 기능
-                  </h3>
-                  <p className="text-gray-600">
-                    곧 출시될 예정입니다. 스터디룸에서 실시간 집중도 대결을 즐겨보세요!
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
+            
 
             {/* 친구 탭 */}
             <TabsContent value="friends" className="space-y-6">
