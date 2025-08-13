@@ -72,17 +72,30 @@ export default function SocialPage() {
         setActiveRooms(rooms)
       } else {
         const errorData = await response.json()
-        console.error('API 에러:', errorData)
+        console.error('API 에러 상세:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData,
+          errorMessage: errorData.error,
+          errorDetails: errorData.details
+        })
       }
     } catch (error) {
-      console.error('스터디룸 목록 조회 실패:', error)
+      console.error('스터디룸 목록 조회 실패:', {
+        error: error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : 'No stack'
+      })
     } finally {
       setLoading(false)
     }
   }
 
-  // 필터링된 룸 목록
+  // 필터링된 룸 목록 (활성 세션만)
   const filteredRooms = activeRooms.filter(room => {
+    // 활성 세션이 아니면 제외
+    if (!room.is_active) return false
+    
     const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          room.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesFilter = filterType === 'all' || room.session_type === filterType
@@ -100,13 +113,14 @@ export default function SocialPage() {
         body: JSON.stringify({ user_id: user?.id }),
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        alert(errorData.error || '룸 참가에 실패했습니다.')
+        alert(result.error || '룸 참가에 실패했습니다.')
         return
       }
 
-      // 참가 성공 시 룸 페이지로 이동
+      // 참가 성공 시 룸 페이지로 이동 (이미 참가 중인 경우도 포함)
       window.location.href = `/social/room/${room.room_id}`
     } catch (error) {
       console.error('룸 참가 실패:', error)

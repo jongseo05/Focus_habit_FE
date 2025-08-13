@@ -21,12 +21,17 @@ export async function POST(
     // 참가자 상태를 left_at으로 업데이트
     const { error: leaveError } = await supabase
       .from('room_participants')
-      .update({ left_at: new Date().toISOString() })
+      .update({ 
+        left_at: new Date().toISOString(),
+        is_connected: false,
+        last_activity: new Date().toISOString()
+      })
       .eq('room_id', params.roomId)
       .eq('user_id', user.id)
       .is('left_at', null)
 
     if (leaveError) {
+      console.error('스터디룸 나가기 실패:', leaveError)
       return NextResponse.json(
         { error: '스터디룸 나가기에 실패했습니다.' },
         { status: 500 }

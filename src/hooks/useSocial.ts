@@ -66,7 +66,7 @@ export function useJoinStudyRoom() {
   const { data: user } = useUser()
 
   return useMutation({
-    mutationFn: async (roomId: string): Promise<void> => {
+    mutationFn: async (roomId: string): Promise<{ success: boolean; message?: string }> => {
       if (!user) throw new Error('로그인이 필요합니다.')
 
       const response = await fetch(`/api/social/study-room/${roomId}/join`, {
@@ -75,14 +75,78 @@ export function useJoinStudyRoom() {
         body: JSON.stringify({ user_id: user.id })
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '스터디룸 참가에 실패했습니다.')
+        throw new Error(result.error || '스터디룸 참가에 실패했습니다.')
       }
+
+      return result
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // 스터디룸 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
+      
+      // 성공 메시지가 있으면 콘솔에 출력 (디버깅용)
+      if (data.message) {
+        console.log('참가 결과:', data.message)
+      }
+    }
+  })
+}
+
+export function useLeaveStudyRoom() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ roomId }: { roomId: string }) => {
+      const response = await fetch(`/api/social/study-room/${roomId}/leave`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: '' }) // 서버에서 인증된 사용자 ID 사용
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '스터디룸 나가기에 실패했습니다.')
+      }
+      
+      return response.json()
+    },
+    onSuccess: (_, { roomId }) => {
+      // 관련 쿼리 무효화
+      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+      queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
+    }
+  })
+}
+
+export function useEndStudyRoom() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ roomId }: { roomId: string }) => {
+      const response = await fetch(`/api/social/study-room/${roomId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '스터디룸 종료에 실패했습니다.')
+      }
+      
+      return response.json()
+    },
+    onSuccess: (_, { roomId }) => {
+      // 관련 쿼리 무효화
+      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+      queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['room', roomId] })
     }
   })
 }
@@ -90,7 +154,7 @@ export function useJoinStudyRoom() {
 export function useRoomParticipants(roomId: string) {
   return useQuery({
     queryKey: ['room-participants', roomId],
-    queryFn: async (): Promise<RoomParticipant[]> => {
+    queryFn: async (): Promise<{ participants: RoomParticipant[], count: number }> => {
       const response = await fetch(`/api/social/study-room/${roomId}/participants`)
       if (!response.ok) {
         throw new Error('참가자 목록을 불러오는데 실패했습니다.')

@@ -25,22 +25,33 @@ export async function GET() {
       throw testError
     }
     
-    // 모든 룸 조회 (간단한 버전)
-    console.log('6. 모든 룸 조회 시도...')
+    // 테이블에 데이터가 있는지 확인
+    console.log('3.5. 테이블 데이터 확인...')
     const { data: allRooms, error: allError } = await supabase
       .from('study_rooms')
       .select('*')
-      .limit(10)
+      .limit(5)
     
-    console.log('7. 모든 룸 조회 결과:', { allRooms, allError })
+    console.log('3.6. 모든 룸 데이터:', { allRooms, allError })
     
-    if (allError) {
-      console.error('8. 모든 룸 조회에서 에러 발생:', allError)
-      throw allError
+    // 활성 스터디룸만 조회
+    console.log('6. 활성 스터디룸 조회 시도...')
+    const { data: activeRooms, error: activeError } = await supabase
+      .from('study_rooms')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    
+    console.log('7. 활성 스터디룸 조회 결과:', { activeRooms, activeError })
+    
+    if (activeError) {
+      console.error('8. 활성 스터디룸 조회에서 에러 발생:', activeError)
+      throw activeError
     }
     
     console.log('9. === 활성 스터디룸 목록 조회 완료 ===')
-    return NextResponse.json(allRooms || [])
+    return NextResponse.json(activeRooms || [])
     
   } catch (error) {
     console.error('=== 스터디룸 목록 조회 실패 ===')
@@ -52,7 +63,9 @@ export async function GET() {
     return NextResponse.json(
       { 
         error: '스터디룸 목록을 불러오는데 실패했습니다.',
-        details: error instanceof Error ? error.message : String(error)
+        details: error instanceof Error ? error.message : JSON.stringify(error),
+        errorType: typeof error,
+        timestamp: new Date().toISOString()
       },
       { status: 500 }
     )
@@ -128,9 +141,16 @@ export async function POST(request: NextRequest) {
         user_id: roomData.host_id,
         is_host: true
       })
+      .single()
 
     if (joinError) {
       console.error('방장 참가자 추가 실패:', joinError)
+      // 중복 참가 에러가 아닌 경우에만 실패로 처리
+      if (!joinError.message?.includes('duplicate')) {
+        console.error('방장 참가자 추가 실패:', joinError)
+      } else {
+        console.log('방장이 이미 참가자로 등록되어 있습니다.')
+      }
     } else {
       console.log('방장 참가자 추가 성공')
     }

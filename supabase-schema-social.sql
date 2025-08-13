@@ -287,17 +287,35 @@ CREATE OR REPLACE FUNCTION update_room_participant_count()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
+    -- 새 참가자 추가
     UPDATE study_rooms 
     SET current_participants = current_participants + 1,
         updated_at = NOW()
     WHERE room_id = NEW.room_id;
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
+    -- 참가자 삭제
     UPDATE study_rooms 
     SET current_participants = current_participants - 1,
         updated_at = NOW()
     WHERE room_id = OLD.room_id;
     RETURN OLD;
+  ELSIF TG_OP = 'UPDATE' THEN
+    -- 참가자 상태 변경 (재참가 또는 퇴장)
+    IF OLD.left_at IS NULL AND NEW.left_at IS NOT NULL THEN
+      -- 퇴장
+      UPDATE study_rooms 
+      SET current_participants = current_participants - 1,
+          updated_at = NOW()
+      WHERE room_id = NEW.room_id;
+    ELSIF OLD.left_at IS NOT NULL AND NEW.left_at IS NULL THEN
+      -- 재참가
+      UPDATE study_rooms 
+      SET current_participants = current_participants + 1,
+          updated_at = NOW()
+      WHERE room_id = NEW.room_id;
+    END IF;
+    RETURN NEW;
   END IF;
   RETURN NULL;
 END;
@@ -305,7 +323,7 @@ $$ LANGUAGE plpgsql;
 
 -- 룸 참가자 수 업데이트 트리거
 CREATE TRIGGER trigger_update_room_participant_count
-  AFTER INSERT OR DELETE ON room_participants
+  AFTER INSERT OR DELETE OR UPDATE ON room_participants
   FOR EACH ROW EXECUTE FUNCTION update_room_participant_count();
 
 -- 소셜 통계 자동 생성 함수

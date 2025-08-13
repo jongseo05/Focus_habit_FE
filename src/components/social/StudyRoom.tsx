@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useUser } from '@/hooks/useAuth'
+import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
 import type { 
   StudyRoom, 
   RoomParticipant, 
@@ -50,6 +51,8 @@ interface ParticipantWithUser extends RoomParticipant {
 
 export function StudyRoom({ room, onClose }: StudyRoomProps) {
   const { data: user } = useUser()
+  const leaveRoomMutation = useLeaveStudyRoom()
+  const endRoomMutation = useEndStudyRoom()
   const [participants, setParticipants] = useState<ParticipantWithUser[]>([])
   const [currentFocusScore, setCurrentFocusScore] = useState(0)
   const [isHost, setIsHost] = useState(false)
@@ -82,10 +85,10 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       const response = await fetch(`/api/social/study-room/${room?.room_id}/participants`)
       if (response.ok) {
         const data = await response.json()
-        setParticipants(data)
+        setParticipants(data.participants || [])
         
         // 현재 사용자가 호스트인지 확인
-        const currentParticipant = data.find((p: any) => p.user_id === user?.id)
+        const currentParticipant = data.participants?.find((p: any) => p.user_id === user?.id)
         setIsHost(currentParticipant?.is_host || false)
       }
     } catch (error) {
@@ -99,21 +102,10 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     try {
       setLoading(true)
       
-             // Realtime으로 퇴장 알림 전송
-       leaveRoom()
+      // Realtime으로 퇴장 알림 전송
+      leaveRoom()
       
-      const response = await fetch(`/api/social/study-room/${room?.room_id}/leave`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        alert(errorData.error || '스터디룸 나가기에 실패했습니다.')
-        return
-      }
+      await leaveRoomMutation.mutateAsync({ roomId: room?.room_id! })
 
       // 나가기 성공 시 룸 닫기
       if (onClose) {
@@ -122,6 +114,29 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('스터디룸 나가기 실패:', error)
       alert('스터디룸 나가기에 실패했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleEndRoom = async () => {
+    if (!confirm('정말로 스터디룸을 종료하시겠습니까? 모든 참가자가 퇴장됩니다.')) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      await endRoomMutation.mutateAsync({ roomId: room?.room_id! })
+      
+      alert('스터디룸이 성공적으로 종료되었습니다.')
+      
+      // 종료 성공 시 룸 닫기
+      if (onClose) {
+        onClose()
+      }
+    } catch (error) {
+      console.error('스터디룸 종료 실패:', error)
+      alert('스터디룸 종료에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -448,10 +463,21 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 </div>
                
                {isHost && (
-                 <Button variant="outline" size="sm">
-                   <Settings className="h-4 w-4 mr-1" />
-                   설정
-                 </Button>
+                 <div className="flex items-center gap-2">
+                   <Button 
+                     variant="destructive" 
+                     size="sm"
+                     onClick={handleEndRoom}
+                     disabled={loading}
+                   >
+                     <LogOut className="h-4 w-4 mr-1" />
+                     스터디룸 종료
+                   </Button>
+                   <Button variant="outline" size="sm">
+                     <Settings className="h-4 w-4 mr-1" />
+                     설정
+                   </Button>
+                 </div>
                )}
                <Button 
                  variant="outline" 

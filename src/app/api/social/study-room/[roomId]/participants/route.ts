@@ -18,7 +18,7 @@ export async function GET(
       )
     }
 
-    // 참가자 목록 조회
+    // 현재 참가 중인 참가자 목록 조회 (left_at이 null이고 is_connected가 true인 경우)
     const { data: participants, error } = await supabase
       .from('room_participants')
       .select(`
@@ -27,11 +27,21 @@ export async function GET(
       `)
       .eq('room_id', params.roomId)
       .is('left_at', null)
+      .eq('is_connected', true)
       .order('joined_at', { ascending: true })
 
-    if (error) throw error
+    if (error) {
+      console.error('참가자 목록 조회 실패:', error)
+      throw error
+    }
 
-    return NextResponse.json(participants || [])
+    // 참가자 수 계산
+    const participantCount = participants?.length || 0
+
+    return NextResponse.json({
+      participants: participants || [],
+      count: participantCount
+    })
   } catch (error) {
     console.error('참가자 목록 조회 실패:', error)
     return NextResponse.json(

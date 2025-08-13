@@ -156,6 +156,8 @@ export class StudyRoomService {
         `)
         .eq('room_id', roomId)
         .is('left_at', null)
+        .eq('is_connected', true)
+        .order('joined_at', { ascending: true })
 
       if (error) throw error
       return participants || []
