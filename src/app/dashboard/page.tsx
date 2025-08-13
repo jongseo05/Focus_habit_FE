@@ -55,6 +55,7 @@ import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
 import { useSignOut, useAuth } from "@/hooks/useAuth"
 import { useQuery } from "@tanstack/react-query"
+import { SessionEndNotification } from "@/components/SessionEndNotification"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -897,6 +898,17 @@ function DashboardContent() {
   const [showWebcam, setShowWebcam] = useState(false)
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
   const [showCameraPermissionLayer, setShowCameraPermissionLayer] = useState(false)
+  
+  // 세션 종료 알림 상태
+  const [showSessionEndNotification, setShowSessionEndNotification] = useState(false)
+  const [sessionEndData, setSessionEndData] = useState<{
+    duration: number
+    averageFocusScore: number
+    sampleCount: number
+    eventCount: number
+    mlFeatureCount: number
+    sessionId: string
+  } | null>(null)
   const [showMicrophonePermissionLayer, setShowMicrophonePermissionLayer] = useState(false)
   const [showErrorDisplay, setShowErrorDisplay] = useState(false)
   const [showAudioPipeline, setShowAudioPipeline] = useState(false)
@@ -1153,13 +1165,20 @@ function DashboardContent() {
             
             if (result.success) {
               // 4. 성공 알림 표시
-                             const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
-               const message = `🎉 집중 세션이 완료되었습니다!\n\n📊 세션 정보:\n• 집중 시간: ${sessionDuration}분\n• 평균 집중도: ${result.data.summary.averageFocusScore || session.focusScore}점\n• 수집된 데이터: ${result.data.summary.sampleCount}개 샘플, ${result.data.summary.eventCount}개 이벤트, ${result.data.summary.mlFeatureCount}개 ML 피쳐\n\n📈 리포트를 확인하시겠습니까?`
+              const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
               
-              if (confirm(message)) {
-                const today = new Date().toISOString().split('T')[0]
-                window.open(`/report/daily/date/${today}`, '_blank')
-              }
+              // 세션 종료 데이터 설정
+              setSessionEndData({
+                duration: sessionDuration,
+                averageFocusScore: result.data.summary.averageFocusScore || session.focusScore,
+                sampleCount: result.data.summary.sampleCount,
+                eventCount: result.data.summary.eventCount,
+                mlFeatureCount: result.data.summary.mlFeatureCount,
+                sessionId: activeSession.session_id
+              })
+              
+              // 알림 표시
+              setShowSessionEndNotification(true)
             } else {
               console.error('세션 종료 실패:', result.error)
               alert(`세션 종료 중 오류가 발생했습니다: ${result.error}`)
@@ -2368,6 +2387,24 @@ const calculateAndSaveFocusScore = async () => {
         onDismissError={() => setShowErrorDisplay(false)}
         isVisible={showErrorDisplay}
       />
+
+      {/* 세션 종료 알림 */}
+      {sessionEndData && (
+        <SessionEndNotification
+          isOpen={showSessionEndNotification}
+          onClose={() => {
+            setShowSessionEndNotification(false)
+            setSessionEndData(null)
+          }}
+          onViewReport={() => {
+            const today = new Date().toISOString().split('T')[0]
+            window.open(`/report/daily/date/${today}`, '_blank')
+            setShowSessionEndNotification(false)
+            setSessionEndData(null)
+          }}
+          sessionData={sessionEndData}
+        />
+      )}
     </div>
   )
 }
