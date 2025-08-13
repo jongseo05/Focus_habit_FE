@@ -30,7 +30,16 @@ import {
   Menu,
   LogOut,
   Database,
-  Download
+  Download,
+  Hash,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MoreVertical,
+  Sparkles,
+  Zap,
+  Activity
 } from 'lucide-react'
 import CreateStudyRoomForm from '@/components/social/CreateStudyRoomForm'
 import type { StudyRoom as StudyRoomType } from '@/types/social'
@@ -245,197 +254,198 @@ export default function SocialPage() {
             </p>
           </div>
 
-        <Tabs defaultValue="rooms" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="rooms" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              스터디룸
-            </TabsTrigger>
-            <TabsTrigger value="competitions" className="flex items-center gap-2">
-              <Trophy className="h-4 w-4" />
-              집중도 대결
-            </TabsTrigger>
-            <TabsTrigger value="friends" className="flex items-center gap-2">
-              <Heart className="h-4 w-4" />
-              친구
-            </TabsTrigger>
-            <TabsTrigger value="challenges" className="flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              챌린지
-            </TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="rooms" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="rooms" className="flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                스터디룸
+              </TabsTrigger>
+              <TabsTrigger value="competitions" className="flex items-center gap-2">
+                <Trophy className="h-4 w-4" />
+                집중도 대결
+              </TabsTrigger>
+              <TabsTrigger value="friends" className="flex items-center gap-2">
+                <Heart className="h-4 w-4" />
+                친구
+              </TabsTrigger>
+              <TabsTrigger value="challenges" className="flex items-center gap-2">
+                <Target className="h-4 w-4" />
+                챌린지
+              </TabsTrigger>
+            </TabsList>
 
-          {/* 스터디룸 탭 */}
-          <TabsContent value="rooms" className="space-y-6">
-            {/* 검색 및 필터 */}
-            <div className="flex gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="스터디룸 검색..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+            {/* 스터디룸 탭 */}
+            <TabsContent value="rooms" className="space-y-6">
+              {/* 검색 및 필터 */}
+              <div className="flex gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="스터디룸 검색..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as any)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">전체</option>
+                  <option value="study">공부</option>
+                  <option value="work">업무</option>
+                  <option value="reading">독서</option>
+                </select>
+                <Button onClick={() => setShowCreateForm(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  새 룸 만들기
+                </Button>
               </div>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value as any)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">전체</option>
-                <option value="study">공부</option>
-                <option value="work">업무</option>
-                <option value="reading">독서</option>
-              </select>
-                             <Button onClick={() => setShowCreateForm(true)}>
-                 <Plus className="h-4 w-4 mr-2" />
-                 새 룸 만들기
-               </Button>
-            </div>
 
-            {/* 룸 목록 */}
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[...Array(6)].map((_, i) => (
-                  <Card key={i} className="animate-pulse">
-                    <CardContent className="p-6">
-                      <div className="h-4 bg-gray-200 rounded mb-4"></div>
-                      <div className="h-3 bg-gray-200 rounded mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : filteredRooms.length === 0 ? (
+              {/* 룸 목록 */}
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[...Array(6)].map((_, i) => (
+                    <Card key={i} className="animate-pulse">
+                      <CardContent className="p-6">
+                        <div className="h-4 bg-gray-200 rounded mb-4"></div>
+                        <div className="h-3 bg-gray-200 rounded mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : filteredRooms.length === 0 ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      활성 스터디룸이 없습니다
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      첫 번째 스터디룸을 만들어보세요!
+                    </p>
+                    <Button onClick={() => setShowCreateForm(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      새 스터디룸 만들기
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredRooms.map((room) => (
+                    <Card 
+                      key={room.room_id} 
+                      className="hover:shadow-lg transition-shadow cursor-pointer group"
+                      onClick={() => handleRoomSelect(room)}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg flex items-center gap-2 group-hover:text-blue-600 transition-colors">
+                              <Hash className="h-5 w-5 text-blue-500" />
+                              {room.name}
+                            </CardTitle>
+                            <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                              {room.description || '설명이 없습니다.'}
+                            </p>
+                          </div>
+                          <Badge variant="secondary">
+                            {room.session_type}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-3">
+                          {/* 호스트 정보 */}
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="bg-blue-100 text-blue-600 text-xs">
+                                <Crown className="h-3 w-3" />
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm text-gray-600">방장</span>
+                          </div>
+
+                          {/* 룸 정보 */}
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-1">
+                              <Users className="h-4 w-4" />
+                              {room.current_participants}/{room.max_participants}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              {room.goal_minutes}분
+                            </div>
+                          </div>
+
+                          {/* 참가 버튼 */}
+                          <Button 
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRoomSelect(room)
+                            }}
+                          >
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            참가하기
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 집중도 대결 탭 */}
+            <TabsContent value="competitions" className="space-y-6">
               <Card>
                 <CardContent className="p-12 text-center">
-                  <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <Trophy className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    활성 스터디룸이 없습니다
+                    집중도 대결 기능
                   </h3>
-                  <p className="text-gray-600 mb-4">
-                    첫 번째 스터디룸을 만들어보세요!
+                  <p className="text-gray-600">
+                    곧 출시될 예정입니다. 스터디룸에서 실시간 집중도 대결을 즐겨보세요!
                   </p>
-                                     <Button onClick={() => setShowCreateForm(true)}>
-                     <Plus className="h-4 w-4 mr-2" />
-                     새 스터디룸 만들기
-                   </Button>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredRooms.map((room) => (
-                  <Card 
-                    key={room.room_id} 
-                    className="hover:shadow-lg transition-shadow cursor-pointer"
-                    onClick={() => handleRoomSelect(room)}
-                  >
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg flex items-center gap-2">
-                            <Target className="h-5 w-5" />
-                            {room.name}
-                          </CardTitle>
-                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                            {room.description || '설명이 없습니다.'}
-                          </p>
-                        </div>
-                        <Badge variant="secondary">
-                          {room.session_type}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-3">
-                        {/* 호스트 정보 */}
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback>
-                              <Crown className="h-3 w-3" />
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm text-gray-600">방장</span>
-                        </div>
+            </TabsContent>
 
-                        {/* 룸 정보 */}
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-1">
-                            <Users className="h-4 w-4" />
-                            {room.current_participants}/{room.max_participants}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
-                            {room.goal_minutes}분
-                          </div>
-                        </div>
+            {/* 친구 탭 */}
+            <TabsContent value="friends" className="space-y-6">
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    친구 시스템
+                  </h3>
+                  <p className="text-gray-600">
+                    곧 출시될 예정입니다. 친구들과 집중도를 비교하고 격려를 나눠보세요!
+                  </p>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                        {/* 참가 버튼 */}
-                        <Button 
-                          className="w-full" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRoomSelect(room)
-                          }}
-                        >
-                          참가하기
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* 집중도 대결 탭 */}
-          <TabsContent value="competitions" className="space-y-6">
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Trophy className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  집중도 대결 기능
-                </h3>
-                <p className="text-gray-600">
-                  곧 출시될 예정입니다. 스터디룸에서 실시간 집중도 대결을 즐겨보세요!
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* 친구 탭 */}
-          <TabsContent value="friends" className="space-y-6">
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  친구 시스템
-                </h3>
-                <p className="text-gray-600">
-                  곧 출시될 예정입니다. 친구들과 집중도를 비교하고 격려를 나눠보세요!
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* 챌린지 탭 */}
-          <TabsContent value="challenges" className="space-y-6">
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Target className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  그룹 챌린지
-                </h3>
-                <p className="text-gray-600">
-                  곧 출시될 예정입니다. 친구들과 함께 목표를 달성해보세요!
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+            {/* 챌린지 탭 */}
+            <TabsContent value="challenges" className="space-y-6">
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Target className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    그룹 챌린지
+                  </h3>
+                  <p className="text-gray-600">
+                    곧 출시될 예정입니다. 친구들과 함께 목표를 달성해보세요!
+                  </p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

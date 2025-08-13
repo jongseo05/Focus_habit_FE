@@ -23,7 +23,13 @@ import {
   LogOut,
   Plus,
   Trophy,
-  TrendingUp
+  TrendingUp,
+  Hash,
+  Sparkles,
+  Activity,
+  Zap,
+  Heart,
+  Star
 } from 'lucide-react'
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useUser } from '@/hooks/useAuth'
@@ -75,21 +81,34 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   // 참가자 목록 로드
   useEffect(() => {
     if (room?.room_id) {
+      // 룸 입장 시 한 번만 참가자 목록 로드
       loadParticipants()
+      
+      // 호스트 여부 확인 (room.host_id와 user.id 비교)
+      if (room.host_id && user?.id) {
+        setIsHost(room.host_id === user.id)
+        console.log('호스트 확인:', { roomHostId: room.host_id, userId: user.id, isHost: room.host_id === user.id })
+      }
     }
-  }, [room?.room_id])
+  }, [room?.room_id, room?.host_id, user?.id])
 
   const loadParticipants = async () => {
     try {
       setLoading(true)
+      console.log('참가자 목록 로드 시작, room_id:', room?.room_id)
+      
       const response = await fetch(`/api/social/study-room/${room?.room_id}/participants`)
+      console.log('참가자 API 응답 상태:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
-        setParticipants(data.participants || [])
+        console.log('참가자 API 응답 데이터:', data)
+        console.log('참가자 목록:', data.participants)
         
-        // 현재 사용자가 호스트인지 확인
-        const currentParticipant = data.participants?.find((p: any) => p.user_id === user?.id)
-        setIsHost(currentParticipant?.is_host || false)
+        setParticipants(data.participants || [])
+      } else {
+        const errorData = await response.json()
+        console.error('참가자 API 에러:', errorData)
       }
     } catch (error) {
       console.error('참가자 목록 로드 실패:', error)
@@ -144,7 +163,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
   // WebSocket 메시지 핸들러들
   const handleRoomJoin = (data: RoomJoinMessage['data']) => {
-    // 새 참가자 추가 로직
+    // 새 참가자 입장 로직
     console.log('새 참가자 입장:', data)
     // 참가자 목록 새로고침
     loadParticipants()
@@ -159,10 +178,12 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
   const handleRoomLeave = (data: { user_id: string }) => {
     // 참가자 퇴장 로직
-    const leavingParticipant = participants.find(p => p.user_id === data.user_id)
-    setParticipants(prev => prev.filter(p => p.user_id !== data.user_id))
+    console.log('참가자 퇴장:', data)
+    // 참가자 목록 새로고침
+    loadParticipants()
     
     // 알림 추가
+    const leavingParticipant = participants.find(p => p.user_id === data.user_id)
     if (leavingParticipant) {
       setNotifications(prev => [...prev, {
         id: Date.now().toString(),
@@ -219,6 +240,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   useEffect(() => {
     if (room?.room_id && user && isConnected) {
       joinRoom(user.user_metadata?.name || 'Unknown', user.user_metadata?.avatar_url)
+      // 룸 입장 후 참가자 목록은 이미 위의 useEffect에서 로드됨
     }
   }, [room?.room_id, user, isConnected, joinRoom])
 
@@ -269,8 +291,8 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       })
 
       if (response.ok) {
-               // 룸 참가 성공 - Realtime으로 입장 알림
-       joinRoom(user.user_metadata?.name || 'Unknown', user.user_metadata?.avatar_url)
+        // 룸 참가 성공 - Realtime으로 입장 알림
+        joinRoom(user.user_metadata?.name || 'Unknown', user.user_metadata?.avatar_url)
       }
     } catch (error) {
       console.error('스터디룸 참가 실패:', error)
@@ -312,102 +334,106 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   // 스터디룸 생성 폼
   if (showCreateRoom) {
     return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            새로운 스터디룸 만들기
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">룸 이름</label>
-            <Input
-              value={roomForm.name}
-              onChange={(e) => setRoomForm(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="예: 오늘 밤 공부방"
-            />
-          </div>
-          
-          <div>
-            <label className="text-sm font-medium">설명</label>
-            <Textarea
-              value={roomForm.description}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRoomForm(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="룸에 대한 설명을 입력하세요"
-              rows={3}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              새로운 스터디룸 만들기
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div>
-              <label className="text-sm font-medium">최대 참가자 수</label>
+              <label className="text-sm font-medium">룸 이름</label>
               <Input
-                type="number"
-                min="2"
-                max="50"
-                value={roomForm.max_participants}
-                onChange={(e) => setRoomForm(prev => ({ ...prev, max_participants: parseInt(e.target.value) }))}
+                value={roomForm.name}
+                onChange={(e) => setRoomForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="예: 오늘 밤 공부방"
               />
             </div>
             
             <div>
-              <label className="text-sm font-medium">목표 시간 (분)</label>
-              <Input
-                type="number"
-                min="15"
-                value={roomForm.goal_minutes}
-                onChange={(e) => setRoomForm(prev => ({ ...prev, goal_minutes: parseInt(e.target.value) }))}
+              <label className="text-sm font-medium">설명</label>
+              <Textarea
+                value={roomForm.description}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRoomForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="룸에 대한 설명을 입력하세요"
+                rows={3}
               />
             </div>
-          </div>
 
-          <div>
-            <label className="text-sm font-medium">세션 타입</label>
-            <select
-              value={roomForm.session_type}
-              onChange={(e) => setRoomForm(prev => ({ ...prev, session_type: e.target.value as any }))}
-              className="w-full p-2 border rounded-md"
-            >
-              <option value="study">공부</option>
-              <option value="work">업무</option>
-              <option value="reading">독서</option>
-              <option value="other">기타</option>
-            </select>
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">최대 참가자 수</label>
+                <Input
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={roomForm.max_participants}
+                  onChange={(e) => setRoomForm(prev => ({ ...prev, max_participants: parseInt(e.target.value) }))}
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium">목표 시간 (분)</label>
+                <Input
+                  type="number"
+                  min="15"
+                  value={roomForm.goal_minutes}
+                  onChange={(e) => setRoomForm(prev => ({ ...prev, goal_minutes: parseInt(e.target.value) }))}
+                />
+              </div>
+            </div>
 
-          <div className="flex gap-2">
-            <Button onClick={handleCreateRoom} className="flex-1">
-              스터디룸 생성
-            </Button>
-            <Button variant="outline" onClick={() => setShowCreateRoom(false)}>
-              취소
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            <div>
+              <label className="text-sm font-medium">세션 타입</label>
+              <select
+                value={roomForm.session_type}
+                onChange={(e) => setRoomForm(prev => ({ ...prev, session_type: e.target.value as any }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="study">공부</option>
+                <option value="work">업무</option>
+                <option value="reading">독서</option>
+                <option value="other">기타</option>
+              </select>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleCreateRoom} className="flex-1">
+                스터디룸 생성
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreateRoom(false)}>
+                취소
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   // 스터디룸 메인 화면
   if (!room) {
     return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle>스터디룸</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={() => setShowCreateRoom(true)} className="w-full">
-            <Plus className="h-4 w-4 mr-2" />
-            새 스터디룸 만들기
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardTitle>스터디룸</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => setShowCreateRoom(true)} className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              새 스터디룸 만들기
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
       {/* 실시간 알림 */}
       {notifications.length > 0 && (
         <div className="fixed top-4 right-4 z-50 space-y-2">
@@ -425,247 +451,268 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         </div>
       )}
       
-      {/* 룸 헤더 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5" />
-                  {room.name}
-                </CardTitle>
-                <p className="text-sm text-gray-600">{room.description}</p>
-              </div>
-              
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1">
-                  <Users className="h-4 w-4" />
-                  {room.current_participants}/{room.max_participants}
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* 룸 헤더 */}
+          <Card className="bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-2xl">
+                      <Hash className="h-6 w-6 text-blue-500" />
+                      {room.name}
+                    </CardTitle>
+                    <p className="text-gray-600 mt-1">{room.description}</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-1">
+                      <Users className="h-4 w-4" />
+                      {room.current_participants}/{room.max_participants}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      {room.goal_minutes}분
+                    </div>
+                    <Badge variant="secondary">{room.session_type}</Badge>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  {room.goal_minutes}분
+
+                <div className="flex items-center gap-2">
+                  {/* Realtime 연결 상태 */}
+                  <div className={`flex items-center gap-1 text-xs ${
+                    isConnected ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      isConnected ? 'bg-green-500' : 'bg-red-500'
+                    }`} />
+                    {isConnected ? '실시간 연결됨' : '연결 중...'}
+                  </div>
+                 
+                  {isHost && (
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={handleEndRoom}
+                        disabled={loading}
+                      >
+                        <LogOut className="h-4 w-4 mr-1" />
+                        스터디룸 종료
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <Settings className="h-4 w-4 mr-1" />
+                        설정
+                      </Button>
+                    </div>
+                  )}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleLeaveRoom}
+                    disabled={loading}
+                  >
+                    <LogOut className="h-4 w-4 mr-1" />
+                    나가기
+                  </Button>
                 </div>
-                <Badge variant="secondary">{room.session_type}</Badge>
               </div>
+            </CardHeader>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* 메인 화면 */}
+            <div className="lg:col-span-3 space-y-6">
+              {/* 비디오 화면 */}
+              <Card className="bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
+                    {showVideo ? (
+                      <div className="text-center">
+                        <Video className="h-12 w-12 mx-auto text-blue-500 mb-2" />
+                        <p className="text-sm text-gray-600">화상 공유 준비 중...</p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <VideoOff className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-600">화상 공유가 비활성화되어 있습니다</p>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="mt-2"
+                          onClick={() => setShowVideo(true)}
+                        >
+                          <Video className="h-4 w-4 mr-1" />
+                          화상 공유 시작
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 내 집중도 */}
+              <Card className="bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-blue-500" />
+                    내 집중도
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">현재 집중도</span>
+                      <Badge variant={currentFocusScore >= 80 ? 'default' : currentFocusScore >= 60 ? 'secondary' : 'destructive'}>
+                        {currentFocusScore}점
+                      </Badge>
+                    </div>
+                    <Progress value={currentFocusScore} className="h-3" />
+                    <div className="text-xs text-gray-500">
+                      실시간으로 집중도를 측정하고 있습니다
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-                         <div className="flex items-center gap-2">
-                               {/* Realtime 연결 상태 */}
-                <div className={`flex items-center gap-1 text-xs ${
-                  isConnected ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  <div className={`w-2 h-2 rounded-full ${
-                    isConnected ? 'bg-green-500' : 'bg-red-500'
-                  }`} />
-                  {isConnected ? '실시간 연결됨' : '연결 중...'}
-                </div>
-               
-               {isHost && (
-                 <div className="flex items-center gap-2">
-                   <Button 
-                     variant="destructive" 
-                     size="sm"
-                     onClick={handleEndRoom}
-                     disabled={loading}
-                   >
-                     <LogOut className="h-4 w-4 mr-1" />
-                     스터디룸 종료
-                   </Button>
-                   <Button variant="outline" size="sm">
-                     <Settings className="h-4 w-4 mr-1" />
-                     설정
-                   </Button>
-                 </div>
-               )}
-               <Button 
-                 variant="outline" 
-                 size="sm" 
-                 onClick={handleLeaveRoom}
-                 disabled={loading}
-               >
-                 <LogOut className="h-4 w-4 mr-1" />
-                 나가기
-               </Button>
-             </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 메인 화면 */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* 비디오 화면 */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
-                {showVideo ? (
-                  <div className="text-center">
-                    <Video className="h-12 w-12 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">화상 공유 준비 중...</p>
+            {/* 사이드바 */}
+            <div className="space-y-6">
+              {/* 참가자 목록 */}
+              <Card className="bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-blue-500" />
+                    참가자 ({room.current_participants})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {loading ? (
+                      <div className="text-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                        <p className="text-sm text-gray-500">참가자 목록 로딩 중...</p>
+                      </div>
+                    ) : participants.length === 0 ? (
+                      <div className="text-center py-4">
+                        <Users className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-500">아직 참가자가 없습니다</p>
+                        <p className="text-xs text-gray-400 mt-1">친구를 초대해보세요!</p>
+                      </div>
+                    ) : (
+                      participants.map((participant) => (
+                        <div key={participant.participant_id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={participant.user.avatar_url} />
+                              <AvatarFallback className="bg-blue-100 text-blue-600">
+                                {participant.user.name?.charAt(0) || 'U'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-medium">{participant.user.name}</span>
+                                {participant.is_host && <Crown className="h-3 w-3 text-yellow-500" />}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full transition-all duration-500 ${
+                                      (participant.current_focus_score || 0) >= 80 ? 'bg-green-500' :
+                                      (participant.current_focus_score || 0) >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                                    }`}
+                                    style={{ width: `${participant.current_focus_score || 0}%` }}
+                                  />
+                                </div>
+                                <span className={`text-xs font-medium ${
+                                  (participant.current_focus_score || 0) >= 80 ? 'text-green-600' :
+                                  (participant.current_focus_score || 0) >= 60 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {participant.current_focus_score || 0}점
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => sendEncouragement(participant.user_id)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Heart className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ) : (
-                  <div className="text-center">
-                    <VideoOff className="h-12 w-12 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">화상 공유가 비활성화되어 있습니다</p>
+                </CardContent>
+              </Card>
+
+              {/* 격려 메시지 */}
+              <Card className="bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5 text-blue-500" />
+                    격려 메시지
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Input
+                      value={encouragementMessage}
+                      onChange={(e) => setEncouragementMessage(e.target.value)}
+                      placeholder="친구에게 격려 메시지를 보내세요"
+                      onKeyPress={(e) => e.key === 'Enter' && sendEncouragement(participants[0]?.user_id || '')}
+                    />
                     <Button 
-                      variant="outline" 
                       size="sm" 
-                      className="mt-2"
-                      onClick={() => setShowVideo(true)}
+                      className="w-full"
+                      onClick={() => sendEncouragement(participants[0]?.user_id || '')}
+                      disabled={!encouragementMessage.trim()}
                     >
-                      <Video className="h-4 w-4 mr-1" />
-                      화상 공유 시작
+                      <Send className="h-4 w-4 mr-1" />
+                      전송
                     </Button>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
 
-          {/* 내 집중도 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                내 집중도
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">현재 집중도</span>
-                  <Badge variant={currentFocusScore >= 80 ? 'default' : currentFocusScore >= 60 ? 'secondary' : 'destructive'}>
-                    {currentFocusScore}점
-                  </Badge>
-                </div>
-                <Progress value={currentFocusScore} className="h-3" />
-                <div className="text-xs text-gray-500">
-                  실시간으로 집중도를 측정하고 있습니다
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* 사이드바 */}
-        <div className="space-y-4">
-          {/* 참가자 목록 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                참가자 ({participants.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {participants.map((participant) => (
-                  <div key={participant.participant_id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={participant.user.avatar_url} />
-                        <AvatarFallback>
-                          {participant.user.name?.charAt(0) || 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm font-medium">{participant.user.name}</span>
-                          {participant.is_host && <Crown className="h-3 w-3 text-yellow-500" />}
-                        </div>
-                                                 <div className="flex items-center gap-2">
-                           <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
-                             <div 
-                               className={`h-full transition-all duration-500 ${
-                                 (participant.current_focus_score || 0) >= 80 ? 'bg-green-500' :
-                                 (participant.current_focus_score || 0) >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                               }`}
-                               style={{ width: `${participant.current_focus_score || 0}%` }}
-                             />
-                           </div>
-                           <span className={`text-xs font-medium ${
-                             (participant.current_focus_score || 0) >= 80 ? 'text-green-600' :
-                             (participant.current_focus_score || 0) >= 60 ? 'text-yellow-600' : 'text-red-600'
-                           }`}>
-                             {participant.current_focus_score || 0}점
-                           </span>
-                         </div>
-                      </div>
-                    </div>
+              {/* 컨트롤 */}
+              <Card className="bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-blue-500" />
+                    컨트롤
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Button
+                      variant={showVideo ? "default" : "outline"}
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowVideo(!showVideo)}
+                    >
+                      {showVideo ? <VideoOff className="h-4 w-4 mr-1" /> : <Video className="h-4 w-4 mr-1" />}
+                      {showVideo ? '화상 끄기' : '화상 켜기'}
+                    </Button>
                     
                     <Button
-                      variant="ghost"
+                      variant={showMic ? "default" : "outline"}
                       size="sm"
-                      onClick={() => sendEncouragement(participant.user_id)}
+                      className="w-full"
+                      onClick={() => setShowMic(!showMic)}
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      {showMic ? <MicOff className="h-4 w-4 mr-1" /> : <Mic className="h-4 w-4 mr-1" />}
+                      {showMic ? '음성 끄기' : '음성 켜기'}
                     </Button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 격려 메시지 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageCircle className="h-5 w-5" />
-                격려 메시지
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Input
-                  value={encouragementMessage}
-                  onChange={(e) => setEncouragementMessage(e.target.value)}
-                  placeholder="친구에게 격려 메시지를 보내세요"
-                  onKeyPress={(e) => e.key === 'Enter' && sendEncouragement(participants[0]?.user_id || '')}
-                />
-                <Button 
-                  size="sm" 
-                  className="w-full"
-                  onClick={() => sendEncouragement(participants[0]?.user_id || '')}
-                  disabled={!encouragementMessage.trim()}
-                >
-                  <Send className="h-4 w-4 mr-1" />
-                  전송
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 컨트롤 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>컨트롤</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Button
-                  variant={showVideo ? "default" : "outline"}
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowVideo(!showVideo)}
-                >
-                  {showVideo ? <VideoOff className="h-4 w-4 mr-1" /> : <Video className="h-4 w-4 mr-1" />}
-                  {showVideo ? '화상 끄기' : '화상 켜기'}
-                </Button>
-                
-                <Button
-                  variant={showMic ? "default" : "outline"}
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowMic(!showMic)}
-                >
-                  {showMic ? <MicOff className="h-4 w-4 mr-1" /> : <Mic className="h-4 w-4 mr-1" />}
-                  {showMic ? '음성 끄기' : '음성 켜기'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

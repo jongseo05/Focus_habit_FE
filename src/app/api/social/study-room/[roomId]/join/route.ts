@@ -6,12 +6,18 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
+  console.log('=== 스터디룸 참가 시작 ===')
+  console.log('룸 ID:', params.roomId)
+  
   try {
     const supabase = await supabaseServer()
     
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    console.log('인증된 사용자:', user?.id)
+    
     if (authError || !user) {
+      console.error('인증 실패:', authError)
       return NextResponse.json(
         { error: '인증이 필요합니다.' },
         { status: 401 }
@@ -20,6 +26,7 @@ export async function POST(
 
     const body = await request.json()
     const { user_id } = body
+    console.log('요청된 사용자 ID:', user_id)
 
     // 사용자 ID 검증
     if (user_id !== user.id) {
@@ -35,6 +42,8 @@ export async function POST(
       .select('current_participants, max_participants, is_active')
       .eq('room_id', params.roomId)
       .single()
+
+    console.log('룸 정보:', room)
 
     if (!room) {
       return NextResponse.json(
@@ -65,9 +74,12 @@ export async function POST(
       .eq('user_id', user.id)
       .single()
 
+    console.log('기존 참가자 정보:', existingParticipant)
+
     if (existingParticipant) {
       // 이미 참가 중인 경우 - 성공으로 처리 (재접속)
       if (!existingParticipant.left_at) {
+        console.log('이미 참가 중인 사용자 - 연결 상태 업데이트')
         // 연결 상태만 업데이트
         const { error: updateError } = await supabase
           .from('room_participants')
@@ -93,6 +105,7 @@ export async function POST(
       }
       
       // 나간 후 다시 참가하는 경우 - 기존 레코드 업데이트
+      console.log('재참가 - 기존 레코드 업데이트')
       const { error: updateError } = await supabase
         .from('room_participants')
         .update({ 
@@ -113,12 +126,14 @@ export async function POST(
       }
     } else {
       // 새로운 참가자 추가
+      console.log('새 참가자 추가')
       const { error: joinError } = await supabase
         .from('room_participants')
         .insert({
           room_id: params.roomId,
           user_id: user.id,
           is_host: false,
+          joined_at: new Date().toISOString(),
           is_connected: true,
           last_activity: new Date().toISOString()
         })
@@ -132,9 +147,11 @@ export async function POST(
       }
     }
 
+    console.log('=== 스터디룸 참가 완료 ===')
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('스터디룸 참가 실패:', error)
+    console.error('=== 스터디룸 참가 실패 ===')
+    console.error('에러:', error)
     return NextResponse.json(
       { error: '스터디룸 참가에 실패했습니다.' },
       { status: 500 }
