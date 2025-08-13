@@ -91,8 +91,7 @@ export class SocialWebSocketHandler {
         user_name: userName,
         avatar_url: avatarUrl,
         timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
+      }
     }
   }
 
@@ -103,9 +102,10 @@ export class SocialWebSocketHandler {
       data: {
         user_id: userId,
         room_id: roomId,
+        user_name: 'Unknown',
+        avatar_url: undefined,
         timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
+      }
     }
   }
 
@@ -118,8 +118,7 @@ export class SocialWebSocketHandler {
         room_id: roomId,
         focus_score: focusScore,
         timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
+      }
     }
   }
 
@@ -140,8 +139,7 @@ export class SocialWebSocketHandler {
         message_type: messageType,
         content: content,
         timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
+      }
     }
   }
 }

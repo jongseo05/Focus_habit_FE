@@ -32,6 +32,8 @@ export interface RoomParticipant {
   is_host: boolean
   is_connected: boolean
   last_activity: Timestamp
+  is_video_on?: boolean
+  is_mic_on?: boolean
 }
 
 export interface CreateStudyRoomData {
@@ -198,6 +200,17 @@ export interface FocusUpdateMessage {
 
 export interface RoomJoinMessage {
   type: 'room_join'
+  data: {
+    user_id: UUID
+    room_id: UUID
+    user_name: string
+    avatar_url?: string
+    timestamp: Timestamp
+  }
+}
+
+export interface RoomLeaveMessage {
+  type: 'room_leave'
   data: {
     user_id: UUID
     room_id: UUID

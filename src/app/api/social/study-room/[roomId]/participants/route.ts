@@ -4,10 +4,11 @@ import { supabaseServer } from '@/lib/supabase/server'
 // GET: 스터디룸 참가자 목록 조회
 export async function GET(
   request: NextRequest,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   console.log('=== 참가자 목록 조회 시작 ===')
-  console.log('룸 ID:', params.roomId)
+  const { roomId } = await params
+  console.log('룸 ID:', roomId)
   
   try {
     const supabase = await supabaseServer()
@@ -33,7 +34,7 @@ export async function GET(
       const { data: currentParticipant, error: checkError } = await supabase
         .from('room_participants')
         .select('*')
-        .eq('room_id', params.roomId)
+        .eq('room_id', roomId)
         .eq('user_id', user.id)
         .single()
 
@@ -46,7 +47,7 @@ export async function GET(
         const { error: joinError } = await supabase
           .from('room_participants')
           .insert({
-            room_id: params.roomId,
+            room_id: roomId,
             user_id: user.id,
             is_host: false,
             joined_at: new Date().toISOString(),
@@ -70,7 +71,7 @@ export async function GET(
             is_connected: true,
             last_activity: new Date().toISOString()
           })
-          .eq('room_id', params.roomId)
+          .eq('room_id', roomId)
           .eq('user_id', user.id)
 
         if (rejoinError) {
@@ -90,7 +91,7 @@ export async function GET(
       const { data: participants, error } = await supabase
         .from('room_participants')
         .select('*')
-        .eq('room_id', params.roomId)
+        .eq('room_id', roomId)
         .is('left_at', null)
         .order('joined_at', { ascending: true })
 

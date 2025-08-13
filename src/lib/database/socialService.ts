@@ -25,7 +25,8 @@ export class StudyRoomService {
   // 스터디룸 생성
   static async createRoom(data: CreateStudyRoomData): Promise<StudyRoom | null> {
     try {
-      const { data: room, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: room, error } = await supabase
         .from('study_rooms')
         .insert({
           host_id: data.host_id,
@@ -55,7 +56,8 @@ export class StudyRoomService {
   // 활성 스터디룸 목록 조회
   static async getActiveRooms(): Promise<StudyRoom[]> {
     try {
-      const { data: rooms, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: rooms, error } = await supabase
         .from('study_rooms')
         .select(`
           *,
@@ -81,8 +83,9 @@ export class StudyRoomService {
   // 스터디룸 참가
   static async joinRoom(roomId: UUID, userId: UUID, isHost: boolean = false): Promise<boolean> {
     try {
+      const supabase = await supabaseServer()
       // 룸 참가자 수 확인
-      const { data: room } = await supabaseServer()
+      const { data: room } = await supabase
         .from('study_rooms')
         .select('current_participants, max_participants')
         .eq('room_id', roomId)
@@ -92,7 +95,7 @@ export class StudyRoomService {
         return false
       }
 
-      const { error } = await supabaseServer()
+      const { error } = await supabase
         .from('room_participants')
         .insert({
           room_id: roomId,
@@ -111,7 +114,8 @@ export class StudyRoomService {
   // 스터디룸 나가기
   static async leaveRoom(roomId: UUID, userId: UUID): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('room_participants')
         .update({ left_at: new Date().toISOString() })
         .eq('room_id', roomId)
@@ -128,7 +132,8 @@ export class StudyRoomService {
   // 집중도 업데이트
   static async updateFocusScore(roomId: UUID, userId: UUID, focusScore: number): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('room_participants')
         .update({
           current_focus_score: focusScore,
@@ -148,7 +153,8 @@ export class StudyRoomService {
   // 룸 참가자 목록 조회
   static async getRoomParticipants(roomId: UUID): Promise<RoomParticipant[]> {
     try {
-      const { data: participants, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: participants, error } = await supabase
         .from('room_participants')
         .select(`
           *,
@@ -176,7 +182,8 @@ export class FocusCompetitionService {
   // 대결 생성
   static async createCompetition(roomId: UUID, name: string, durationMinutes: number): Promise<FocusCompetition | null> {
     try {
-      const { data: competition, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: competition, error } = await supabase
         .from('focus_competitions')
         .insert({
           room_id: roomId,
@@ -197,7 +204,8 @@ export class FocusCompetitionService {
   // 대결 참가
   static async joinCompetition(competitionId: UUID, userId: UUID): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('competition_participants')
         .insert({
           competition_id: competitionId,
@@ -215,7 +223,8 @@ export class FocusCompetitionService {
   // 대결 점수 업데이트
   static async updateCompetitionScore(competitionId: UUID, userId: UUID, focusScore: number, focusTime: number): Promise<boolean> {
     try {
-      const { data: participant, error: fetchError } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: participant, error: fetchError } = await supabase
         .from('competition_participants')
         .select('total_focus_score, focus_time_minutes')
         .eq('competition_id', competitionId)
@@ -228,7 +237,7 @@ export class FocusCompetitionService {
       const newFocusTime = (participant?.focus_time_minutes || 0) + focusTime
       const newAverageScore = newTotalScore / (newFocusTime / 60) // 시간당 평균
 
-      const { error: updateError } = await supabaseServer()
+      const { error: updateError } = await supabase
         .from('competition_participants')
         .update({
           total_focus_score: newTotalScore,
@@ -249,7 +258,8 @@ export class FocusCompetitionService {
   // 대결 결과 계산
   static async calculateCompetitionResults(competitionId: UUID): Promise<CompetitionParticipant[]> {
     try {
-      const { data: participants, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: participants, error } = await supabase
         .from('competition_participants')
         .select(`
           *,
@@ -261,14 +271,14 @@ export class FocusCompetitionService {
       if (error) throw error
 
       // 순위 업데이트
-      const rankedParticipants = participants?.map((participant, index) => ({
+      const rankedParticipants = participants?.map((participant: any, index: number) => ({
         ...participant,
         rank: index + 1
       })) || []
 
       // 순위를 데이터베이스에 저장
       for (const participant of rankedParticipants) {
-        await supabaseServer()
+        await supabase
           .from('competition_participants')
           .update({ rank: participant.rank })
           .eq('participant_id', participant.participant_id)
@@ -290,7 +300,8 @@ export class FriendService {
   // 친구 요청 보내기
   static async sendFriendRequest(fromUserId: UUID, toUserId: UUID, message?: string): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('friend_requests')
         .insert({
           from_user_id: fromUserId,
@@ -309,7 +320,8 @@ export class FriendService {
   // 친구 요청 수락/거절
   static async respondToFriendRequest(requestId: UUID, status: 'accepted' | 'rejected'): Promise<boolean> {
     try {
-      const { data: request, error: fetchError } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: request, error: fetchError } = await supabase
         .from('friend_requests')
         .select('*')
         .eq('request_id', requestId)
@@ -318,7 +330,7 @@ export class FriendService {
       if (fetchError) throw fetchError
 
       // 요청 상태 업데이트
-      const { error: updateError } = await supabaseServer()
+      const { error: updateError } = await supabase
         .from('friend_requests')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('request_id', requestId)
@@ -327,7 +339,7 @@ export class FriendService {
 
       // 수락된 경우 친구 관계 생성
       if (status === 'accepted' && request) {
-        await supabaseServer()
+        await supabase
           .from('user_friends')
           .insert({
             user_id: request.from_user_id,
@@ -335,7 +347,7 @@ export class FriendService {
             status: 'accepted'
           })
 
-        await supabaseServer()
+        await supabase
           .from('user_friends')
           .insert({
             user_id: request.to_user_id,
@@ -354,7 +366,8 @@ export class FriendService {
   // 친구 목록 조회
   static async getFriends(userId: UUID): Promise<UserFriend[]> {
     try {
-      const { data: friendships, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: friendships, error } = await supabase
         .from('user_friends')
         .select(`
           *,
@@ -374,21 +387,22 @@ export class FriendService {
   // 친구 비교 데이터 조회
   static async getFriendComparison(userId: UUID, friendId: UUID): Promise<FriendComparison | null> {
     try {
+      const supabase = await supabaseServer()
       // 사용자들의 집중 세션 데이터 조회
-      const { data: userSessions } = await supabaseServer()
+      const { data: userSessions } = await supabase
         .from('focus_sessions')
         .select('focus_score, started_at, ended_at')
         .eq('user_id', userId)
         .not('ended_at', 'is', null)
 
-      const { data: friendSessions } = await supabaseServer()
+      const { data: friendSessions } = await supabase
         .from('focus_sessions')
         .select('focus_score, started_at, ended_at')
         .eq('user_id', friendId)
         .not('ended_at', 'is', null)
 
       // 친구 정보 조회
-      const { data: friend } = await supabaseServer()
+      const { data: friend } = await supabase
         .from('users')
         .select('name, avatar_url')
         .eq('user_id', friendId)
@@ -455,7 +469,8 @@ export class EncouragementService {
     content: string
   }): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('encouragement_messages')
         .insert({
           from_user_id: data.fromUserId,
@@ -476,7 +491,8 @@ export class EncouragementService {
   // 받은 격려 메시지 조회
   static async getReceivedMessages(userId: UUID): Promise<EncouragementMessage[]> {
     try {
-      const { data: messages, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: messages, error } = await supabase
         .from('encouragement_messages')
         .select(`
           *,
@@ -496,7 +512,8 @@ export class EncouragementService {
   // 메시지 읽음 처리
   static async markAsRead(messageId: UUID): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('encouragement_messages')
         .update({ is_read: true })
         .eq('message_id', messageId)
@@ -518,7 +535,8 @@ export class SocialStatsService {
   // 사용자 소셜 통계 조회
   static async getUserStats(userId: UUID): Promise<SocialStats | null> {
     try {
-      const { data: stats, error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { data: stats, error } = await supabase
         .from('social_stats')
         .select('*')
         .eq('user_id', userId)
@@ -535,7 +553,8 @@ export class SocialStatsService {
   // 소셜 통계 업데이트
   static async updateStats(userId: UUID, updates: Partial<SocialStats>): Promise<boolean> {
     try {
-      const { error } = await supabaseServer()
+      const supabase = await supabaseServer()
+      const { error } = await supabase
         .from('social_stats')
         .update({
           ...updates,

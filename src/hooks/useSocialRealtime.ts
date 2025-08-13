@@ -65,6 +65,8 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
       onRoomLeaveRef.current?.({
         user_id: payload.new.user_id,
         room_id: payload.new.room_id,
+        user_name: payload.new.user?.name || 'Unknown',
+        avatar_url: payload.new.user?.avatar_url,
         timestamp: payload.new.left_at
       })
     }

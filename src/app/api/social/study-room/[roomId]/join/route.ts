@@ -4,10 +4,11 @@ import { supabaseServer } from '@/lib/supabase/server'
 // POST: 스터디룸 참가
 export async function POST(
   request: NextRequest,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   console.log('=== 스터디룸 참가 시작 ===')
-  console.log('룸 ID:', params.roomId)
+  const { roomId } = await params
+  console.log('룸 ID:', roomId)
   
   try {
     const supabase = await supabaseServer()
@@ -40,7 +41,7 @@ export async function POST(
     const { data: room } = await supabase
       .from('study_rooms')
       .select('current_participants, max_participants, is_active')
-      .eq('room_id', params.roomId)
+      .eq('room_id', roomId)
       .single()
 
     console.log('룸 정보:', room)
@@ -70,7 +71,7 @@ export async function POST(
     const { data: existingParticipant } = await supabase
       .from('room_participants')
       .select('*')
-      .eq('room_id', params.roomId)
+      .eq('room_id', roomId)
       .eq('user_id', user.id)
       .single()
 
@@ -87,7 +88,7 @@ export async function POST(
             is_connected: true,
             last_activity: new Date().toISOString()
           })
-          .eq('room_id', params.roomId)
+          .eq('room_id', roomId)
           .eq('user_id', user.id)
 
         if (updateError) {
@@ -114,7 +115,7 @@ export async function POST(
           is_connected: true,
           last_activity: new Date().toISOString()
         })
-        .eq('room_id', params.roomId)
+        .eq('room_id', roomId)
         .eq('user_id', user.id)
 
       if (updateError) {
@@ -130,7 +131,7 @@ export async function POST(
       const { error: joinError } = await supabase
         .from('room_participants')
         .insert({
-          room_id: params.roomId,
+          room_id: roomId,
           user_id: user.id,
           is_host: false,
           joined_at: new Date().toISOString(),

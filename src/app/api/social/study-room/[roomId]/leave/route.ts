@@ -4,9 +4,10 @@ import { supabaseServer } from '@/lib/supabase/server'
 // POST: 스터디룸 나가기
 export async function POST(
   request: NextRequest,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
+    const { roomId } = await params
     const supabase = await supabaseServer()
     
     // 인증 확인
@@ -26,7 +27,7 @@ export async function POST(
         is_connected: false,
         last_activity: new Date().toISOString()
       })
-      .eq('room_id', params.roomId)
+      .eq('room_id', roomId)
       .eq('user_id', user.id)
       .is('left_at', null)
 

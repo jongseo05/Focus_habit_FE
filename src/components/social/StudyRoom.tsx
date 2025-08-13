@@ -22,7 +22,9 @@ import {
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useUser } from '@/hooks/useAuth'
 import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
+import { useVideoRoom } from '@/hooks/useVideoRoom'
 import { FocusScoreChart } from './FocusScoreChart'
+import { VideoGrid } from './VideoGrid'
 import type { 
   StudyRoom, 
   RoomParticipant, 
@@ -61,10 +63,15 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     session_type: 'study',
     goal_minutes: 60
   })
-  const [showVideo, setShowVideo] = useState(false)
-  const [showMic, setShowMic] = useState(false)
   const [focusUpdateInterval, setFocusUpdateInterval] = useState<NodeJS.Timeout | null>(null)
   const [notifications, setNotifications] = useState<Array<{id: string, message: string, type: 'join' | 'leave'}>>([])
+
+  // 비디오룸 훅
+  const videoRoom = useVideoRoom({
+    roomId: room?.room_id || '',
+    userId: user?.id || '',
+    participants
+  })
 
   // 참가자 목록 로드
   const loadParticipants = useCallback(async () => {
@@ -547,20 +554,52 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                     ) : participants.length === 0 ? (
                       <span className="text-sm text-gray-500">아직 참가자가 없습니다</span>
                     ) : (
-                      participants.slice(0, 5).map((participant) => (
-                        <div key={participant.participant_id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={participant.user.avatar_url} />
-                            <AvatarFallback className="bg-blue-100 text-blue-600 text-sm font-medium">
-                              {participant.user.name?.charAt(0) || 'U'}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-gray-900">{participant.user.name}</span>
-                            {participant.is_host && <Crown className="h-4 w-4 text-yellow-500" />}
+                      participants.slice(0, 5).map((participant) => {
+                        // 현재 사용자의 실제 비디오/마이크 상태 확인
+                        const isCurrentUser = participant.user_id === user?.id
+                        const actualVideoState = isCurrentUser ? videoRoom.isVideoEnabled : participant.is_video_on
+                        const actualMicState = isCurrentUser ? videoRoom.isAudioEnabled : participant.is_mic_on
+                        
+                        return (
+                          <div key={participant.participant_id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={participant.user.avatar_url} />
+                              <AvatarFallback className="bg-blue-100 text-blue-600 text-sm font-medium">
+                                {participant.user.name?.charAt(0) || 'U'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">{participant.user.name}</span>
+                              {participant.is_host && <Crown className="h-4 w-4 text-yellow-500" />}
+                            </div>
+                            
+                            {/* 비디오/오디오 상태 표시 */}
+                            <div className="flex items-center gap-1 ml-auto">
+                              <Badge 
+                                variant={actualVideoState ? "default" : "secondary"}
+                                className="h-5 px-1"
+                              >
+                                {actualVideoState ? (
+                                  <Video className="h-3 w-3" />
+                                ) : (
+                                  <VideoOff className="h-3 w-3" />
+                                )}
+                              </Badge>
+                              
+                              <Badge 
+                                variant={actualMicState ? "default" : "secondary"}
+                                className="h-5 px-1"
+                              >
+                                {actualMicState ? (
+                                  <Mic className="h-3 w-3" />
+                                ) : (
+                                  <MicOff className="h-3 w-3" />
+                                )}
+                              </Badge>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                     {participants.length > 5 && (
                       <div className="flex items-center justify-center w-20 h-20 rounded-lg bg-gray-100 border border-gray-200">
@@ -573,21 +612,23 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 {/* 컨트롤 */}
                 <div className="flex items-center gap-3 ml-8">
                   <Button
-                    variant={showVideo ? "default" : "outline"}
+                    variant={videoRoom.isVideoEnabled ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setShowVideo(!showVideo)}
+                    onClick={videoRoom.toggleVideo}
                     className="h-10 px-4"
+                    disabled={videoRoom.isConnecting}
                   >
-                    {showVideo ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                    {videoRoom.isVideoEnabled ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
                   </Button>
                   
                   <Button
-                    variant={showMic ? "default" : "outline"}
+                    variant={videoRoom.isAudioEnabled ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setShowMic(!showMic)}
+                    onClick={videoRoom.toggleAudio}
                     className="h-10 px-4"
+                    disabled={!videoRoom.isVideoEnabled}
                   >
-                    {showMic ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {videoRoom.isAudioEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </Button>
                   
                   <Button variant="outline" size="sm" className="h-10 px-4">
@@ -602,32 +643,39 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
             {/* 메인 화면 */}
             <div className="lg:col-span-4 space-y-6">
               {/* 비디오 화면 */}
-              <Card className="bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-6">
-                  <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
-                    {showVideo ? (
-                      <div className="text-center">
-                        <Video className="h-12 w-12 mx-auto text-blue-500 mb-2" />
-                        <p className="text-sm text-gray-600">화상 공유 준비 중...</p>
-                      </div>
-                    ) : (
-                      <div className="text-center">
-                        <VideoOff className="h-12 w-12 mx-auto text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-600">화상 공유가 비활성화되어 있습니다</p>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="mt-2"
-                          onClick={() => setShowVideo(true)}
-                        >
-                          <Video className="h-4 w-4 mr-1" />
-                          화상 공유 시작
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              <VideoGrid
+                participants={participants}
+                currentUserId={user?.id || ''}
+                localStream={videoRoom.localStream}
+                remoteStreams={videoRoom.remoteStreams}
+                onParticipantClick={(participantId) => {
+                  console.log('참가자 클릭:', participantId)
+                }}
+              />
+              
+              {/* 비디오 에러 표시 */}
+              {videoRoom.error && (
+                <Card className="bg-red-50 border-red-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-red-700">
+                      <VideoOff className="h-5 w-5" />
+                      <span className="text-sm font-medium">비디오 연결 오류: {videoRoom.error}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {/* 연결 상태 표시 */}
+              {videoRoom.isConnecting && (
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                      <span className="text-sm font-medium">비디오 연결 중...</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* 집중도 차트 */}
               <FocusScoreChart 

@@ -4,10 +4,11 @@ import { supabaseServer } from '@/lib/supabase/server'
 // GET: 특정 룸의 디버깅 정보
 export async function GET(
   request: NextRequest,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   console.log('=== 룸 디버깅 시작 ===')
-  console.log('조회하려는 roomId:', params.roomId)
+  const { roomId } = await params
+  console.log('조회하려는 roomId:', roomId)
   
   try {
     const supabase = await supabaseServer()
@@ -27,7 +28,7 @@ export async function GET(
     const { data: simpleRoom, error: simpleError } = await supabase
       .from('study_rooms')
       .select('*')
-      .eq('room_id', params.roomId)
+      .eq('room_id', roomId)
     
     console.log('단순 조회 결과:', { simpleRoom, simpleError })
 
@@ -51,7 +52,7 @@ export async function GET(
     console.log('최근 룸들:', { recentRooms, recentError })
 
     return NextResponse.json({
-      requestedRoomId: params.roomId,
+      requestedRoomId: roomId,
       simpleRoom,
       simpleError,
       allActiveRooms,
