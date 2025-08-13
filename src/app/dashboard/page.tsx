@@ -1682,6 +1682,13 @@ const calculateAndSaveFocusScore = async () => {
                 </Button>
               </Link>
 
+              {/* Social Features */}
+              <Link href="/social">
+                <Button variant="ghost" size="sm" title="소셜 스터디">
+                  <Users className="w-5 h-5" />
+                </Button>
+              </Link>
+
               {/* Profile */}
               <Link href="/profile">
                 <Button variant="ghost" size="sm" title="프로필 보기">
