@@ -24,6 +24,10 @@ interface UseGroupChallengeReturn {
   joinChallenge: (challengeId: string) => Promise<boolean>
   updateProgress: (challengeId: string, progressValue: number) => Promise<GroupProgress | null>
   refreshChallenges: () => Promise<void>
+  
+  // 집중 세션 연동
+  syncFocusSessionProgress: (sessionDuration: number, focusScore: number) => Promise<void>
+  getActiveChallenges: () => GroupChallenge[]
 }
 
 interface CreateChallengeData {
@@ -190,6 +194,60 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
     }
   }, [user])
 
+  // 집중 세션과 챌린지 진행 상황 연동
+  const syncFocusSessionProgress = useCallback(async (sessionDuration: number, focusScore: number) => {
+    if (!user) return
+
+    try {
+      // 내가 참가한 활성 챌린지들 가져오기
+      const activeChallenges = myChallenges.filter(challenge => {
+        const now = new Date()
+        const endDate = new Date(challenge.ends_at)
+        return now <= endDate && challenge.is_active
+      })
+
+      if (activeChallenges.length === 0) return
+
+      // 각 챌린지에 대해 진행 상황 업데이트
+      for (const challenge of activeChallenges) {
+        let progressValue = 0
+
+        switch (challenge.goal_type) {
+          case 'total_hours':
+            // 총 학습 시간 (분 단위로 변환)
+            progressValue = sessionDuration
+            break
+          case 'total_sessions':
+            // 총 세션 수 (1회 추가)
+            progressValue = 1
+            break
+          case 'average_focus_score':
+            // 평균 집중도 (현재 점수로 업데이트)
+            progressValue = focusScore
+            break
+        }
+
+        if (progressValue > 0) {
+          await updateProgress(challenge.challenge_id, progressValue)
+        }
+      }
+
+      // 챌린지 목록 새로고침
+      await refreshChallenges()
+    } catch (error) {
+      console.error('집중 세션과 챌린지 연동 실패:', error)
+    }
+  }, [user, myChallenges, updateProgress, refreshChallenges])
+
+  // 활성 챌린지 가져오기
+  const getActiveChallenges = useCallback(() => {
+    const now = new Date()
+    return myChallenges.filter(challenge => {
+      const endDate = new Date(challenge.ends_at)
+      return now <= endDate && challenge.is_active
+    })
+  }, [myChallenges])
+
   // 초기 데이터 로드
   useEffect(() => {
     if (user) {
@@ -206,6 +264,8 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
     createChallenge,
     joinChallenge,
     updateProgress,
-    refreshChallenges
+    refreshChallenges,
+    syncFocusSessionProgress,
+    getActiveChallenges
   }
 }

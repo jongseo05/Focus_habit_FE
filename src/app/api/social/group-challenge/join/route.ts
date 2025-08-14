@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
-// POST: 챌린지 참가
 export async function POST(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
@@ -19,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Challenge ID is required' }, { status: 400 })
     }
 
-    // 챌린지 존재 및 활성 상태 확인
+    // 챌린지 존재 여부 및 활성 상태 확인
     const { data: challenge, error: challengeError } = await supabase
       .from('group_challenges')
       .select('*')
@@ -32,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 이미 참가했는지 확인
-    const { data: existingParticipant, error: checkError } = await supabase
+    const { data: existingParticipant } = await supabase
       .from('challenge_participants')
       .select('participant_id')
       .eq('challenge_id', challenge_id)
@@ -49,7 +48,8 @@ export async function POST(request: NextRequest) {
       .insert({
         challenge_id,
         user_id: user.id,
-        current_progress: 0
+        current_progress: 0,
+        joined_at: new Date().toISOString()
       })
       .select()
       .single()
@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ 
       success: true, 
-      participant 
+      participant,
+      message: 'Successfully joined challenge'
     })
 
   } catch (error) {

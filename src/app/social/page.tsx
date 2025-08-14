@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +54,10 @@ import { GroupChallengeCard } from '@/components/social/GroupChallengeCard'
 import { useGroupChallenge } from '@/hooks/useGroupChallenge'
 
 export default function SocialPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [currentTab, setCurrentTab] = useState('rooms')
+  
   const [activeRooms, setActiveRooms] = useState<StudyRoomType[]>([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -80,6 +85,64 @@ export default function SocialPage() {
     { id: 1, type: 'info', message: '새로운 스터디룸이 생성되었습니다.' },
     { id: 2, type: 'success', message: '친구 요청이 수락되었습니다.' }
   ]
+
+  // URL 파라미터 변경 시 탭 업데이트
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    console.log('URL 파라미터에서 tab 값:', tab)
+    if (tab && (tab === 'rooms' || tab === 'friends' || tab === 'challenges')) {
+      console.log('탭을 변경합니다:', tab)
+      setCurrentTab(tab)
+    }
+  }, [searchParams])
+
+  // 초기 로딩 시 URL 파라미터 확인 (클라이언트 사이드에서만)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const tab = urlParams.get('tab')
+      console.log('초기 로딩 시 URL 파라미터에서 tab 값:', tab)
+      if (tab && (tab === 'rooms' || tab === 'friends' || tab === 'challenges')) {
+        console.log('초기 로딩 시 탭을 변경합니다:', tab)
+        setCurrentTab(tab)
+      }
+    }
+  }, [])
+
+  // 강제로 URL 파라미터 확인 (더 확실한 방법)
+  useEffect(() => {
+    const checkUrlParams = () => {
+      if (typeof window !== 'undefined') {
+        const currentUrl = window.location.href
+        console.log('현재 URL:', currentUrl)
+        
+        if (currentUrl.includes('?tab=')) {
+          const tabMatch = currentUrl.match(/[?&]tab=([^&]+)/)
+          if (tabMatch) {
+            const tab = tabMatch[1]
+            console.log('정규식으로 찾은 tab 값:', tab)
+            if (tab === 'rooms' || tab === 'friends' || tab === 'challenges') {
+              console.log('정규식으로 찾은 tab으로 탭을 변경합니다:', tab)
+              setCurrentTab(tab)
+            }
+          }
+        }
+      }
+    }
+
+    // 즉시 확인
+    checkUrlParams()
+    
+    // 약간의 지연 후 다시 확인 (useSearchParams가 늦게 업데이트될 수 있음)
+    const timer = setTimeout(checkUrlParams, 100)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // 탭 변경 시 URL 업데이트
+  const handleTabChange = (value: string) => {
+    setCurrentTab(value)
+    router.push(`/social?tab=${value}`)
+  }
 
   // 활성 스터디룸 목록 조회
   useEffect(() => {
@@ -305,7 +368,7 @@ export default function SocialPage() {
             </p>
           </div>
 
-          <Tabs defaultValue="rooms" className="space-y-6">
+                     <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-6">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="rooms" className="flex items-center gap-2">
                 <Hash className="h-4 w-4" />

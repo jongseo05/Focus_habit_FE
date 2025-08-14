@@ -56,6 +56,8 @@ import { ReportService } from "@/lib/database/reportService"
 import { useSignOut, useAuth } from "@/hooks/useAuth"
 import { useQuery } from "@tanstack/react-query"
 import { SessionEndNotification } from "@/components/SessionEndNotification"
+import { ChallengeProgressCard } from "@/components/social/ChallengeProgressCard"
+import { useGroupChallenge } from "@/hooks/useGroupChallenge"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -712,6 +714,9 @@ function DashboardContent() {
   const signOut = useSignOut()
   const router = useRouter()
   
+  // 그룹 챌린지 훅 추가
+  const { syncFocusSessionProgress } = useGroupChallenge()
+  
   // 현재 사용자 정보 가져오기
   const { user } = useAuth()
   
@@ -1163,23 +1168,31 @@ function DashboardContent() {
           if (response.ok) {
             const result = await response.json()
             
-            if (result.success) {
-              // 4. 성공 알림 표시
-              const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
-              
-              // 세션 종료 데이터 설정
-              setSessionEndData({
-                duration: sessionDuration,
-                averageFocusScore: result.data.summary.averageFocusScore || session.focusScore,
-                sampleCount: result.data.summary.sampleCount,
-                eventCount: result.data.summary.eventCount,
-                mlFeatureCount: result.data.summary.mlFeatureCount,
-                sessionId: activeSession.session_id
-              })
-              
-              // 알림 표시
-              setShowSessionEndNotification(true)
-            } else {
+                          if (result.success) {
+                // 4. 성공 알림 표시
+                const sessionDuration = Math.floor(session.elapsed / 60) // 분 단위
+                
+                // 챌린지 진행 상황 자동 업데이트
+                try {
+                  await syncFocusSessionProgress(sessionDuration, session.focusScore)
+                  console.log('✅ 챌린지 진행 상황 업데이트 완료')
+                } catch (error) {
+                  console.error('❌ 챌린지 진행 상황 업데이트 실패:', error)
+                }
+                
+                // 세션 종료 데이터 설정
+                setSessionEndData({
+                  duration: sessionDuration,
+                  averageFocusScore: result.data.summary.averageFocusScore || session.focusScore,
+                  sampleCount: result.data.summary.sampleCount,
+                  eventCount: result.data.summary.eventCount,
+                  mlFeatureCount: result.data.summary.mlFeatureCount,
+                  sessionId: activeSession.session_id
+                })
+                
+                // 알림 표시
+                setShowSessionEndNotification(true)
+              } else {
               console.error('세션 종료 실패:', result.error)
               alert(`세션 종료 중 오류가 발생했습니다: ${result.error}`)
             }
@@ -2214,25 +2227,7 @@ const calculateAndSaveFocusScore = async () => {
             {/* Right Column */}
             <div className="space-y-8">
               {/* Challenge Progress */}
-              <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
-                    <Trophy className="w-5 h-5 text-yellow-500" />
-                    도전 과제
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {challenges.map((challenge, index) => (
-                    <div key={index} className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-slate-700">{challenge.name}</span>
-                        <span className="text-sm font-bold text-blue-600">{challenge.progress}%</span>
-                      </div>
-                      <Progress value={challenge.progress} className="h-2" />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+              <ChallengeProgressCard className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm" />
 
               {/* AI 집중 상태 분석 히스토리 */}
               {session.isRunning && (
