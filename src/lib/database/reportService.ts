@@ -5,6 +5,7 @@ import {
   FocusEvent, 
   DailySummary,
   WeeklySummary,
+  WeeklyReportData,
   ApiResponse 
 } from '@/types/database'
 import { DailyReportData as DailyReportType, FocusScorePoint } from '@/types/dailyReport'
@@ -506,22 +507,112 @@ export class ReportService {
   }
 
   /**
-   * 주간 리포트 생성
+   * 주간 리포트 생성 (클라이언트 사이드)
    */
   static async generateWeeklyReport(
     userId: string,
     year: number,
     week: number
-  ): Promise<ApiResponse<any>> {
+  ): Promise<ApiResponse<WeeklyReportData>> {
     try {
       const supabase = supabaseBrowser()
       
-      // 주간 데이터 조회 로직 구현
-      // ...
+      // 주간 시작/종료 날짜 계산
+      const weekPeriod = this.getWeekPeriod(year, week)
+      const { startDate, endDate } = weekPeriod
+      
+      console.log(`📊 주간 리포트 생성 시작:`, { userId, year, week, startDate, endDate })
+
+      // 1. 해당 주간의 모든 집중 세션 조회
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('started_at', `${startDate}T00:00:00`)
+        .lte('started_at', `${endDate}T23:59:59`)
+        .order('started_at', { ascending: true })
+
+      if (sessionsError) {
+        throw new Error(`세션 조회 실패: ${sessionsError.message}`)
+      }
+
+      // 2. 세션별 샘플 데이터 조회
+      const sessionIds = sessions?.map(s => s.session_id) || []
+      let samples: any[] = []
+      let events: any[] = []
+      let mlFeatures: any[] = []
+      
+      if (sessionIds.length > 0) {
+        const [samplesResult, eventsResult, mlFeaturesResult] = await Promise.all([
+          supabase
+            .from('focus_sample')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true }),
+          supabase
+            .from('focus_event')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true }),
+          supabase
+            .from('ml_features')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true })
+        ])
+
+        if (samplesResult.error) {
+          console.warn('샘플 데이터 조회 실패:', samplesResult.error.message)
+        } else {
+          samples = samplesResult.data || []
+        }
+
+        if (eventsResult.error) {
+          console.warn('이벤트 데이터 조회 실패:', eventsResult.error.message)
+        } else {
+          events = eventsResult.data || []
+        }
+
+        if (mlFeaturesResult.error) {
+          console.warn('ML 피쳐 데이터 조회 실패:', mlFeaturesResult.error.message)
+        } else {
+          mlFeatures = mlFeaturesResult.data || []
+        }
+      }
+
+      // 3. 이전 주 데이터 조회 (트렌드 분석용)
+      const previousWeek = week > 1 ? week - 1 : 52
+      const previousYear = week > 1 ? year : year - 1
+      const prevWeekPeriod = this.getWeekPeriod(previousYear, previousWeek)
+      
+      const { data: prevSessions } = await supabase
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('started_at', `${prevWeekPeriod.startDate}T00:00:00`)
+        .lte('started_at', `${prevWeekPeriod.endDate}T23:59:59`)
+
+      // 4. 데이터 충분성 검사
+      const dataQuality = this.assessDataQuality(sessions || [], samples, mlFeatures)
+      
+      // 5. 주간 리포트 데이터 생성
+      const reportData = this.buildWeeklyReportData(
+        year,
+        week,
+        weekPeriod,
+        sessions || [],
+        samples,
+        events,
+        mlFeatures,
+        prevSessions || [],
+        dataQuality
+      )
+
+      console.log('✅ 주간 리포트 생성 완료:', reportData)
 
       return {
         success: true,
-        data: {},
+        data: reportData,
         message: '주간 리포트가 성공적으로 생성되었습니다.'
       }
 
@@ -667,6 +758,639 @@ export class ReportService {
         error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
         data: undefined
       }
+    }
+  }
+
+  /**
+   * 주간 리포트 생성 (서버 사이드)
+   */
+  static async generateWeeklyReportServer(
+    userId: string,
+    year: number,
+    week: number,
+    supabaseClient: any
+  ): Promise<ApiResponse<WeeklyReportData>> {
+    try {
+      // 주간 시작/종료 날짜 계산
+      const weekPeriod = this.getWeekPeriod(year, week)
+      const { startDate, endDate } = weekPeriod
+      
+      console.log(`📊 [Server] 주간 리포트 생성 시작:`, { userId, year, week, startDate, endDate })
+
+      // 1. 해당 주간의 모든 집중 세션 조회
+      const { data: sessions, error: sessionsError } = await supabaseClient
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('started_at', `${startDate}T00:00:00`)
+        .lte('started_at', `${endDate}T23:59:59`)
+        .order('started_at', { ascending: true })
+
+      if (sessionsError) {
+        throw new Error(`세션 조회 실패: ${sessionsError.message}`)
+      }
+
+      // 2. 세션별 샘플 데이터 조회
+      const sessionIds = sessions?.map((s: any) => s.session_id) || []
+      let samples: any[] = []
+      let events: any[] = []
+      let mlFeatures: any[] = []
+      
+      if (sessionIds.length > 0) {
+        const [samplesResult, eventsResult, mlFeaturesResult] = await Promise.all([
+          supabaseClient
+            .from('focus_sample')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true }),
+          supabaseClient
+            .from('focus_event')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true }),
+          supabaseClient
+            .from('ml_features')
+            .select('*')
+            .in('session_id', sessionIds)
+            .order('ts', { ascending: true })
+        ])
+
+        if (samplesResult.error) {
+          console.warn('샘플 데이터 조회 실패:', samplesResult.error.message)
+        } else {
+          samples = samplesResult.data || []
+        }
+
+        if (eventsResult.error) {
+          console.warn('이벤트 데이터 조회 실패:', eventsResult.error.message)
+        } else {
+          events = eventsResult.data || []
+        }
+
+        if (mlFeaturesResult.error) {
+          console.warn('ML 피쳐 데이터 조회 실패:', mlFeaturesResult.error.message)
+        } else {
+          mlFeatures = mlFeaturesResult.data || []
+        }
+      }
+
+      // 3. 이전 주 데이터 조회 (트렌드 분석용)
+      const previousWeek = week > 1 ? week - 1 : 52
+      const previousYear = week > 1 ? year : year - 1
+      const prevWeekPeriod = this.getWeekPeriod(previousYear, previousWeek)
+      
+      const { data: prevSessions } = await supabaseClient
+        .from('focus_session')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('started_at', `${prevWeekPeriod.startDate}T00:00:00`)
+        .lte('started_at', `${prevWeekPeriod.endDate}T23:59:59`)
+
+      // 4. 데이터 충분성 검사
+      const dataQuality = this.assessDataQuality(sessions || [], samples, mlFeatures)
+      
+      // 5. 주간 리포트 데이터 생성
+      const reportData = this.buildWeeklyReportData(
+        year,
+        week,
+        weekPeriod,
+        sessions || [],
+        samples,
+        events,
+        mlFeatures,
+        prevSessions || [],
+        dataQuality
+      )
+
+      console.log('✅ [Server] 주간 리포트 생성 완료')
+
+      return {
+        success: true,
+        data: reportData,
+        message: '주간 리포트가 성공적으로 생성되었습니다.'
+      }
+
+    } catch (error) {
+      console.error('[Server] 주간 리포트 생성 실패:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        data: undefined
+      }
+    }
+  }
+
+  /**
+   * 주간 시작/종료 날짜 계산 (ISO 8601 기준)
+   */
+  private static getWeekPeriod(year: number, week: number) {
+    // ISO 8601 기준으로 주차 계산
+    const jan4 = new Date(year, 0, 4)
+    const weekStart = new Date(jan4.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000)
+    
+    // 해당 주의 월요일 찾기
+    const dayOfWeek = weekStart.getDay()
+    const monday = new Date(weekStart.getTime() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000)
+    
+    // 주 시작일과 종료일
+    const startDate = monday.toISOString().split('T')[0]
+    const sunday = new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000)
+    const endDate = sunday.toISOString().split('T')[0]
+
+    return { startDate, endDate }
+  }
+
+  /**
+   * 데이터 충분성 평가
+   */
+  private static assessDataQuality(sessions: any[], samples: any[], mlFeatures: any[]) {
+    const totalSessions = sessions.length
+    const totalMLFeatures = mlFeatures.length
+    const totalFocusTime = this.calculateTotalFocusMinutes(sessions)
+    const activeDays = new Set(sessions.map(s => new Date(s.started_at).toISOString().split('T')[0])).size
+
+    // 데이터 충분성 기준
+    const hasMinimumSessions = totalSessions >= 2  // 최소 2개 세션
+    const hasMinimumFocusTime = totalFocusTime >= 30  // 최소 30분
+    const hasMinimumActiveDays = activeDays >= 2  // 최소 2일
+    const hasMLFeatures = totalMLFeatures >= 10  // 최소 10개 ML 피쳐
+
+    const isDataSufficient = hasMinimumSessions && hasMinimumFocusTime && hasMinimumActiveDays && hasMLFeatures
+
+    return {
+      isDataSufficient,
+      totalSessions,
+      totalFocusTime: Math.round(totalFocusTime),
+      activeDays,
+      totalMLFeatures,
+      reasons: {
+        sessions: hasMinimumSessions ? null : `세션이 ${totalSessions}개로 부족합니다 (최소 2개 필요)`,
+        focusTime: hasMinimumFocusTime ? null : `총 학습 시간이 ${Math.round(totalFocusTime)}분으로 부족합니다 (최소 30분 필요)`,
+        activeDays: hasMinimumActiveDays ? null : `활동한 날이 ${activeDays}일로 부족합니다 (최소 2일 필요)`,
+        mlFeatures: hasMLFeatures ? null : `집중도 측정 데이터가 ${totalMLFeatures}개로 부족합니다 (최소 10개 필요)`
+      }
+    }
+  }
+
+  /**
+   * 주간 리포트 데이터 구성
+   */
+  private static buildWeeklyReportData(
+    year: number,
+    week: number,
+    weekPeriod: { startDate: string; endDate: string },
+    sessions: any[],
+    samples: any[],
+    events: any[],
+    mlFeatures: any[],
+    prevSessions: any[],
+    dataQuality: any
+  ) {
+    const { startDate, endDate } = weekPeriod
+
+    // 기본 통계 계산
+    const totalSessions = sessions.length
+    const totalFocusTime = this.calculateTotalFocusMinutes(sessions)
+    const avgScore = this.calculateWeeklyAverageScore(samples, mlFeatures)
+    const { peakScore, lowestScore } = this.calculateWeeklyScoreRange(samples, mlFeatures)
+    
+    // 트렌드 분석
+    const prevTotalTime = this.calculateTotalFocusMinutes(prevSessions)
+    const prevAvgScore = this.calculateWeeklyAverageScore([], []) // 이전 주 데이터는 여기서 간단히 처리
+    const trend = this.calculateTrend(avgScore, prevAvgScore)
+    const change = Math.abs(avgScore - prevAvgScore)
+
+    // 요일별 데이터 생성
+    const timeSeriesData = this.generateWeeklyTimeSeriesData(sessions, samples, mlFeatures, startDate)
+    
+    // 활동 데이터 생성 
+    const activityData = this.generateActivityData(events, sessions, mlFeatures)
+    
+    // 성취도 계산
+    const achievements = this.calculateWeeklyAchievements(sessions, samples, events, totalFocusTime, avgScore)
+    
+    // 피드백 생성
+    const feedback = this.generateWeeklyFeedback(sessions, samples, events, avgScore, totalFocusTime, mlFeatures)
+
+    // 세부 분석
+    const breakdown = this.calculateWeeklyBreakdown(samples, mlFeatures, events)
+
+    return {
+      year,
+      week,
+      period: {
+        startDate,
+        endDate
+      },
+      overview: {
+        totalSessions,
+        totalFocusTime,
+        avgScore: Math.round(avgScore),
+        peakScore,
+        lowestScore,
+        trend,
+        change: Math.round(change)
+      },
+      breakdown,
+      timeSeriesData,
+      activityData,
+      achievements,
+      feedback,
+      dataQuality
+    }
+  }
+
+  /**
+   * 총 집중 시간 계산 (분 단위)
+   */
+  private static calculateTotalFocusMinutes(sessions: any[]): number {
+    return sessions.reduce((total, session) => {
+      if (session.ended_at) {
+        const start = new Date(session.started_at)
+        const end = new Date(session.ended_at)
+        return total + (end.getTime() - start.getTime()) / (1000 * 60)
+      }
+      return total
+    }, 0)
+  }
+
+  /**
+   * 주간 평균 집중 점수 계산
+   */
+  private static calculateWeeklyAverageScore(samples: any[], mlFeatures: any[]): number {
+    const allScores = [
+      ...samples.map(s => s.score).filter(s => s != null),
+      ...mlFeatures.map(f => f.focus_score).filter(s => s != null)
+    ]
+    
+    if (allScores.length === 0) return 0
+    return allScores.reduce((sum, score) => sum + score, 0) / allScores.length
+  }
+
+  /**
+   * 주간 최고/최저 점수 계산
+   */
+  private static calculateWeeklyScoreRange(samples: any[], mlFeatures: any[]) {
+    const allScores = [
+      ...samples.map(s => s.score).filter(s => s != null),
+      ...mlFeatures.map(f => f.focus_score).filter(s => s != null)
+    ]
+    
+    if (allScores.length === 0) {
+      return { peakScore: 0, lowestScore: 0 }
+    }
+    
+    return {
+      peakScore: Math.max(...allScores),
+      lowestScore: Math.min(...allScores)
+    }
+  }
+
+  /**
+   * 트렌드 계산
+   */
+  private static calculateTrend(currentScore: number, prevScore: number): "up" | "down" | "stable" {
+    const diff = currentScore - prevScore
+    if (Math.abs(diff) < 5) return "stable"
+    return diff > 0 ? "up" : "down"
+  }
+
+  /**
+   * 요일별 시계열 데이터 생성
+   */
+  private static generateWeeklyTimeSeriesData(sessions: any[], samples: any[], mlFeatures: any[], startDate: string) {
+    const days = ['월', '화', '수', '목', '금', '토', '일']
+    const data = []
+    
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(startDate)
+      currentDate.setDate(currentDate.getDate() + i)
+      const dateStr = currentDate.toISOString().split('T')[0]
+      
+      // 해당 날짜의 세션들
+      const daySessions = sessions.filter(session => {
+        const sessionDate = new Date(session.started_at).toISOString().split('T')[0]
+        return sessionDate === dateStr
+      })
+      
+      const sessionIds = daySessions.map(s => s.session_id)
+      const daySamples = samples.filter(s => sessionIds.includes(s.session_id))
+      const dayMLFeatures = mlFeatures.filter(f => sessionIds.includes(f.session_id))
+      
+      const avgScore = this.calculateWeeklyAverageScore(daySamples, dayMLFeatures)
+      const sessionDuration = this.calculateTotalFocusMinutes(daySessions)
+      
+      // 집중력 저하 횟수 계산 (ML 피쳐 기반)
+      const distractions = dayMLFeatures.filter(f => 
+        f.focus_status === 'distracted' || f.focus_status === 'normal'
+      ).length
+      
+      data.push({
+        timestamp: dateStr,
+        focusScore: Math.round(avgScore),
+        sessionDuration: Math.round(sessionDuration),
+        distractions,
+        dayOfWeek: days[i]
+      })
+    }
+    
+    return data
+  }
+
+  /**
+   * 활동 데이터 생성 (학습 패턴 기반)
+   */
+  private static generateActivityData(events: any[], sessions: any[], mlFeatures: any[] = []) {
+    const activities = []
+    
+    // 세션 시작 이벤트
+    sessions.forEach(session => {
+      const duration = session.ended_at 
+        ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / (1000 * 60)
+        : 0
+      
+      activities.push({
+        timestamp: session.started_at,
+        action: "학습 세션 시작",
+        type: "positive" as const,
+        impact: 50,
+        description: `${session.session_type || '학습'} 세션을 시작했습니다${duration > 0 ? ` (${Math.round(duration)}분간)` : ''}`
+      })
+    })
+    
+    // 장시간 집중 구간 감지 (15분 이상 연속 집중)
+    let consecutiveFocusCount = 0
+    let focusStartTime = null
+    
+    mlFeatures.forEach((feature, index) => {
+      if (feature.focus_status === 'focused') {
+        if (consecutiveFocusCount === 0) {
+          focusStartTime = feature.ts
+        }
+        consecutiveFocusCount++
+      } else {
+        if (consecutiveFocusCount >= 50) { // 약 15분 이상 (30초 간격 가정)
+          activities.push({
+            timestamp: focusStartTime,
+            action: "장시간 집중",
+            type: "positive" as const,
+            impact: 40,
+            description: `${Math.round(consecutiveFocusCount * 0.5)}분간 높은 집중력을 유지했습니다`
+          })
+        }
+        consecutiveFocusCount = 0
+        focusStartTime = null
+      }
+    })
+    
+    // 집중력 저하 패턴 감지 
+    let consecutiveDistractionCount = 0
+    let distractionStartTime = null
+    
+    mlFeatures.forEach((feature, index) => {
+      if (feature.focus_status === 'distracted') {
+        if (consecutiveDistractionCount === 0) {
+          distractionStartTime = feature.ts
+        }
+        consecutiveDistractionCount++
+      } else {
+        if (consecutiveDistractionCount >= 20) { // 약 10분 이상 집중력 저하
+          activities.push({
+            timestamp: distractionStartTime,
+            action: "집중력 저하 구간",
+            type: "negative" as const,
+            impact: -20,
+            description: `${Math.round(consecutiveDistractionCount * 0.5)}분간 집중도가 낮았습니다. 휴식이나 환경 변화가 필요할 수 있어요`
+          })
+        }
+        consecutiveDistractionCount = 0
+        distractionStartTime = null
+      }
+    })
+    
+    // 학습 성과 마일스톤
+    sessions.forEach((session, index) => {
+      if (index > 0 && index % 3 === 0) { // 3세션마다
+        activities.push({
+          timestamp: session.started_at,
+          action: "학습 마일스톤",
+          type: "positive" as const,
+          impact: 30,
+          description: `${index + 1}번째 학습 세션을 달성했습니다! 꾸준한 노력이 빛나고 있어요`
+        })
+      }
+    })
+    
+    // 중복 제거 및 정렬
+    const uniqueActivities = activities
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .filter((activity, index, arr) => {
+        if (index === 0) return true
+        const prev = arr[index - 1]
+        const timeDiff = new Date(activity.timestamp).getTime() - new Date(prev.timestamp).getTime()
+        return timeDiff > 300000 || activity.action !== prev.action // 5분 이상 차이나거나 다른 액션
+      })
+      .slice(0, 15) // 최대 15개만 표시
+    
+    return uniqueActivities
+  }
+
+  /**
+   * 주간 성취도 계산
+   */
+  private static calculateWeeklyAchievements(sessions: any[], samples: any[], events: any[], totalFocusTime: number, avgScore: number) {
+    const achievements = []
+    
+    // 1. 5일 연속 학습 목표
+    const activeDays = new Set(sessions.map(s => new Date(s.started_at).toISOString().split('T')[0])).size
+    achievements.push({
+      id: "daily_streak",
+      title: "5일 연속 학습",
+      description: "일주일 중 5일 이상 집중 세션 진행",
+      progress: activeDays,
+      target: 5,
+      completed: activeDays >= 5,
+      badge: "🔥",
+      category: "consistency" as const
+    })
+    
+    // 2. 평균 집중도 80점 이상
+    achievements.push({
+      id: "focus_score",
+      title: "평균 집중도 80점 이상",
+      description: "주간 평균 집중도 80점 달성",
+      progress: Math.round(avgScore),
+      target: 80,
+      completed: avgScore >= 80,
+      badge: "🎯",
+      category: "focus" as const
+    })
+    
+    // 3. 총 학습 시간 20시간
+    const targetHours = 20
+    const currentHours = Math.round(totalFocusTime / 60 * 10) / 10
+    achievements.push({
+      id: "study_time",
+      title: "총 학습 시간 20시간",
+      description: "주간 총 집중 시간 20시간 달성",
+      progress: currentHours,
+      target: targetHours,
+      completed: currentHours >= targetHours,
+      badge: "⏰",
+      category: "milestone" as const
+    })
+    
+    return achievements
+  }
+
+  /**
+   * 주간 피드백 생성 (학습 패턴 기반)
+   */
+  private static generateWeeklyFeedback(sessions: any[], samples: any[], events: any[], avgScore: number, totalFocusTime: number, mlFeatures: any[] = []) {
+    const feedback = []
+    
+    // 1. 전체 집중도 평가
+    if (avgScore >= 80) {
+      feedback.push({
+        type: "success" as const,
+        title: "훌륭한 집중력!",
+        message: "이번 주 평균 집중도가 매우 높았습니다. 현재 학습 패턴을 유지하세요.",
+        actionable: false,
+        priority: "high" as const
+      })
+    } else if (avgScore < 60) {
+      feedback.push({
+        type: "warning" as const,
+        title: "학습 패턴 최적화 필요",
+        message: "평균 집중도가 낮습니다. 학습 시간대나 세션 길이를 조절해보세요.",
+        actionable: true,
+        priority: "high" as const
+      })
+    }
+    
+    // 2. 세션 길이 패턴 분석
+    if (sessions.length > 0) {
+      const sessionDurations = sessions.map(s => {
+        if (!s.ended_at) return 0
+        const start = new Date(s.started_at)
+        const end = new Date(s.ended_at)
+        return (end.getTime() - start.getTime()) / (1000 * 60) // 분 단위
+      }).filter(d => d > 0)
+      
+      const avgSessionLength = sessionDurations.reduce((sum, d) => sum + d, 0) / sessionDurations.length
+      
+      if (avgSessionLength > 90) {
+        feedback.push({
+          type: "tip" as const,
+          title: "학습 세션 길이 조절",
+          message: `평균 세션이 ${Math.round(avgSessionLength)}분으로 깁니다. 45-60분 단위로 나누어 집중도를 높여보세요.`,
+          actionable: true,
+          priority: "medium" as const
+        })
+      } else if (avgSessionLength < 20) {
+        feedback.push({
+          type: "tip" as const,
+          title: "학습 세션 길이 증가",
+          message: `평균 세션이 ${Math.round(avgSessionLength)}분으로 짧습니다. 25-30분 이상 집중해보세요.`,
+          actionable: true,
+          priority: "medium" as const
+        })
+      }
+    }
+    
+    // 3. 학습 일관성 분석
+    const uniqueDays = new Set(sessions.map(s => new Date(s.started_at).toISOString().split('T')[0])).size
+    if (uniqueDays < 5) {
+      feedback.push({
+        type: "info" as const,
+        title: "학습 일관성 향상",
+        message: `일주일 중 ${uniqueDays}일만 학습했습니다. 매일 조금씩이라도 꾸준히 학습하면 더 좋은 결과를 얻을 수 있어요.`,
+        actionable: true,
+        priority: "medium" as const
+      })
+    }
+    
+    // 4. 집중도 하락 패턴 분석
+    if (mlFeatures.length > 0) {
+      // 시간대별 집중도 하락 구간 찾기
+      const distractedFeatures = mlFeatures.filter(f => f.focus_status === 'distracted')
+      if (distractedFeatures.length > mlFeatures.length * 0.3) {
+        feedback.push({
+          type: "tip" as const,
+          title: "휴식 시간 최적화",
+          message: "집중력 저하 구간이 많이 감지되었습니다. 짧은 휴식을 자주 취하거나 학습 환경을 점검해보세요.",
+          actionable: true,
+          priority: "medium" as const
+        })
+      }
+    }
+    
+    // 5. 학습 시간 패턴 피드백
+    if (totalFocusTime < 600) { // 10시간 미만
+      feedback.push({
+        type: "info" as const,
+        title: "학습 시간 계획 수립",
+        message: "이번 주 총 학습 시간이 목표보다 적습니다. 주간 학습 계획을 세워 점진적으로 늘려보세요.",
+        actionable: true,
+        priority: "low" as const
+      })
+    }
+    
+    return feedback
+  }
+
+  /**
+   * 주간 세부 분석 (실제 ML 피쳐 기반)
+   */
+  private static calculateWeeklyBreakdown(samples: any[], mlFeatures: any[], events: any[]) {
+    const totalCount = mlFeatures.length
+    
+    if (totalCount === 0) {
+      return {
+        attention: 75,
+        eyeHealth: 80,
+        posture: 80,
+        consistency: 50
+      }
+    }
+    
+    // 1. 집중도 분석 (prediction_result 기반)
+    const focusedCount = mlFeatures.filter(f => 
+      f.focus_status === 'focused' || f.focus_status === 'focus'
+    ).length
+    const attention = Math.round((focusedCount / totalCount) * 100)
+    
+    // 2. 눈 건강 분석 (eye_status, EAR 값 기반)
+    const goodEyeCount = mlFeatures.filter(f => {
+      // EAR 값이 0.2-0.4 범위에 있으면 좋은 상태
+      const earValue = f.ear_value
+      return earValue && earValue >= 0.2 && earValue <= 0.4 && f.eye_status === 'OPEN'
+    }).length
+    const eyeHealth = Math.round((goodEyeCount / totalCount) * 100)
+    
+    // 3. 자세 분석 (head_pose 기반) - 더 현실적인 기준
+    const goodPostureCount = mlFeatures.filter(f => {
+      const pitch = f.head_pose_pitch
+      const yaw = f.head_pose_yaw
+      const roll = f.head_pose_roll
+      
+      // 정면을 바라보고 있는 상태 (각도가 너무 크지 않은 경우)
+      return pitch && yaw && roll &&
+             Math.abs(pitch) < 30 &&   // 고개를 너무 위아래로 하지 않음
+             Math.abs(yaw) < 25 &&     // 좌우로 많이 돌리지 않음
+             Math.abs(roll) < 20       // 머리를 기울이지 않음
+    }).length
+    const posture = Math.round((goodPostureCount / totalCount) * 100)
+    
+    // 4. 일관성 분석 (매일 세션이 있는지)
+    const uniqueDays = new Set(mlFeatures.map(f => new Date(f.ts).toISOString().split('T')[0])).size
+    const consistency = Math.round((uniqueDays / 7) * 100)
+    
+    return {
+      attention: Math.min(100, Math.max(0, attention)),
+      eyeHealth: Math.min(100, Math.max(0, eyeHealth)),
+      posture: Math.min(100, Math.max(0, posture)),
+      consistency: Math.min(100, Math.max(0, consistency))
     }
   }
 } 

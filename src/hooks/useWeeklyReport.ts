@@ -1,65 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-
-// 주간 리포트 데이터 타입
-export interface WeeklyReportData {
-  year: number
-  week: number
-  period: {
-    startDate: string
-    endDate: string
-  }
-  overview: {
-    totalSessions: number
-    totalFocusTime: number
-    avgScore: number
-    peakScore: number
-    lowestScore: number
-    trend: "up" | "down" | "stable"
-    change: number
-  }
-  breakdown: {
-    attention: number
-    posture: number
-    phoneUsage: number
-    consistency: number
-  }
-  timeSeriesData: Array<{
-    timestamp: string
-    focusScore: number
-    sessionDuration: number
-    distractions: number
-    dayOfWeek: string
-  }>
-  activityData: Array<{
-    timestamp: string
-    action: string
-    type: "positive" | "negative" | "neutral"
-    impact: number
-    description: string
-  }>
-  achievements: Array<{
-    id: string
-    title: string
-    description: string
-    progress: number
-    target: number
-    completed: boolean
-    badge: string
-    category: "focus" | "consistency" | "improvement" | "milestone"
-  }>
-  feedback: Array<{
-    type: "success" | "warning" | "info" | "tip"
-    title: string
-    message: string
-    actionable: boolean
-    priority: "high" | "medium" | "low"
-  }>
-}
+import { WeeklyReportData } from '@/types/database'
 
 // Query Keys
 export const weeklyReportKeys = {
   all: ['weekly-report'] as const,
   weekly: (year: number, week: number) => [...weeklyReportKeys.all, year, week] as const,
+  insights: (year: number, week: number) => [...weeklyReportKeys.all, 'insights', year, week] as const,
 }
 
 /**
@@ -90,6 +36,43 @@ export function useWeeklyReport(year?: number, week?: number) {
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     enabled: !!currentYear && !!currentWeek,
+  })
+}
+
+/**
+ * GPT 기반 주간 인사이트 조회 훅
+ */
+export function useWeeklyInsights(weeklyData?: WeeklyReportData, year?: number, week?: number) {
+  const currentYear = year || new Date().getFullYear()
+  const currentWeek = week || getCurrentWeek()
+
+  return useQuery({
+    queryKey: weeklyReportKeys.insights(currentYear, currentWeek),
+    queryFn: async () => {
+      console.log('🤖 GPT 주간 인사이트 요청 시작')
+      
+      const response = await fetch('/api/weekly-insights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ weeklyData }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'GPT 인사이트를 불러오는데 실패했습니다.')
+      }
+      
+      const data = await response.json()
+      console.log('✅ GPT 인사이트 반환:', data)
+      return data.insights
+    },
+    staleTime: 30 * 60 * 1000, // 30분 (인사이트는 더 길게 캐시)
+    gcTime: 60 * 60 * 1000, // 1시간
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
+    enabled: !!weeklyData && !!weeklyData.overview && weeklyData.dataQuality?.isDataSufficient, // 주간 데이터가 충분할 때만 실행
   })
 }
 
