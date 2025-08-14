@@ -20,6 +20,8 @@ export interface FocusFeatures {
     isStudyRelated: boolean
     confidence: number // 0.0 ~ 1.0
     audioLevel: number // 0 ~ 100
+    speechStartTime?: number // 발화 시작 시간 (타임스탬프)
+    speechEndTime?: number // 발화 종료 시간 (타임스탬프)
   }
   
   // 행동 지표
@@ -36,6 +38,9 @@ export interface FocusFeatures {
     lastBreakTime: number // 분 단위
     consecutiveFocusTime: number // 분 단위
   }
+
+  // 타임스탬프 (보정 로직을 위한 추가)
+  timestamp?: number
 }
 
 // 집중 상태 타입 정의
@@ -52,6 +57,96 @@ export interface FocusStatusResult {
     audioFactor: number
     behaviorFactor: number
   }
+  isCorrected?: boolean // 보정 여부
+  correctionReason?: string // 보정 이유
+}
+
+// 집중도 히스토리 저장소
+class FocusScoreHistory {
+  private static instance: FocusScoreHistory
+  private history: Array<{
+    timestamp: number
+    score: number
+    confidence: number
+    features: FocusFeatures
+    isSpeechRelated: boolean
+  }> = []
+  private maxHistorySize = 10 // 최대 10개의 이전 기록 저장
+
+  static getInstance(): FocusScoreHistory {
+    if (!FocusScoreHistory.instance) {
+      FocusScoreHistory.instance = new FocusScoreHistory()
+    }
+    return FocusScoreHistory.instance
+  }
+
+  addRecord(timestamp: number, score: number, confidence: number, features: FocusFeatures, isSpeechRelated: boolean = false) {
+    this.history.push({
+      timestamp,
+      score,
+      confidence,
+      features,
+      isSpeechRelated
+    })
+
+    // 최대 크기 초과 시 오래된 기록 제거
+    if (this.history.length > this.maxHistorySize) {
+      this.history.shift()
+    }
+  }
+
+  // 최근 비발화 시점의 집중도 정보 조회
+  getLastNonSpeechScore(currentTimestamp: number, timeWindowMs: number = 10000): {
+    score: number
+    confidence: number
+    timeDiff: number
+  } | null {
+    // 현재 시간에서 timeWindowMs 이내의 기록 중 발화와 관련없는 마지막 기록 찾기
+    const timeThreshold = currentTimestamp - timeWindowMs
+    
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      const record = this.history[i]
+      
+      if (record.timestamp >= timeThreshold && 
+          record.timestamp < currentTimestamp && 
+          !record.isSpeechRelated) {
+        return {
+          score: record.score,
+          confidence: record.confidence,
+          timeDiff: currentTimestamp - record.timestamp
+        }
+      }
+    }
+
+    return null
+  }
+
+  // 최근 평균 집중도 조회 (발화 제외)
+  getRecentAverageScore(currentTimestamp: number, timeWindowMs: number = 30000): {
+    averageScore: number
+    averageConfidence: number
+    sampleCount: number
+  } | null {
+    const timeThreshold = currentTimestamp - timeWindowMs
+    const relevantRecords = this.history.filter(record => 
+      record.timestamp >= timeThreshold && 
+      record.timestamp < currentTimestamp && 
+      !record.isSpeechRelated
+    )
+
+    if (relevantRecords.length === 0) {
+      return null
+    }
+
+    const totalScore = relevantRecords.reduce((sum, record) => sum + record.score, 0)
+    const totalConfidence = relevantRecords.reduce((sum, record) => sum + record.confidence, 0)
+
+    return {
+      averageScore: totalScore / relevantRecords.length,
+      averageConfidence: totalConfidence / relevantRecords.length,
+      sampleCount: relevantRecords.length
+    }
+  }
 }
 
 // 집중 상태 판단 함수
@@ -67,124 +162,175 @@ export function determineFocusStatus(features: FocusFeatures): FocusStatusResult
     behaviorFactor: 0
   }
 
-  // 1. 시각적 지표 분석 (눈 상태, 머리 자세)
-  if (features.visual) {
-    const { eyeStatus, earValue, headPose } = features.visual
-    
-    // 눈 상태 분석
-    let eyeScore = 0
-    let eyeConfidence = 0.5
-    
-    if (eyeStatus === 'OPEN') {
-      eyeScore = 80 + (earValue * 40) // 80-100점
-      eyeConfidence = 0.8
-    } else if (eyeStatus === 'PARTIAL') {
-      eyeScore = 40 + (earValue * 40) // 40-80점
-      eyeConfidence = 0.6
-    } else if (eyeStatus === 'CLOSED') {
-      eyeScore = 0 + (earValue * 20) // 0-20점
-      eyeConfidence = 0.9
-    }
-    
-    factors.eyeFactor = eyeScore
-    
-    // 머리 자세 분석
-    let headPoseScore = 100
-    let headPoseConfidence = 0.7
-    
-    // 머리가 너무 많이 기울어지면 점수 감점
-    const pitchDeviation = Math.abs(headPose.pitch)
-    const yawDeviation = Math.abs(headPose.yaw)
-    const rollDeviation = Math.abs(headPose.roll)
-    
-    if (pitchDeviation > 15) headPoseScore -= 30
-    if (yawDeviation > 25) headPoseScore -= 30
-    if (rollDeviation > 8) headPoseScore -= 20
-    
-    factors.headPoseFactor = Math.max(0, headPoseScore)
-    
-    // 시각적 지표 종합 점수
-    const visualScore = (eyeScore + headPoseScore) / 2
-    const visualConfidence = (eyeConfidence + headPoseConfidence) / 2
-    
-    totalScore += visualScore
-    totalConfidence += visualConfidence
-    factorCount++
-  }
+  let isCorrected = false
+  let correctionReason = ''
 
-  // 2. 청각적 지표 분석
-  if (features.audio) {
-    const { isStudyRelated, confidence, audioLevel } = features.audio
-    
-    let audioScore = 50 // 기본값
-    let audioConfidence = confidence || 0.5
-    
-    if (isStudyRelated) {
-      audioScore = 80 + (confidence * 20) // 80-100점
-    } else {
-      audioScore = 20 + (confidence * 30) // 20-50점
-    }
-    
-    // 조용한 환경이면 점수 가산
-    if (audioLevel < 30) {
-      audioScore += 10
-    }
-    
-    factors.audioFactor = Math.min(100, audioScore)
-    totalScore += audioScore
-    totalConfidence += audioConfidence
-    factorCount++
-  }
+  // 발화 시점 집중도 보정 로직
+  const history = FocusScoreHistory.getInstance()
+  const currentTimestamp = features.timestamp || Date.now()
+  
+  // 학습 관련 발화 중인지 확인
+  const isStudyRelatedSpeech = features.audio?.isSpeaking && 
+                              features.audio?.isStudyRelated && 
+                              features.audio?.confidence && features.audio.confidence > 0.7
 
-  // 3. 행동 지표 분석
-  if (features.behavior) {
-    const { mouseActivity, keyboardActivity, tabSwitches, idleTime } = features.behavior
+  if (isStudyRelatedSpeech) {
+    console.log('🎯 학습 관련 발화 감지 - 집중도 보정 로직 적용')
     
-    let behaviorScore = 50 // 기본값
-    let behaviorConfidence = 0.6
+    // 최근 비발화 시점의 집중도 정보 조회
+    const lastNonSpeechScore = history.getLastNonSpeechScore(currentTimestamp, 15000) // 15초 이내
+    const recentAverage = history.getRecentAverageScore(currentTimestamp, 30000) // 30초 이내
     
-    // 마우스/키보드 활동이 있으면 점수 가산
-    if (mouseActivity || keyboardActivity) {
-      behaviorScore += 20
-    }
-    
-    // 탭 전환이 적으면 점수 가산
-    if (tabSwitches < 3) {
-      behaviorScore += 15
+    if (lastNonSpeechScore && lastNonSpeechScore.timeDiff < 10000) { // 10초 이내
+      // 최근 비발화 시점의 집중도를 현재 시점에 적용
+      totalScore = lastNonSpeechScore.score
+      totalConfidence = Math.min(1.0, lastNonSpeechScore.confidence + 0.1) // 신뢰도 약간 증가
+      isCorrected = true
+      correctionReason = `학습 관련 발화 중 - ${(lastNonSpeechScore.timeDiff / 1000).toFixed(1)}초 전 집중도(${lastNonSpeechScore.score}) 적용`
+      
+      console.log(`✅ 집중도 보정 적용: ${correctionReason}`)
+    } else if (recentAverage && recentAverage.sampleCount >= 2) {
+      // 최근 평균 집중도 적용
+      totalScore = recentAverage.averageScore
+      totalConfidence = Math.min(1.0, recentAverage.averageConfidence + 0.05)
+      isCorrected = true
+      correctionReason = `학습 관련 발화 중 - 최근 평균 집중도(${recentAverage.averageScore.toFixed(1)}) 적용`
+      
+      console.log(`✅ 집중도 보정 적용: ${correctionReason}`)
     } else {
-      behaviorScore -= (tabSwitches - 2) * 5
+      // 보정 정보가 없으면 높은 기본값 적용
+      totalScore = 75 // 학습 관련 발화 시 기본적으로 집중 상태로 간주
+      totalConfidence = 0.8
+      isCorrected = true
+      correctionReason = '학습 관련 발화 중 - 기본 집중 상태로 설정'
+      
+      console.log(`✅ 집중도 보정 적용: ${correctionReason}`)
     }
     
-    // 유휴 시간이 적으면 점수 가산
-    if (idleTime < 60) { // 1분 미만
-      behaviorScore += 15
-    } else {
-      behaviorScore -= Math.min(30, idleTime / 60 * 5)
-    }
+    // 보정된 경우 기본 계산은 건너뛰고 바로 결과 반환
+    factorCount = 1
+  } else {
+    // 기존 집중도 계산 로직 (보정이 적용되지 않은 경우)
     
-    factors.behaviorFactor = Math.max(0, Math.min(100, behaviorScore))
-    totalScore += behaviorScore
-    totalConfidence += behaviorConfidence
-    factorCount++
-  }
+    // 1. 시각적 지표 분석 (눈 상태, 머리 자세)
+    if (features.visual) {
+      const { eyeStatus, earValue, headPose } = features.visual
+      
+      // 눈 상태 분석
+      let eyeScore = 0
+      let eyeConfidence = 0.5
+      
+      if (eyeStatus === 'OPEN') {
+        eyeScore = 80 + (earValue * 40) // 80-100점
+        eyeConfidence = 0.8
+      } else if (eyeStatus === 'PARTIAL') {
+        eyeScore = 40 + (earValue * 40) // 40-80점
+        eyeConfidence = 0.6
+      } else if (eyeStatus === 'CLOSED') {
+        eyeScore = 0 + (earValue * 20) // 0-20점
+        eyeConfidence = 0.9
+      }
+      
+      factors.eyeFactor = eyeScore
+      
+      // 머리 자세 분석
+      let headPoseScore = 100
+      let headPoseConfidence = 0.7
+      
+      // 머리가 너무 많이 기울어지면 점수 감점
+      const pitchDeviation = Math.abs(headPose.pitch)
+      const yawDeviation = Math.abs(headPose.yaw)
+      const rollDeviation = Math.abs(headPose.roll)
+      
+      if (pitchDeviation > 15) headPoseScore -= 30
+      if (yawDeviation > 25) headPoseScore -= 30
+      if (rollDeviation > 8) headPoseScore -= 20
+      
+      factors.headPoseFactor = Math.max(0, headPoseScore)
+      
+      // 시각적 지표 종합 점수
+      const visualScore = (eyeScore + headPoseScore) / 2
+      const visualConfidence = (eyeConfidence + headPoseConfidence) / 2
+      
+      totalScore += visualScore
+      totalConfidence += visualConfidence
+      factorCount++
+    }
 
-  // 4. 시간 지표 분석
-  if (features.time) {
-    const { sessionDuration, consecutiveFocusTime } = features.time
-    
-    let timeScore = 50 // 기본값
-    let timeConfidence = 0.7
-    
-    // 연속 집중 시간이 길면 점수 가산
-    if (consecutiveFocusTime > 30) { // 30분 이상
-      timeScore += 20
-    } else if (consecutiveFocusTime > 15) { // 15분 이상
-      timeScore += 10
+    // 2. 청각적 지표 분석
+    if (features.audio) {
+      const { isStudyRelated, confidence, audioLevel } = features.audio
+      
+      let audioScore = 50 // 기본값
+      let audioConfidence = confidence || 0.5
+      
+      if (isStudyRelated) {
+        audioScore = 80 + (confidence * 20) // 80-100점
+      } else {
+        audioScore = 20 + (confidence * 30) // 20-50점
+      }
+      
+      // 조용한 환경이면 점수 가산
+      if (audioLevel < 30) {
+        audioScore += 10
+      }
+      
+      factors.audioFactor = Math.min(100, audioScore)
+      totalScore += audioScore
+      totalConfidence += audioConfidence
+      factorCount++
     }
-    
-    totalScore += timeScore
-    totalConfidence += timeConfidence
-    factorCount++
+
+    // 3. 행동 지표 분석
+    if (features.behavior) {
+      const { mouseActivity, keyboardActivity, tabSwitches, idleTime } = features.behavior
+      
+      let behaviorScore = 50 // 기본값
+      let behaviorConfidence = 0.6
+      
+      // 마우스/키보드 활동이 있으면 점수 가산
+      if (mouseActivity || keyboardActivity) {
+        behaviorScore += 20
+      }
+      
+      // 탭 전환이 적으면 점수 가산
+      if (tabSwitches < 3) {
+        behaviorScore += 15
+      } else {
+        behaviorScore -= (tabSwitches - 2) * 5
+      }
+      
+      // 유휴 시간이 적으면 점수 가산
+      if (idleTime < 60) { // 1분 미만
+        behaviorScore += 15
+      } else {
+        behaviorScore -= Math.min(30, idleTime / 60 * 5)
+      }
+      
+      factors.behaviorFactor = Math.max(0, Math.min(100, behaviorScore))
+      totalScore += behaviorScore
+      totalConfidence += behaviorConfidence
+      factorCount++
+    }
+
+    // 4. 시간 지표 분석
+    if (features.time) {
+      const { sessionDuration, consecutiveFocusTime } = features.time
+      
+      let timeScore = 50 // 기본값
+      let timeConfidence = 0.7
+      
+      // 연속 집중 시간이 길면 점수 가산
+      if (consecutiveFocusTime > 30) { // 30분 이상
+        timeScore += 20
+      } else if (consecutiveFocusTime > 15) { // 15분 이상
+        timeScore += 10
+      }
+      
+      totalScore += timeScore
+      totalConfidence += timeConfidence
+      factorCount++
+    }
   }
 
   // 최종 점수 계산
@@ -199,12 +345,23 @@ export function determineFocusStatus(features: FocusFeatures): FocusStatusResult
     status = 'distracted'
   }
 
-  return {
+  // 히스토리에 기록 추가 (발화 관련 여부 포함)
+  const isSpeechRelated = features.audio?.isSpeaking || false
+  history.addRecord(currentTimestamp, finalScore, finalConfidence, features, isSpeechRelated)
+
+  const result: FocusStatusResult = {
     status,
     confidence: finalConfidence,
     score: finalScore,
     factors
   }
+
+  if (isCorrected) {
+    result.isCorrected = true
+    result.correctionReason = correctionReason
+  }
+
+  return result
 }
 
 export interface FocusScoreResult {
@@ -232,9 +389,35 @@ export class FocusScoreEngine {
   }
 
   /**
-   * AI 모델 기반 집중도 점수 계산
+   * AI 모델 기반 집중도 점수 계산 (발화 시점 보정 포함)
    */
   static calculateFocusScore(features: FocusFeatures): FocusScoreResult {
+    // 발화 시점 보정 로직 먼저 확인
+    const focusStatus = determineFocusStatus(features)
+    
+    // 보정된 경우 보정된 점수 사용
+    if (focusStatus.isCorrected) {
+      return {
+        score: focusStatus.score,
+        confidence: focusStatus.confidence,
+        breakdown: {
+          visual: focusStatus.factors.eyeFactor + focusStatus.factors.headPoseFactor,
+          audio: focusStatus.factors.audioFactor,
+          behavior: focusStatus.factors.behaviorFactor,
+          time: 50 // 기본값
+        },
+        analysis: {
+          primaryFactor: '발화 보정',
+          secondaryFactor: focusStatus.correctionReason || '학습 관련 발화',
+          recommendations: [
+            '학습 관련 발화로 인한 집중도 보정이 적용되었습니다.',
+            '계속해서 학습에 집중하세요!'
+          ]
+        }
+      }
+    }
+
+    // 보정되지 않은 경우 기존 로직 사용
     const scores = {
       visual: this.calculateVisualScore(features.visual),
       audio: this.calculateAudioScore(features.audio),
@@ -522,7 +705,68 @@ export class FocusScoreEngine {
   }
 
   /**
-   * 실시간 집중도 모니터링을 위한 점수 추적
+   * 발화 시점 집중도 보정을 포함한 실시간 집중도 모니터링
+   */
+  static trackFocusScoreWithSpeechCorrection(sessionId: string, features: FocusFeatures): Promise<FocusScoreResult & { correctionApplied?: boolean }> {
+    return new Promise(async (resolve) => {
+      try {
+        // 타임스탬프 추가 (보정 로직을 위해)
+        const featuresWithTimestamp = {
+          ...features,
+          timestamp: features.timestamp || Date.now()
+        }
+        
+        // 집중도 점수 계산 (보정 로직 포함)
+        const result = this.calculateFocusScore(featuresWithTimestamp)
+        
+        // 보정 적용 여부 확인
+        const focusStatus = determineFocusStatus(featuresWithTimestamp)
+        const correctionApplied = focusStatus.isCorrected || false
+        
+        // 데이터베이스에 저장
+        const response = await fetch('/api/focus-score', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId,
+            focusScore: result.score,
+            timestamp: new Date().toISOString(),
+            confidence: result.confidence,
+            analysisMethod: correctionApplied ? 'speech_corrected_ai_engine' : 'ai_engine',
+            features: featuresWithTimestamp,
+            correctionApplied,
+            correctionReason: focusStatus.correctionReason
+          })
+        })
+
+        if (response.ok) {
+          console.log('✅ 집중도 점수 저장 성공:', {
+            score: result.score,
+            correctionApplied,
+            correctionReason: focusStatus.correctionReason
+          })
+        } else {
+          console.warn('⚠️ 집중도 점수 저장 실패:', response.status)
+        }
+
+        resolve({
+          ...result,
+          correctionApplied
+        })
+      } catch (error) {
+        console.error('❌ 집중도 점수 추적 실패:', error)
+        resolve({
+          ...this.calculateFocusScore(features),
+          correctionApplied: false
+        })
+      }
+    })
+  }
+
+  /**
+   * 실시간 집중도 모니터링을 위한 점수 추적 (기존 버전 - 하위 호환성)
    */
   static trackFocusScore(sessionId: string, features: FocusFeatures): Promise<FocusScoreResult> {
     return new Promise(async (resolve) => {

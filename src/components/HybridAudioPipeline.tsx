@@ -4,6 +4,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { koelectraPreprocess, testTokenizer, initializeTokenizer } from "@/lib/tokenizer/koelectra"
 import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 import { useDashboardStore } from "@/stores/dashboardStore"
+import { useActiveFocusSession } from "@/hooks/useFocusSession"
+import { useAuth } from "@/lib/auth/AuthProvider"
+import { FocusScoreEngine, type FocusFeatures } from "@/lib/focusScoreEngine"
 
 // 공부 관련 텍스트 분석 함수 (키워드 기반) - 메모이제이션 적용
 const analyzeStudyRelatedByKeywords = (() => {
@@ -54,6 +57,10 @@ const SpeechRecognition: any =
   typeof window !== "undefined" ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
 
 export default function HybridAudioPipeline() {
+  // 사용자 정보 및 현재 세션 가져오기
+  const { user } = useAuth()
+  const { data: activeSession } = useActiveFocusSession(user?.id)
+  
   // 집중 모드 상태 가져오기
   const { isRunning: isFocusSessionRunning, isPaused: isFocusSessionPaused } = useDashboardStore()
   
@@ -933,6 +940,49 @@ export default function HybridAudioPipeline() {
 ├─ 최종 판정: ${finalJudgment ? '공부 관련 발화' : '잡담'}
 └─ 처리 시간: ${processingTime.toFixed(1)}ms
       `);
+
+      // 집중도 보정 로직 적용
+      if (finalJudgment) {
+        try {
+          const focusFeatures: FocusFeatures = {
+            audio: {
+              isSpeaking: true,
+              speechContent: text,
+              isStudyRelated: true,
+              confidence: koelectraConfidence || 0.8,
+              audioLevel: currentAudioLevel,
+              speechStartTime: audioLevelSpeechStartRef.current || speechStartTimeRef.current,
+              speechEndTime: audioLevelSpeechEndRef.current || speechEndTimeRef.current
+            },
+            timestamp: currentTimestamp
+          };
+
+          // 현재 활성 세션 ID 가져오기
+          const sessionId = activeSession?.session_id || 'no-active-session';
+
+          // 발화 시점 집중도 보정 적용
+          FocusScoreEngine.trackFocusScoreWithSpeechCorrection(sessionId, focusFeatures)
+            .then(result => {
+              if (result.correctionApplied) {
+                console.log('🎯 집중도 보정 적용됨:', {
+                  점수: result.score,
+                  신뢰도: result.confidence,
+                  보정여부: result.correctionApplied
+                });
+              } else {
+                console.log('📊 일반 집중도 계산:', {
+                  점수: result.score,
+                  신뢰도: result.confidence
+                });
+              }
+            })
+            .catch(error => {
+              console.error('❌ 집중도 계산 실패:', error);
+            });
+        } catch (error) {
+          console.error('❌ 집중도 보정 로직 실행 실패:', error);
+        }
+      }
 
       // 버퍼 초기화 (분석 완료 후 즉시)
       speechBufferRef.current = "";
