@@ -72,7 +72,7 @@ export function useWeeklyInsights(weeklyData?: WeeklyReportData, year?: number, 
     gcTime: 60 * 60 * 1000, // 1시간
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
-    enabled: !!weeklyData && !!weeklyData.overview, // 주간 데이터가 있을 때만 실행
+    enabled: !!weeklyData && !!weeklyData.overview && weeklyData.dataQuality?.isDataSufficient, // 주간 데이터가 충분할 때만 실행
   })
 }
 

@@ -499,6 +499,19 @@ export interface WeeklyReportData {
     actionable: boolean
     priority: "high" | "medium" | "low"
   }>
+  dataQuality: {
+    isDataSufficient: boolean
+    totalSessions: number
+    totalFocusTime: number
+    activeDays: number
+    totalMLFeatures: number
+    reasons: {
+      sessions: string | null
+      focusTime: string | null
+      activeDays: string | null
+      mlFeatures: string | null
+    }
+  }
 }
 
 export interface DayAnalysis {

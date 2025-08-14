@@ -592,7 +592,10 @@ export class ReportService {
         .gte('started_at', `${prevWeekPeriod.startDate}T00:00:00`)
         .lte('started_at', `${prevWeekPeriod.endDate}T23:59:59`)
 
-      // 4. 주간 리포트 데이터 생성
+      // 4. 데이터 충분성 검사
+      const dataQuality = this.assessDataQuality(sessions || [], samples, mlFeatures)
+      
+      // 5. 주간 리포트 데이터 생성
       const reportData = this.buildWeeklyReportData(
         year,
         week,
@@ -601,7 +604,8 @@ export class ReportService {
         samples,
         events,
         mlFeatures,
-        prevSessions || []
+        prevSessions || [],
+        dataQuality
       )
 
       console.log('✅ 주간 리포트 생성 완료:', reportData)
@@ -842,7 +846,10 @@ export class ReportService {
         .gte('started_at', `${prevWeekPeriod.startDate}T00:00:00`)
         .lte('started_at', `${prevWeekPeriod.endDate}T23:59:59`)
 
-      // 4. 주간 리포트 데이터 생성
+      // 4. 데이터 충분성 검사
+      const dataQuality = this.assessDataQuality(sessions || [], samples, mlFeatures)
+      
+      // 5. 주간 리포트 데이터 생성
       const reportData = this.buildWeeklyReportData(
         year,
         week,
@@ -851,7 +858,8 @@ export class ReportService {
         samples,
         events,
         mlFeatures,
-        prevSessions || []
+        prevSessions || [],
+        dataQuality
       )
 
       console.log('✅ [Server] 주간 리포트 생성 완료')
@@ -893,6 +901,38 @@ export class ReportService {
   }
 
   /**
+   * 데이터 충분성 평가
+   */
+  private static assessDataQuality(sessions: any[], samples: any[], mlFeatures: any[]) {
+    const totalSessions = sessions.length
+    const totalMLFeatures = mlFeatures.length
+    const totalFocusTime = this.calculateTotalFocusMinutes(sessions)
+    const activeDays = new Set(sessions.map(s => new Date(s.started_at).toISOString().split('T')[0])).size
+
+    // 데이터 충분성 기준
+    const hasMinimumSessions = totalSessions >= 2  // 최소 2개 세션
+    const hasMinimumFocusTime = totalFocusTime >= 30  // 최소 30분
+    const hasMinimumActiveDays = activeDays >= 2  // 최소 2일
+    const hasMLFeatures = totalMLFeatures >= 10  // 최소 10개 ML 피쳐
+
+    const isDataSufficient = hasMinimumSessions && hasMinimumFocusTime && hasMinimumActiveDays && hasMLFeatures
+
+    return {
+      isDataSufficient,
+      totalSessions,
+      totalFocusTime: Math.round(totalFocusTime),
+      activeDays,
+      totalMLFeatures,
+      reasons: {
+        sessions: hasMinimumSessions ? null : `세션이 ${totalSessions}개로 부족합니다 (최소 2개 필요)`,
+        focusTime: hasMinimumFocusTime ? null : `총 학습 시간이 ${Math.round(totalFocusTime)}분으로 부족합니다 (최소 30분 필요)`,
+        activeDays: hasMinimumActiveDays ? null : `활동한 날이 ${activeDays}일로 부족합니다 (최소 2일 필요)`,
+        mlFeatures: hasMLFeatures ? null : `집중도 측정 데이터가 ${totalMLFeatures}개로 부족합니다 (최소 10개 필요)`
+      }
+    }
+  }
+
+  /**
    * 주간 리포트 데이터 구성
    */
   private static buildWeeklyReportData(
@@ -903,7 +943,8 @@ export class ReportService {
     samples: any[],
     events: any[],
     mlFeatures: any[],
-    prevSessions: any[]
+    prevSessions: any[],
+    dataQuality: any
   ) {
     const { startDate, endDate } = weekPeriod
 
@@ -954,7 +995,8 @@ export class ReportService {
       timeSeriesData,
       activityData,
       achievements,
-      feedback
+      feedback,
+      dataQuality
     }
   }
 

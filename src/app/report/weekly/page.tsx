@@ -10,7 +10,13 @@ import { useState, useRef, useEffect } from "react"
 import { AnimatePresence } from "framer-motion"
 
 // 통합된 주간 집중도 분석 컴포넌트
-const WeeklyFocusAnalysis = ({ data }: { data: Array<{ dayOfWeek: string; focusScore: number }> }) => {
+const WeeklyFocusAnalysis = ({ 
+  data, 
+  isDataSufficient 
+}: { 
+  data: Array<{ dayOfWeek: string; focusScore: number }>; 
+  isDataSufficient?: boolean; 
+}) => {
   const [hoveredDay, setHoveredDay] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ day: number; hour: number } | null>(null)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
@@ -56,14 +62,40 @@ const WeeklyFocusAnalysis = ({ data }: { data: Array<{ dayOfWeek: string; focusS
 
   const heatmapData = generateMockData()
 
-  if (!data || data.length === 0) {
+  if (!data || data.length === 0 || !isDataSufficient) {
     return (
-      <div className="flex justify-center items-center h-64 bg-gradient-to-br from-slate-50 to-white rounded-2xl border border-slate-100">
-        <div className="text-center text-slate-500">
-          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-          <p>데이터가 없습니다</p>
-        </div>
-      </div>
+      <Card className="rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-500 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border-0 overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-purple-500/5 to-indigo-500/5 rounded-3xl" />
+        <CardHeader className="pb-6 relative z-10">
+          <CardTitle className="flex items-center gap-3 text-2xl font-bold text-slate-900">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl">
+              <Activity className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <div>주간 집중도 분석</div>
+              <div className="text-sm font-normal text-slate-600 mt-1">
+                {!isDataSufficient ? "데이터 수집 중입니다" : "요일별 및 시간대별 집중 패턴을 확인하세요"}
+              </div>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-8 pb-8">
+          <div className="flex justify-center items-center h-64 bg-gradient-to-br from-slate-50 to-white rounded-2xl border border-slate-100">
+            <div className="text-center text-slate-500">
+              <BarChart3 className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+              <p className="text-lg font-medium mb-2">
+                {!isDataSufficient ? "데이터 수집 중" : "데이터가 없습니다"}
+              </p>
+              <p className="text-sm">
+                {!isDataSufficient 
+                  ? "더 많은 학습 세션을 진행하시면 상세한 분석을 제공해드려요" 
+                  : "학습 데이터가 없어 분석할 수 없습니다"
+                }
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -459,7 +491,7 @@ const WeeklyFocusAnalysis = ({ data }: { data: Array<{ dayOfWeek: string; focusS
 }
 
 // 주간 목표 달성 컴포넌트
-const WeeklyGoals = ({ achievements }: { achievements?: any[] }) => {
+const WeeklyGoals = ({ achievements, isDataSufficient }: { achievements?: any[]; isDataSufficient?: boolean }) => {
   // 기본 목표 설정 (데이터가 없을 때)
   const defaultGoals = [
     {
@@ -500,6 +532,28 @@ const WeeklyGoals = ({ achievements }: { achievements?: any[] }) => {
         completed: achievement.completed
       }))
     : defaultGoals
+
+  if (!isDataSufficient) {
+    return (
+      <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/20 border-0">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3 text-xl font-bold text-slate-900">
+            <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            이번 주 목표
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <Target className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+            <p className="text-lg font-medium text-slate-600 mb-2">목표 달성률 측정 준비 중</p>
+            <p className="text-sm text-slate-500">더 많은 학습 데이터가 수집되면 상세한 목표 달성률을 확인할 수 있어요</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border-0">
@@ -557,19 +611,111 @@ const WeeklyGoals = ({ achievements }: { achievements?: any[] }) => {
   )
 }
 
+// 데이터 부족 상태 컴포넌트
+const InsufficientDataMessage = ({ dataQuality }: { dataQuality: any }) => {
+  if (!dataQuality) return null
+
+  const insufficientReasons = Object.values(dataQuality.reasons).filter(reason => reason !== null) as string[]
+
+  return (
+    <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-orange-50/30 to-red-50/20 border-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 text-xl font-bold text-slate-900">
+          <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center">
+            <AlertCircle className="w-5 h-5 text-white" />
+          </div>
+          데이터가 부족합니다
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {/* 현재 데이터 현황 */}
+          <div className="bg-white/60 rounded-xl p-6 border border-orange-200">
+            <h4 className="text-lg font-semibold text-orange-900 mb-4">현재 데이터 현황</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-orange-700">학습 세션:</span>
+                <span className="font-bold text-orange-800">{dataQuality.totalSessions}개</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-700">총 학습 시간:</span>
+                <span className="font-bold text-orange-800">{dataQuality.totalFocusTime}분</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-700">활동한 날:</span>
+                <span className="font-bold text-orange-800">{dataQuality.activeDays}일</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-700">집중도 측정:</span>
+                <span className="font-bold text-orange-800">{dataQuality.totalMLFeatures}회</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 부족한 부분 안내 */}
+          <div className="bg-white/60 rounded-xl p-6 border border-orange-200">
+            <h4 className="text-lg font-semibold text-orange-900 mb-4">개선이 필요한 부분</h4>
+            <div className="space-y-3">
+              {insufficientReasons.map((reason, index) => (
+                <div key={index} className="flex items-start gap-3">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                  <span className="text-orange-800">{reason}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 개선 방안 */}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+            <h4 className="text-lg font-semibold text-indigo-900 mb-4">💡 개선 방안</h4>
+            <div className="space-y-3 text-sm text-indigo-800">
+              <p className="font-medium">더 정확한 분석을 위해 다음을 시도해보세요:</p>
+              <div className="space-y-2">
+                <div className="flex items-start gap-3">
+                  <span className="text-indigo-600">🎯</span>
+                  <span>일주일 동안 최소 2-3일은 꾸준히 학습해보세요</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-indigo-600">⏰</span>
+                  <span>한 번에 15분 이상 집중하여 학습해보세요</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-indigo-600">📹</span>
+                  <span>웹캠을 켜고 얼굴이 잘 보이도록 설정해주세요</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-indigo-600">🔄</span>
+                  <span>다음 주에 다시 확인해보시면 더 자세한 분석을 받을 수 있어요</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // 주간 학습 패턴 분석
 const WeeklyLearningPatterns = ({ 
   patterns, 
   weeklyData, 
   gptInsights, 
-  insightsLoading 
+  insightsLoading,
+  isDataSufficient 
 }: { 
   patterns: any; 
   weeklyData: any; 
   gptInsights?: any[];
   insightsLoading?: boolean;
+  isDataSufficient?: boolean;
 }) => {
   if (!weeklyData) return null
+
+  // 데이터가 부족한 경우
+  if (!isDataSufficient) {
+    return <InsufficientDataMessage dataQuality={weeklyData.dataQuality} />
+  }
 
   // 아이콘 매핑
   const getIconComponent = (iconName: string) => {
@@ -785,6 +931,10 @@ export default function WeeklyReportPage() {
   const { patterns } = useWeeklyPatterns()
   const { data: gptInsights, isLoading: insightsLoading } = useWeeklyInsights(weeklyData)
 
+  // 데이터 충분성 체크
+  const isDataSufficient = weeklyData?.dataQuality?.isDataSufficient ?? false
+  const dataQuality = weeklyData?.dataQuality
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
@@ -882,7 +1032,7 @@ export default function WeeklyReportPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <WeeklyGoals achievements={weeklyData?.achievements} />
+            <WeeklyGoals achievements={weeklyData?.achievements} isDataSufficient={isDataSufficient} />
           </motion.div>
 
           {/* 통합된 주간 집중도 분석 */}
@@ -891,7 +1041,7 @@ export default function WeeklyReportPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <WeeklyFocusAnalysis data={weeklyFocusChartData} />
+            <WeeklyFocusAnalysis data={weeklyFocusChartData} isDataSufficient={isDataSufficient} />
           </motion.div>
 
           {/* 학습 패턴 분석 */}
@@ -905,6 +1055,7 @@ export default function WeeklyReportPage() {
               weeklyData={weeklyData} 
               gptInsights={gptInsights}
               insightsLoading={insightsLoading}
+              isDataSufficient={isDataSufficient}
             />
           </motion.div>
         </div>
