@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
-import { mockWeeklyReportData } from '@/lib/mockData'
+import { ReportService } from '@/lib/database/reportService'
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,13 +19,28 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
-    const week = parseInt(searchParams.get('week') || '1')
+    const week = parseInt(searchParams.get('week') || getCurrentWeek().toString())
     
     console.log(`📊 Weekly report request for year: ${year}, week: ${week}, userId: ${user.id}`)
 
-    // Mock 데이터 반환 (개발용)
-    console.log('✅ Returning mock weekly report data')
-    return NextResponse.json(mockWeeklyReportData)
+    // 실제 데이터베이스에서 주간 리포트 생성
+    const result = await ReportService.generateWeeklyReportServer(
+      user.id,
+      year,
+      week,
+      supabase
+    )
+
+    if (!result.success) {
+      console.error('❌ Weekly report generation failed:', result.error)
+      return NextResponse.json(
+        { error: result.error || 'Failed to generate weekly report' },
+        { status: 500 }
+      )
+    }
+
+    console.log('✅ Weekly report generated successfully')
+    return NextResponse.json(result.data)
 
   } catch (error) {
     console.error('❌ Weekly report API error:', error)
@@ -34,4 +49,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+/**
+ * 현재 주차 계산 헬퍼 함수
+ */
+function getCurrentWeek(): number {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), 0, 1)
+  const days = Math.floor((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000))
+  return Math.ceil((days + start.getDay() + 1) / 7)
 } 

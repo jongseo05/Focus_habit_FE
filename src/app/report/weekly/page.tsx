@@ -7,7 +7,6 @@ import { BarChart3, ArrowLeft, Calendar, Loader2, AlertCircle, TrendingUp, Targe
 import Link from "next/link"
 import { useWeeklyReport, useWeeklyStats, useWeeklyPatterns } from "@/hooks/useWeeklyReport"
 import { useState, useRef, useEffect } from "react"
-import { mockWeeklyFocusChartData } from "@/lib/mockData"
 import { AnimatePresence } from "framer-motion"
 
 // 통합된 주간 집중도 분석 컴포넌트
@@ -460,33 +459,47 @@ const WeeklyFocusAnalysis = ({ data }: { data: Array<{ dayOfWeek: string; focusS
 }
 
 // 주간 목표 달성 컴포넌트
-const WeeklyGoals = () => {
-  const goals = [
+const WeeklyGoals = ({ achievements }: { achievements?: any[] }) => {
+  // 기본 목표 설정 (데이터가 없을 때)
+  const defaultGoals = [
     {
-      id: 1,
+      id: "daily_streak",
       title: "5일 연속 학습",
-      progress: 4,
+      progress: 0,
       target: 5,
       icon: <TrendingUp className="w-5 h-5" />,
       color: "from-green-500 to-emerald-600"
     },
     {
-      id: 2,
+      id: "focus_score",
       title: "평균 집중도 80점 이상",
-      progress: 75,
+      progress: 0,
       target: 80,
       icon: <Target className="w-5 h-5" />,
       color: "from-blue-500 to-blue-600"
     },
     {
-      id: 3,
+      id: "study_time",
       title: "총 학습 시간 20시간",
-      progress: 18,
+      progress: 0,
       target: 20,
       icon: <Clock className="w-5 h-5" />,
       color: "from-purple-500 to-purple-600"
     }
   ]
+
+  // 실제 성취도 데이터가 있으면 사용, 없으면 기본값 사용
+  const goals = achievements && achievements.length > 0 
+    ? achievements.map((achievement, index) => ({
+        id: achievement.id,
+        title: achievement.title,
+        progress: achievement.progress,
+        target: achievement.target,
+        icon: defaultGoals[index]?.icon || <Target className="w-5 h-5" />,
+        color: defaultGoals[index]?.color || "from-blue-500 to-blue-600",
+        completed: achievement.completed
+      }))
+    : defaultGoals
 
   return (
     <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border-0">
@@ -545,8 +558,64 @@ const WeeklyGoals = () => {
 }
 
 // 주간 학습 패턴 분석
-const WeeklyLearningPatterns = ({ patterns }: { patterns: any }) => {
-  if (!patterns) return null
+const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weeklyData: any }) => {
+  if (!weeklyData) return null
+
+  // 실제 데이터에서 인사이트 생성
+  const generateInsights = () => {
+    const overview = weeklyData.overview
+    const timeData = weeklyData.timeSeriesData || []
+    const feedback = weeklyData.feedback || []
+    
+    const insights = []
+
+    // 1. 학습 스타일 분석
+    const bestDay = timeData.reduce((best: any, current: any) => 
+      current.focusScore > best.focusScore ? current : best, 
+      { focusScore: 0, dayOfWeek: '월' }
+    )
+    
+    insights.push({
+      type: '학습 스타일 분석',
+      icon: <Clock className="w-5 h-5 text-white" />,
+      color: 'bg-blue-500',
+      title: `'${bestDay.dayOfWeek}요일형 학습자'입니다!`,
+      description: `${bestDay.dayOfWeek}요일 집중도가 ${bestDay.focusScore}점으로 가장 높았어요.`,
+      advice: '💡 이 요일에 중요한 학습을 계획하세요.'
+    })
+
+    // 2. 집중력 트렌드 분석  
+    const trendText = overview.trend === 'up' ? '상승' : overview.trend === 'down' ? '하락' : '안정'
+    const trendColor = overview.trend === 'up' ? 'text-green-600' : overview.trend === 'down' ? 'text-red-600' : 'text-blue-600'
+    
+    insights.push({
+      type: '집중력 트렌드',
+      icon: <TrendingUp className="w-5 h-5 text-white" />,
+      color: 'bg-emerald-500',
+      title: `지난 주 대비 집중도 ${trendColor.includes('green') ? '향상' : trendColor.includes('red') ? '저하' : '유지'}`,
+      description: `평균 집중도가 ${overview.change}점 ${trendText}했습니다.`,
+      advice: overview.trend === 'up' ? '💡 현재 패턴을 유지하세요!' : '💡 학습 환경을 점검해보세요.'
+    })
+
+    // 3. 피드백 기반 조언
+    if (feedback.length > 0) {
+      const highPriorityFeedback = feedback.find((f: any) => f.priority === 'high')
+      if (highPriorityFeedback) {
+        insights.push({
+          type: '개선 제안',
+          icon: <BarChart3 className="w-5 h-5 text-white" />,
+          color: 'bg-purple-500',
+          title: highPriorityFeedback.title,
+          description: highPriorityFeedback.message,
+          advice: '💡 ' + (highPriorityFeedback.actionable ? '즉시 적용 가능한 조언입니다.' : '참고하세요.')
+        })
+      }
+    }
+
+    return insights
+  }
+
+  const insights = generateInsights()
 
   return (
     <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-green-50/30 to-emerald-50/20 border-0">
@@ -572,58 +641,51 @@ const WeeklyLearningPatterns = ({ patterns }: { patterns: any }) => {
             </div>
             
             <div className="space-y-6">
-              {/* 1. 학습 스타일 분석 */}
-              <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-white" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-indigo-900">학습 스타일 분석</h4>
-                </div>
-                <div className="space-y-3 text-sm text-indigo-800">
-                  <p className="font-medium text-base">당신은 '아침형 학습자'입니다!</p>
-                  <p>오전 9-11시 집중도가 평균보다 <span className="font-bold text-blue-600">25%</span> 높아요.</p>
-                  <p className="text-indigo-600">💡 이 시간대에 중요한 학습을 계획하세요.</p>
-                </div>
-              </div>
-              
-              {/* 2. 집중력 저하 패턴 */}
-              <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-white" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-indigo-900">집중력 저하 패턴</h4>
-                </div>
-                <div className="space-y-3 text-sm text-indigo-800">
-                  <p className="font-medium text-base">평균적으로 <span className="font-bold text-emerald-600">45분</span> 후에 집중도가 <span className="font-bold text-red-600">30%</span> 떨어집니다.</p>
-                  <p className="text-indigo-600">💡 뽀모도로 기법(25분 집중 + 5분 휴식)을 시도해보세요.</p>
-                </div>
-              </div>
-              
-              {/* 3. 학습 효율성 비교 */}
-              <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
-                    <BarChart3 className="w-5 h-5 text-white" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-indigo-900">학습 효율성 비교</h4>
-                </div>
-                <div className="space-y-3 text-sm text-indigo-800">
-                  <p className="font-medium text-base">세션 길이별 평균 집중도:</p>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span>30분 세션:</span>
-                      <span className="font-bold text-green-600">85점</span>
+              {insights.map((insight, index) => (
+                <div key={index} className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-10 h-10 ${insight.color} rounded-lg flex items-center justify-center`}>
+                      {insight.icon}
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span>60분 세션:</span>
-                      <span className="font-bold text-orange-600">72점</span>
+                    <h4 className="text-lg font-semibold text-indigo-900">{insight.type}</h4>
+                  </div>
+                  <div className="space-y-3 text-sm text-indigo-800">
+                    <p className="font-medium text-base">{insight.title}</p>
+                    <p>{insight.description}</p>
+                    <p className="text-indigo-600">{insight.advice}</p>
+                  </div>
+                </div>
+              ))}
+              
+              {/* 통계 요약 추가 */}
+              {weeklyData.overview && (
+                <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
+                      <BarChart3 className="w-5 h-5 text-white" />
+                    </div>
+                    <h4 className="text-lg font-semibold text-indigo-900">주간 통계 요약</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm text-indigo-800">
+                    <div className="flex justify-between">
+                      <span>총 세션 수:</span>
+                      <span className="font-bold text-indigo-600">{weeklyData.overview.totalSessions}회</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>총 집중 시간:</span>
+                      <span className="font-bold text-indigo-600">{Math.round(weeklyData.overview.totalFocusTime / 60)}시간</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>평균 집중도:</span>
+                      <span className="font-bold text-indigo-600">{weeklyData.overview.avgScore}점</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>최고 집중도:</span>
+                      <span className="font-bold text-green-600">{weeklyData.overview.peakScore}점</span>
                     </div>
                   </div>
-                  <p className="text-indigo-600">💡 짧은 세션이 더 효율적입니다!</p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
        </CardContent>
@@ -664,6 +726,12 @@ export default function WeeklyReportPage() {
       </div>
     )
   }
+
+  // 실제 데이터에서 요일별 집중도 차트 데이터 생성
+  const weeklyFocusChartData = weeklyData?.timeSeriesData?.map(day => ({
+    dayOfWeek: day.dayOfWeek,
+    focusScore: day.focusScore
+  })) || []
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
@@ -726,7 +794,7 @@ export default function WeeklyReportPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <WeeklyGoals />
+            <WeeklyGoals achievements={weeklyData?.achievements} />
           </motion.div>
 
           {/* 통합된 주간 집중도 분석 */}
@@ -735,7 +803,7 @@ export default function WeeklyReportPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <WeeklyFocusAnalysis data={mockWeeklyFocusChartData} />
+            <WeeklyFocusAnalysis data={weeklyFocusChartData} />
           </motion.div>
 
           {/* 학습 패턴 분석 */}
@@ -744,7 +812,7 @@ export default function WeeklyReportPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <WeeklyLearningPatterns patterns={patterns} />
+            <WeeklyLearningPatterns patterns={patterns} weeklyData={weeklyData} />
           </motion.div>
         </div>
       </main>

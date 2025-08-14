@@ -441,3 +441,84 @@ export interface MLFeatures {
   focus_score?: number
   created_at: Timestamp
 } 
+
+// =====================================================
+// 19. 주간 리포트 관련 확장 타입들
+// =====================================================
+
+export interface WeeklyReportData {
+  year: number
+  week: number
+  period: {
+    startDate: string
+    endDate: string
+  }
+  overview: {
+    totalSessions: number
+    totalFocusTime: number
+    avgScore: number
+    peakScore: number
+    lowestScore: number
+    trend: "up" | "down" | "stable"
+    change: number
+  }
+  breakdown: {
+    attention: number
+    posture: number
+    phoneUsage: number
+    consistency: number
+  }
+  timeSeriesData: Array<{
+    timestamp: string
+    focusScore: number
+    sessionDuration: number
+    distractions: number
+    dayOfWeek: string
+  }>
+  activityData: Array<{
+    timestamp: string
+    action: string
+    type: "positive" | "negative" | "neutral"
+    impact: number
+    description: string
+  }>
+  achievements: Array<{
+    id: string
+    title: string
+    description: string
+    progress: number
+    target: number
+    completed: boolean
+    badge: string
+    category: "focus" | "consistency" | "improvement" | "milestone"
+  }>
+  feedback: Array<{
+    type: "success" | "warning" | "info" | "tip"
+    title: string
+    message: string
+    actionable: boolean
+    priority: "high" | "medium" | "low"
+  }>
+}
+
+export interface DayAnalysis {
+  dayOfWeek: string
+  date: string
+  totalSessions: number
+  totalFocusTime: number
+  avgScore: number
+  peakScore: number
+  distractions: number
+  events: FocusEvent[]
+}
+
+export interface WeeklyInsight {
+  bestPerformanceDay: string
+  worstPerformanceDay: string
+  consistencyScore: number
+  improvementTrend: number
+  recommendedFocusTime: string
+  mainDistractionPattern: string
+}
+
+// ===================================================== 
