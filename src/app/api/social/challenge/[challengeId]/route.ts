@@ -15,6 +15,7 @@ export async function PATCH(
     }
 
     const { challengeId } = await params
+    console.log('PATCH 요청 받음 - challengeId:', challengeId, '타입:', typeof challengeId)
     const body = await request.json()
     const { state, end_at } = body
 

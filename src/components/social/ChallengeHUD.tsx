@@ -24,22 +24,33 @@ import type {
   ChallengeTick 
 } from '@/types/social'
 
-interface ChallengeHUDProps {
-  challenge: Challenge
-  participants: ChallengeParticipant[]
-  currentUserId: string
-  currentFocusScore?: number
-  currentScores?: {[key: string]: number}
-  onClose?: () => void
-  onMinimize?: () => void
-  isMinimized?: boolean
-}
-
-interface ParticipantWithUser extends ChallengeParticipant {
+interface ParticipantWithUser {
+  participant_id: string
+  user_id: string
+  room_id: string
+  joined_at: string
+  left_at?: string
+  current_focus_score: number | undefined
+  is_host: boolean
+  is_connected: boolean
+  last_activity: string
   user: {
     name: string
     avatar_url?: string
   }
+}
+
+interface ChallengeHUDProps {
+  challenge: Challenge
+  participants: ParticipantWithUser[]
+  currentUserId: string
+  currentFocusScore?: number
+  currentScores?: {[key: string]: number}
+  timeLeft?: number
+  isBreakTime?: boolean
+  onClose?: () => void
+  onMinimize?: () => void
+  isMinimized?: boolean
 }
 
 export function ChallengeHUD({ 
@@ -48,18 +59,38 @@ export function ChallengeHUD({
   currentUserId, 
   currentFocusScore = 0,
   currentScores: externalScores = {},
+  timeLeft: externalTimeLeft,
+  isBreakTime: externalIsBreakTime,
   onClose, 
   onMinimize, 
   isMinimized = false 
 }: ChallengeHUDProps) {
 
-  const [timeLeft, setTimeLeft] = useState<number>(0)
-  const [isBreakTime, setIsBreakTime] = useState(false)
+  const [timeLeft, setTimeLeft] = useState<number>(externalTimeLeft || 0)
+  const [isBreakTime, setIsBreakTime] = useState(externalIsBreakTime || false)
   const [rankings, setRankings] = useState<Array<{userId: string, score: number, rank: number}>>([])
   const [isExpanded, setIsExpanded] = useState(false)
 
-  // 시간 계산
+  // 외부에서 전달받은 시간 사용
+  useEffect(() => {
+    if (externalTimeLeft !== undefined) {
+      console.log('ChallengeHUD: 외부 시간 업데이트:', { externalTimeLeft, currentTimeLeft: timeLeft })
+      setTimeLeft(externalTimeLeft)
+    }
+  }, [externalTimeLeft])
+
+  useEffect(() => {
+    if (externalIsBreakTime !== undefined) {
+      setIsBreakTime(externalIsBreakTime)
+    }
+  }, [externalIsBreakTime])
+
+  // 시간 계산 (외부 시간이 없을 때만 사용)
   const calculateTimeLeft = useCallback(() => {
+    if (externalTimeLeft !== undefined) {
+      return externalTimeLeft
+    }
+    
     if (!challenge.start_at) return 0
     
     const startTime = new Date(challenge.start_at).getTime()
@@ -96,10 +127,15 @@ export function ChallengeHUD({
     }
     
     return 0
-  }, [challenge])
+  }, [challenge.start_at, challenge.mode, challenge.config, externalTimeLeft])
 
-  // 타이머 업데이트
+  // 타이머 업데이트 (외부 시간이 없을 때만 자체 계산 사용)
   useEffect(() => {
+    // 외부에서 시간을 전달받으면 자체 타이머를 사용하지 않음
+    if (externalTimeLeft !== undefined) {
+      return
+    }
+    
     const updateTimer = () => {
       const remaining = calculateTimeLeft()
       setTimeLeft(remaining)
@@ -113,18 +149,13 @@ export function ChallengeHUD({
     const interval = setInterval(updateTimer, 1000)
     
     return () => clearInterval(interval)
-  }, [calculateTimeLeft])
+  }, [calculateTimeLeft, externalTimeLeft])
 
   // 실시간 점수 업데이트 - 외부에서 전달받은 점수 사용
   useEffect(() => {
     if (challenge.state === 'active') {
-      // 외부에서 전달받은 점수 사용
+      // 외부에서 전달받은 점수만 사용 (집중도 값이 아닌 실제 점수)
       const allScores = { ...externalScores }
-      
-      // 현재 사용자의 점수가 없으면 집중도 점수로 설정
-      if (!allScores[currentUserId] && currentFocusScore > 0) {
-        allScores[currentUserId] = currentFocusScore
-      }
       
       // 순위 계산
       const sortedRankings = Object.entries(allScores)
@@ -135,7 +166,7 @@ export function ChallengeHUD({
       setRankings(sortedRankings)
       console.log('순위 업데이트:', sortedRankings)
     }
-  }, [challenge.state, currentFocusScore, currentUserId, externalScores])
+  }, [challenge.state, currentUserId, externalScores])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -159,6 +190,17 @@ export function ChallengeHUD({
       externalScoresKeys: Object.keys(externalScores)
     })
     return score
+  }
+
+  const getCurrentUserName = () => {
+    const currentParticipant = participants.find(p => p.user_id === currentUserId)
+    console.log('현재 사용자 정보:', { currentUserId, currentParticipant, allParticipants: participants })
+    return currentParticipant?.user?.name || '나'
+  }
+
+  const getParticipantName = (userId: string) => {
+    const participant = participants.find(p => p.user_id === userId)
+    return participant?.user?.name || `사용자 ${userId.slice(0, 4)}`
   }
 
   // 최소화된 상태
@@ -254,10 +296,10 @@ export function ChallengeHUD({
               <div className="flex items-center gap-2">
                 <Avatar className="h-6 w-6">
                   <AvatarFallback className="text-xs bg-blue-100 text-blue-600">
-                    Me
+                    {getCurrentUserName().slice(0, 1)}
                   </AvatarFallback>
                 </Avatar>
-                <span className="text-sm font-medium">나</span>
+                <span className="text-sm font-medium">{getCurrentUserName()}</span>
               </div>
               <div className="text-right">
                 <div className="text-sm font-bold text-blue-700">
@@ -300,13 +342,13 @@ export function ChallengeHUD({
                         }`}>
                           {index === 0 ? <Crown className="h-3 w-3" /> : rank.rank}
                         </div>
-                                                  <Avatar className="h-5 w-5">
-                            <AvatarFallback className="text-xs">
-                              {rank.userId === currentUserId ? 'M' : 'U'}
-                            </AvatarFallback>
-                          </Avatar>
+                                                                          <Avatar className="h-5 w-5">
+                          <AvatarFallback className="text-xs">
+                            {getParticipantName(rank.userId).slice(0, 1)}
+                          </AvatarFallback>
+                        </Avatar>
                         <span className="text-xs font-medium truncate max-w-16">
-                          {rank.userId === currentUserId ? '나' : `사용자 ${rank.userId.slice(0, 4)}`}
+                          {getParticipantName(rank.userId)}
                         </span>
                       </div>
                       <div className="text-xs font-bold text-blue-700">

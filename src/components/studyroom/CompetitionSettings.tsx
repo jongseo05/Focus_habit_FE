@@ -10,6 +10,7 @@ interface CompetitionSettingsProps {
   breakDuration: number
   customHours: number
   customMinutes: number
+  hasPendingInvitation: boolean
   onActiveTabChange: (tab: 'pomodoro' | 'custom') => void
   onCompetitionDurationChange: (duration: number) => void
   onBreakDurationChange: (duration: number) => void
@@ -25,6 +26,7 @@ export function CompetitionSettings({
   breakDuration,
   customHours,
   customMinutes,
+  hasPendingInvitation,
   onActiveTabChange,
   onCompetitionDurationChange,
   onBreakDurationChange,
@@ -161,10 +163,10 @@ export function CompetitionSettings({
             <Button 
               onClick={onStartCompetition}
               className="flex-1 bg-blue-600 hover:bg-blue-700 h-12 text-base font-medium"
-              disabled={activeTab === 'custom' && customHours === 0 && customMinutes === 0}
+              disabled={activeTab === 'custom' && customHours === 0 && customMinutes === 0 || hasPendingInvitation}
             >
               <Play className="h-5 w-5 mr-2" />
-              대결 시작
+              {hasPendingInvitation ? '대기 중인 초대가 있습니다' : '대결 시작'}
             </Button>
             <Button 
               variant="outline" 

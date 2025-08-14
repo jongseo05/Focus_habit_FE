@@ -38,6 +38,15 @@ export interface RoomParticipant {
   is_mic_on?: boolean
 }
 
+// 공통 ParticipantWithUser 인터페이스 (타입 충돌 해결)
+export interface ParticipantWithUser extends RoomParticipant {
+  user: {
+    name: string
+    avatar_url?: string
+  }
+  current_focus_score: number // required로 설정
+}
+
 export interface CreateStudyRoomData {
   host_id: UUID
   name: string
@@ -584,5 +593,54 @@ export interface ChallengeEndedPayload {
   final_scores: { [key: string]: number }
   final_rankings: { [key: string]: number }
   winner_id?: UUID
+  timestamp: Timestamp
+}
+
+// 대결 초대 관련 타입
+export interface ChallengeInvitation {
+  invitation_id: UUID
+  room_id: UUID
+  challenge_id: UUID
+  proposed_by: UUID
+  mode: 'pomodoro' | 'custom'
+  config: ChallengeConfig
+  status: 'pending' | 'accepted' | 'rejected' | 'expired'
+  responses: { [user_id: string]: 'pending' | 'accepted' | 'rejected' }
+  created_at: Timestamp
+  updated_at?: Timestamp // optional로 변경 (데이터베이스에 아직 없을 수 있음)
+  expires_at: Timestamp
+}
+
+export interface ChallengeInvitationResponse {
+  invitation_id: UUID
+  user_id: UUID
+  response: 'accepted' | 'rejected'
+  timestamp: Timestamp
+}
+
+// 대결 초대 Realtime 이벤트 타입
+export interface ChallengeInvitationCreatedPayload {
+  invitation_id: UUID
+  room_id: UUID
+  challenge_id: UUID
+  proposed_by: UUID
+  mode: 'pomodoro' | 'custom'
+  config: ChallengeConfig
+  created_at: Timestamp
+  expires_at: Timestamp
+}
+
+export interface ChallengeInvitationResponsePayload {
+  invitation_id: UUID
+  user_id: UUID
+  response: 'accepted' | 'rejected'
+  responses: { [user_id: string]: 'pending' | 'accepted' | 'rejected' }
+  status: 'pending' | 'accepted' | 'rejected' | 'expired'
+  timestamp: Timestamp
+}
+
+export interface ChallengeInvitationExpiredPayload {
+  invitation_id: UUID
+  room_id: UUID
   timestamp: Timestamp
 }

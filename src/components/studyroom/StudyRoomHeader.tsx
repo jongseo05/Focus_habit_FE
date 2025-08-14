@@ -15,14 +15,7 @@ import {
   LogOut,
   Hash
 } from 'lucide-react'
-import type { StudyRoom, RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { StudyRoom, ParticipantWithUser } from '@/types/social'
 
 interface StudyRoomHeaderProps {
   room: StudyRoom

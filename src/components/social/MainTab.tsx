@@ -4,14 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { VideoOff } from 'lucide-react'
 import { VideoGrid } from './VideoGrid'
 import { FocusScoreChart } from './FocusScoreChart'
-import type { RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { ParticipantWithUser } from '@/types/social'
 
 interface MainTabProps {
   participants: ParticipantWithUser[]

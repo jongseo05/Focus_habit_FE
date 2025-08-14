@@ -25,21 +25,30 @@ import type {
   ChallengeTick 
 } from '@/types/social'
 
+interface ParticipantWithUser {
+  participant_id: string
+  user_id: string
+  room_id: string
+  joined_at: string
+  left_at?: string
+  current_focus_score: number | undefined
+  is_host: boolean
+  is_connected: boolean
+  last_activity: string
+  user: {
+    name: string
+    avatar_url?: string
+  }
+}
+
 interface ChallengeResultPanelProps {
   challenge: Challenge
-  participants: ChallengeParticipant[]
+  participants: ParticipantWithUser[]
   finalScores: {[key: string]: number}
   badges: {[key: string]: string[]}
   onClose?: () => void
   onRestart?: () => void
   onShare?: () => void
-}
-
-interface ParticipantWithUser extends ChallengeParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
 }
 
 export function ChallengeResultPanel({ 
@@ -99,6 +108,16 @@ export function ChallengeResultPanel({
   }
 
   const getChallengeDuration = () => {
+    // 실제 대결 시간 계산 (시작 시간과 종료 시간의 차이)
+    if (challenge.start_at && challenge.end_at) {
+      const startTime = new Date(challenge.start_at).getTime()
+      const endTime = new Date(challenge.end_at).getTime()
+      const durationMs = endTime - startTime
+      const durationMinutes = Math.floor(durationMs / (1000 * 60))
+      return durationMinutes
+    }
+    
+    // 종료 시간이 없으면 설정된 시간 반환
     if (challenge.mode === 'pomodoro' && challenge.config.work) {
       return challenge.config.work + (challenge.config.break || 5)
     } else if (challenge.mode === 'custom' && challenge.config.durationMin) {
@@ -110,26 +129,24 @@ export function ChallengeResultPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden bg-white/95 backdrop-blur-sm">
-        <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-6 w-6" />
-              🏆 집중도 대결 결과
-            </CardTitle>
+        <CardContent className="p-6 space-y-6 max-h-[90vh] overflow-y-auto">
+          {/* 헤더 */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-6 w-6 text-blue-600" />
+              <span className="text-xl font-semibold text-blue-800">🏆 집중도 대결 결과</span>
+            </div>
             {onClose && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onClose}
-                className="text-white hover:bg-white/20"
+                className="text-gray-500 hover:text-gray-700"
               >
                 <X className="h-4 w-4" />
               </Button>
             )}
           </div>
-        </CardHeader>
-
-        <CardContent className="p-6 space-y-6 max-h-[calc(90vh-120px)] overflow-y-auto">
           {/* 우승자 섹션 */}
           {winner && winnerParticipant && (
             <div className="text-center space-y-4">

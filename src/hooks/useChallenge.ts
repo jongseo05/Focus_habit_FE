@@ -43,6 +43,11 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       const result = await response.json()
       const newChallenge = result.challenge
       
+      // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
+      if (newChallenge && newChallenge.challenge_id) {
+        newChallenge.challenge_id = String(newChallenge.challenge_id)
+      }
+      
       setCurrentChallenge(newChallenge)
       setChallenges(prev => [newChallenge, ...prev])
       
@@ -111,6 +116,11 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       const result = await response.json()
       const updatedChallenge = result.challenge
       
+      // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
+      if (updatedChallenge && updatedChallenge.challenge_id) {
+        updatedChallenge.challenge_id = String(updatedChallenge.challenge_id)
+      }
+      
       setCurrentChallenge(prev => 
         prev?.challenge_id === challengeId ? updatedChallenge : prev
       )
@@ -121,6 +131,73 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       return updatedChallenge
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to end challenge'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 챌린지 시작
+  const startChallenge = useCallback(async (challengeId: string) => {
+    console.log('startChallenge 호출됨:', { challengeId, type: typeof challengeId })
+    console.log('challengeId 값:', challengeId)
+    console.log('challengeId가 문자열인지 확인:', typeof challengeId === 'string')
+    
+    // challengeId가 문자열이 아니면 문자열로 변환
+    const sanitizedChallengeId = typeof challengeId === 'string' ? challengeId : String(challengeId)
+    console.log('sanitizedChallengeId:', sanitizedChallengeId)
+    console.log('sanitizedChallengeId 타입:', typeof sanitizedChallengeId)
+    
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/social/challenge/${sanitizedChallengeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          state: 'active',
+          start_at: new Date().toISOString()
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to start challenge')
+      }
+
+      const result = await response.json()
+      const updatedChallenge = result.challenge
+      
+      // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
+      if (updatedChallenge && updatedChallenge.challenge_id) {
+        updatedChallenge.challenge_id = String(updatedChallenge.challenge_id)
+      }
+      
+      setCurrentChallenge(prev => {
+        console.log('setCurrentChallenge 호출:', {
+          prevChallengeId: prev?.challenge_id,
+          prevChallengeIdType: typeof prev?.challenge_id,
+          targetChallengeId: sanitizedChallengeId,
+          targetChallengeIdType: typeof sanitizedChallengeId,
+          shouldUpdate: prev?.challenge_id && String(prev.challenge_id) === sanitizedChallengeId
+        })
+        return prev?.challenge_id && String(prev.challenge_id) === sanitizedChallengeId ? updatedChallenge : prev
+      })
+      setChallenges(prev => 
+        prev.map(c => c.challenge_id && String(c.challenge_id) === sanitizedChallengeId ? updatedChallenge : c)
+      )
+      
+      console.log('챌린지 상태 업데이트 완료:', {
+        updatedChallenge,
+        updatedChallengeState: updatedChallenge?.state,
+        updatedChallengeId: updatedChallenge?.challenge_id
+      })
+      
+      return updatedChallenge
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start challenge'
       setError(errorMessage)
       throw err
     } finally {
@@ -142,15 +219,24 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       }
 
       const result = await response.json()
-      setChallenges(result.challenges || [])
+      const challenges = result.challenges || []
+      
+      // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
+      challenges.forEach((challenge: Challenge) => {
+        if (challenge && challenge.challenge_id) {
+          challenge.challenge_id = String(challenge.challenge_id)
+        }
+      })
+      
+      setChallenges(challenges)
       
       // 가장 최근 활성 챌린지 찾기
-      const activeChallenge = result.challenges?.find((c: Challenge) => c.state === 'active')
+      const activeChallenge = challenges.find((c: Challenge) => c.state === 'active')
       if (activeChallenge) {
         setCurrentChallenge(activeChallenge)
       }
       
-      return result.challenges
+      return challenges
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch challenges'
       setError(errorMessage)
@@ -218,6 +304,7 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
     createChallenge,
     joinChallenge,
     endChallenge,
+    startChallenge,
     fetchChallenges,
     fetchParticipants,
     updateScore,
