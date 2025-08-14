@@ -32,10 +32,11 @@ import type {
   Challenge,
   ChallengeParticipant,
   ChallengeInvitation,
-     ChallengeInvitationCreatedPayload,
-   ChallengeInvitationResponsePayload,
-   ChallengeInvitationExpiredPayload,
-   ChallengeStartedPayload
+      ChallengeInvitationCreatedPayload,
+    ChallengeInvitationResponsePayload,
+    ChallengeInvitationExpiredPayload,
+    ChallengeStartedPayload,
+    ChallengeEndedPayload
 } from '@/types/social'
 
 interface StudyRoomProps {
@@ -866,6 +867,61 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       }
     }
   }, [room?.room_id, isHost, activeTab, competitionDuration, customHours, customMinutes, participants])
+
+  // 대결 종료 이벤트 핸들러
+  const handleChallengeEnded = useCallback((data: ChallengeEndedPayload) => {
+    console.log('대결 종료 감지:', data)
+    
+    // 현재 룸의 대결인지 확인
+    if (data.room_id === room?.room_id) {
+      // 모든 참가자가 동시에 대결 종료
+      console.log('모든 참가자가 대결 종료')
+      
+      // HUD 오버레이 숨기기
+      setShowChallengeHUD(false)
+      
+      // 알림 추가
+      setNotifications(prev => [...prev, {
+        id: Date.now().toString(),
+        message: '대결이 종료되었습니다!',
+        type: 'leave'
+      }])
+      
+      // 결과 패널 표시를 위해 직접 결과 계산 및 표시
+      if (challenge.currentChallenge) {
+        // 최종 점수 계산 및 순위 결정
+        const finalScores = Object.entries(competitionScores)
+          .map(([userId, score]) => ({ userId, score }))
+          .sort((a, b) => b.score - a.score)
+
+        const winner = finalScores[0]?.userId || ''
+        const winnerName = participants.find(p => p.user_id === winner)?.user.name || 'Unknown'
+
+        // 결과 패널 표시
+        setFinalScores(competitionScores)
+        
+        // 배지 생성 (간단한 예시)
+        const badges: {[key: string]: string[]} = {}
+        Object.entries(competitionScores).forEach(([userId, score]) => {
+          const userBadges = []
+          if (score > 1000) userBadges.push('집중의 달인')
+          if (score > 500) userBadges.push('성실한 학습자')
+          if (score > 100) userBadges.push('첫걸음')
+          badges[userId] = userBadges
+        })
+        setChallengeBadges(badges)
+        
+        console.log('결과 패널 표시:', { finalScores, badges })
+        setShowResultPanel(true)
+        
+        // 기존 상태 정리
+        setCompetitionTimeLeft(0)
+        setCompetitionScores({})
+      }
+    }
+  }, [room?.room_id, challenge.currentChallenge, competitionScores, participants])
+
+
     
     const handleChallengeInvitationCleaned = useCallback((data: { room_id: string, cleaned_count: number }) => {
      console.log('대결 초대 정리 감지:', data)
@@ -959,28 +1015,29 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
    }, [room?.room_id, challenge.currentChallenge?.state, participants, handleFocusUpdate])
 
      // 소셜 Realtime 연결
-   const { 
-     isConnected, 
-     joinRoom, 
-     leaveRoom, 
-     sendFocusUpdate: sendFocusUpdateWS, 
-     sendEncouragement: sendEncouragementWS 
-   } = useSocialRealtime({
-     roomId: room?.room_id,
-     userId: user?.id,
-     onFocusUpdate: handleFocusUpdate,
-     onRoomJoin: handleRoomJoin,
-     onRoomLeave: handleRoomLeave,
-     onEncouragement: handleEncouragement,
-     onChallengeInvitationCreated: handleChallengeInvitationCreated,
-     onChallengeInvitationResponse: handleChallengeInvitationResponse,
-     onChallengeInvitationExpired: handleChallengeInvitationExpired,
-     onChallengeStarted: handleChallengeStarted,
-     onError: (error) => {
-       console.warn('Realtime 연결 실패, 폴링 방식으로 대체:', error)
-       // Realtime 연결 실패 시에도 폴링으로 계속 작동
-     }
-   })
+       const { 
+      isConnected, 
+      joinRoom, 
+      leaveRoom, 
+      sendFocusUpdate: sendFocusUpdateWS, 
+      sendEncouragement: sendEncouragementWS 
+    } = useSocialRealtime({
+      roomId: room?.room_id,
+      userId: user?.id,
+      onFocusUpdate: handleFocusUpdate,
+      onRoomJoin: handleRoomJoin,
+      onRoomLeave: handleRoomLeave,
+      onEncouragement: handleEncouragement,
+      onChallengeInvitationCreated: handleChallengeInvitationCreated,
+      onChallengeInvitationResponse: handleChallengeInvitationResponse,
+      onChallengeInvitationExpired: handleChallengeInvitationExpired,
+      onChallengeStarted: handleChallengeStarted,
+      onChallengeEnded: handleChallengeEnded,
+      onError: (error) => {
+        console.warn('Realtime 연결 실패, 폴링 방식으로 대체:', error)
+        // Realtime 연결 실패 시에도 폴링으로 계속 작동
+      }
+    })
 
   // Supabase Realtime 연결 후 룸 입장
   useEffect(() => {
@@ -1338,6 +1395,9 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
               // 초대 상태 설정
               setCurrentInvitation(invitationResult.invitation)
               setShowInvitationPanel(true)
+              
+              // API에서 이미 broadcast 이벤트를 전송하므로 여기서는 제거
+              console.log('대결 초대 생성 완료 - API에서 broadcast 이벤트 전송됨')
             } else if (invitationResponse.status === 409) {
               // 이미 대기 중인 초대가 있는 경우
               console.log('이미 대기 중인 대결 초대가 있습니다.')
@@ -1377,8 +1437,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       alert('챌린지 생성에 실패했습니다.')
     }
      }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, challenge, cleanupExpiredInvitations])
-
-  
 
   // 집중도 대결 종료
   const endCompetition = useCallback(async () => {
@@ -1472,6 +1530,8 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
   }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge])
 
+
+
   // 대결 타이머 (뽀모도로 사이클 포함)
   useEffect(() => {
     const isCompetitionActive = challenge.currentChallenge?.state === 'active'
@@ -1534,19 +1594,40 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
                      {/* 챌린지 HUD 오버레이 */}
         {showChallengeHUD && challenge.currentChallenge && (
-          <ChallengeHUD
-            challenge={challenge.currentChallenge}
-            participants={participants}
-            currentUserId={user?.id || ''}
-            currentFocusScore={currentFocusScore}
-            currentScores={competitionScores}
-            timeLeft={competitionTimeLeft}
-            isBreakTime={isBreakTime}
-            onClose={() => {
-              setShowChallengeHUD(false)
-              endCompetition()
-            }}
-          />
+                     <ChallengeHUD
+             challenge={challenge.currentChallenge}
+             participants={participants}
+             currentUserId={user?.id || ''}
+             currentFocusScore={currentFocusScore}
+             currentScores={competitionScores}
+             timeLeft={competitionTimeLeft}
+             isBreakTime={isBreakTime}
+             onClose={() => {
+               // 모든 참가자에게 경쟁 종료 알림 전송 (Supabase Realtime)
+               try {
+                 const supabase = supabaseBrowser()
+                 supabase
+                   .channel(`social_room:${room?.room_id}`)
+                   .send({
+                     type: 'broadcast',
+                     event: 'challenge_ended',
+                     payload: {
+                       challenge_id: challenge.currentChallenge?.challenge_id,
+                       room_id: room?.room_id,
+                       ended_by: user?.id,
+                       timestamp: new Date().toISOString()
+                     }
+                   })
+                 console.log('경쟁 종료 broadcast 이벤트 전송 완료')
+               } catch (error) {
+                 console.warn('경쟁 종료 알림 전송 실패:', error)
+               }
+               
+               // 로컬에서도 경쟁 종료 처리
+               setShowChallengeHUD(false)
+               endCompetition()
+             }}
+           />
         )}
 
              {/* 대결 초대 패널 */}

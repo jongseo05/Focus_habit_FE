@@ -29,6 +29,7 @@ interface UseSocialRealtimeOptions {
   onChallengeInvitationResponse?: (data: ChallengeInvitationResponsePayload) => void
   onChallengeInvitationExpired?: (data: ChallengeInvitationExpiredPayload) => void
   onChallengeStarted?: (data: ChallengeStartedPayload) => void
+  onChallengeEnded?: (data: ChallengeEndedPayload) => void
   onError?: (error: any) => void
 }
 
@@ -45,6 +46,7 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeInvitationResponse,
     onChallengeInvitationExpired,
     onChallengeStarted,
+    onChallengeEnded,
     onError
   } = options
 
@@ -60,6 +62,7 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onChallengeInvitationResponseRef = useRef(onChallengeInvitationResponse)
   const onChallengeInvitationExpiredRef = useRef(onChallengeInvitationExpired)
   const onChallengeStartedRef = useRef(onChallengeStarted)
+  const onChallengeEndedRef = useRef(onChallengeEnded)
   
   // ref 업데이트
   useEffect(() => {
@@ -73,7 +76,8 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeInvitationResponseRef.current = onChallengeInvitationResponse
     onChallengeInvitationExpiredRef.current = onChallengeInvitationExpired
     onChallengeStartedRef.current = onChallengeStarted
-  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted])
+    onChallengeEndedRef.current = onChallengeEnded
+  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted, onChallengeEnded])
 
   // 참가자 변경 처리
   const handleParticipantChange = useCallback((payload: any) => {
@@ -316,6 +320,12 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
         console.log('대결 시작 이벤트 수신:', payload)
         if (onChallengeStartedRef.current) {
           onChallengeStartedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'challenge_ended' }, (payload) => {
+        console.log('대결 종료 이벤트 수신:', payload)
+        if (onChallengeEndedRef.current) {
+          onChallengeEndedRef.current(payload.payload)
         }
       })
       .on('presence', { event: 'sync' }, () => {

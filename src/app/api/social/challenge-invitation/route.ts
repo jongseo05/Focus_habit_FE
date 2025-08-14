@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     // Realtime으로 대결 초대 생성 알림 전송
     try {
       await supabase
-        .channel('challenge_invitations')
+        .channel(`social_room:${room_id}`)
         .send({
           type: 'broadcast',
           event: 'challenge_invitation_created',
