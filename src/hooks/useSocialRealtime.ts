@@ -30,6 +30,8 @@ interface UseSocialRealtimeOptions {
   onChallengeInvitationExpired?: (data: ChallengeInvitationExpiredPayload) => void
   onChallengeStarted?: (data: ChallengeStartedPayload) => void
   onChallengeEnded?: (data: ChallengeEndedPayload) => void
+  onFocusSessionStarted?: (data: { session_id: string, room_id: string, started_by: string }) => void
+  onFocusSessionEnded?: (data: { room_id: string, ended_by: string, duration_min: number }) => void
   onError?: (error: any) => void
 }
 
@@ -47,6 +49,8 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeInvitationExpired,
     onChallengeStarted,
     onChallengeEnded,
+    onFocusSessionStarted,
+    onFocusSessionEnded,
     onError
   } = options
 
@@ -63,6 +67,8 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onChallengeInvitationExpiredRef = useRef(onChallengeInvitationExpired)
   const onChallengeStartedRef = useRef(onChallengeStarted)
   const onChallengeEndedRef = useRef(onChallengeEnded)
+  const onFocusSessionStartedRef = useRef(onFocusSessionStarted)
+  const onFocusSessionEndedRef = useRef(onFocusSessionEnded)
   
   // ref 업데이트
   useEffect(() => {
@@ -77,7 +83,9 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeInvitationExpiredRef.current = onChallengeInvitationExpired
     onChallengeStartedRef.current = onChallengeStarted
     onChallengeEndedRef.current = onChallengeEnded
-  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted, onChallengeEnded])
+    onFocusSessionStartedRef.current = onFocusSessionStarted
+    onFocusSessionEndedRef.current = onFocusSessionEnded
+  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted, onChallengeEnded, onFocusSessionStarted, onFocusSessionEnded])
 
   // 참가자 변경 처리
   const handleParticipantChange = useCallback((payload: any) => {
@@ -326,6 +334,18 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
         console.log('대결 종료 이벤트 수신:', payload)
         if (onChallengeEndedRef.current) {
           onChallengeEndedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'focus_session_started' }, (payload) => {
+        console.log('집중세션 시작 이벤트 수신:', payload)
+        if (onFocusSessionStartedRef.current) {
+          onFocusSessionStartedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'focus_session_ended' }, (payload) => {
+        console.log('집중세션 종료 이벤트 수신:', payload)
+        if (onFocusSessionEndedRef.current) {
+          onFocusSessionEndedRef.current(payload.payload)
         }
       })
       .on('presence', { event: 'sync' }, () => {

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { VideoOff } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { VideoOff, Play, Pause, Square } from 'lucide-react'
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useUser } from '@/hooks/useAuth'
 import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
@@ -63,7 +64,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     session_type: 'study',
     goal_minutes: 60
   })
-  const [focusUpdateInterval, setFocusUpdateInterval] = useState<NodeJS.Timeout | null>(null)
+
   const [notifications, setNotifications] = useState<Array<{id: string, message: string, type: 'join' | 'leave'}>>([])
   const notificationIdCounter = useRef(0)
   
@@ -103,6 +104,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   // 대결 초대 관련 상태
   const [currentInvitation, setCurrentInvitation] = useState<ChallengeInvitation | null>(null)
   const [showInvitationPanel, setShowInvitationPanel] = useState(false)
+
+  // 집중세션 관련 상태
+  const [isFocusSessionRunning, setIsFocusSessionRunning] = useState(false)
+  const [isFocusSessionPaused, setIsFocusSessionPaused] = useState(false)
+  const [focusSessionElapsed, setFocusSessionElapsed] = useState(0)
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [focusSessionTimer, setFocusSessionTimer] = useState<NodeJS.Timeout | null>(null)
 
   // 비디오룸 훅
   const videoRoom = useVideoRoom({
@@ -254,6 +262,218 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       alert('대결 시작에 실패했습니다.')
     }
   }, [challenge.currentChallenge, challenge, activeTab, competitionDuration, customHours, customMinutes, participants, isHost, room?.room_id, currentInvitation])
+
+  // 집중세션 관련 함수들
+  const startFocusSession = useCallback(async () => {
+    if (!isHost) {
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '호스트만 집중세션을 시작할 수 있습니다.',
+        type: 'leave'
+      }])
+      return
+    }
+
+    try {
+      console.log('🚀 집중세션 시작')
+      
+      // 1. 로컬 세션 시작
+      setIsFocusSessionRunning(true)
+      setIsFocusSessionPaused(false)
+      setFocusSessionElapsed(0)
+      
+      // 2. 데이터베이스에 세션 생성
+      const supabase = supabaseBrowser()
+      const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !currentUser) {
+        alert('사용자 인증에 실패했습니다. 다시 로그인해주세요.')
+        return
+      }
+      
+      const { data: newSession, error: sessionError } = await supabase
+        .from('focus_session')
+        .insert({
+          user_id: currentUser.id,
+          started_at: new Date().toISOString(),
+          goal_min: 30,
+          context_tag: '스터디룸 집중 세션',
+          session_type: 'study'
+        })
+        .select()
+        .single()
+      
+      if (sessionError) {
+        console.error('Session creation failed:', sessionError)
+        alert(`세션 생성에 실패했습니다: ${sessionError.message}`)
+        return
+      }
+      
+      console.log('✅ 데이터베이스 세션 생성 성공:', newSession)
+      setCurrentSessionId(newSession.session_id)
+      
+      // 3. 모든 참가자에게 집중세션 시작 알림 전송 (Realtime)
+      try {
+        supabase
+          .channel(`social_room:${room?.room_id}`)
+          .send({
+            type: 'broadcast',
+            event: 'focus_session_started',
+            payload: {
+              session_id: newSession.session_id,
+              room_id: room?.room_id,
+              started_by: currentUser.id,
+              timestamp: new Date().toISOString()
+            }
+          })
+        console.log('집중세션 시작 broadcast 이벤트 전송 완료')
+      } catch (error) {
+        console.warn('집중세션 시작 알림 전송 실패:', error)
+      }
+      
+      // 4. 타이머 시작
+      const timer = setInterval(() => {
+        setFocusSessionElapsed(prev => prev + 1)
+      }, 1000)
+      setFocusSessionTimer(timer)
+      
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '집중세션이 시작되었습니다!',
+        type: 'join'
+      }])
+      
+    } catch (error) {
+      console.error('❌ 집중세션 시작 중 오류:', error)
+      alert('집중세션 시작 중 오류가 발생했습니다. 다시 시도해주세요.')
+      setIsFocusSessionRunning(false)
+    }
+  }, [isHost, room?.room_id])
+
+  const pauseFocusSession = useCallback(() => {
+    if (!isHost) {
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '호스트만 집중세션을 일시정지할 수 있습니다.',
+        type: 'leave'
+      }])
+      return
+    }
+
+    setIsFocusSessionPaused(prev => !prev)
+    
+    if (focusSessionTimer) {
+      if (isFocusSessionPaused) {
+        // 재개
+        const timer = setInterval(() => {
+          setFocusSessionElapsed(prev => prev + 1)
+        }, 1000)
+        setFocusSessionTimer(timer)
+      } else {
+        // 일시정지
+        clearInterval(focusSessionTimer)
+        setFocusSessionTimer(null)
+      }
+    }
+    
+    setNotifications(prev => [...prev, {
+      id: generateNotificationId(),
+      message: isFocusSessionPaused ? '집중세션이 재개되었습니다.' : '집중세션이 일시정지되었습니다.',
+      type: 'join'
+    }])
+  }, [isHost, focusSessionTimer, isFocusSessionPaused])
+
+  const stopFocusSession = useCallback(async () => {
+    if (!isHost) {
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '호스트만 집중세션을 종료할 수 있습니다.',
+        type: 'leave'
+      }])
+      return
+    }
+
+    if (!confirm('정말로 집중세션을 종료하시겠습니까?')) {
+      return
+    }
+
+    try {
+      console.log('🛑 집중세션 종료')
+      
+      // 1. 타이머 정리
+      if (focusSessionTimer) {
+        clearInterval(focusSessionTimer)
+        setFocusSessionTimer(null)
+      }
+      
+      // 2. 로컬 상태 정리
+      setIsFocusSessionRunning(false)
+      setIsFocusSessionPaused(false)
+      setFocusSessionElapsed(0)
+      
+      // 3. 데이터베이스에 세션 종료 기록
+      if (currentSessionId) {
+        const supabase = supabaseBrowser()
+        const { error: updateError } = await supabase
+          .from('focus_session')
+          .update({
+            ended_at: new Date().toISOString(),
+            duration_min: Math.floor(focusSessionElapsed / 60)
+          })
+          .eq('session_id', currentSessionId)
+        
+        if (updateError) {
+          console.error('Session update failed:', updateError)
+        } else {
+          console.log('✅ 세션 종료 기록 완료')
+        }
+        
+        setCurrentSessionId(null)
+      }
+      
+      // 4. 모든 참가자에게 집중세션 종료 알림 전송 (Realtime)
+      try {
+        const supabase = supabaseBrowser()
+        supabase
+          .channel(`social_room:${room?.room_id}`)
+          .send({
+            type: 'broadcast',
+            event: 'focus_session_ended',
+            payload: {
+              room_id: room?.room_id,
+              ended_by: user?.id,
+              duration_min: Math.floor(focusSessionElapsed / 60),
+              timestamp: new Date().toISOString()
+            }
+          })
+        console.log('집중세션 종료 broadcast 이벤트 전송 완료')
+      } catch (error) {
+        console.warn('집중세션 종료 알림 전송 실패:', error)
+      }
+      
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '집중세션이 종료되었습니다.',
+        type: 'leave'
+      }])
+      
+    } catch (error) {
+      console.error('❌ 집중세션 종료 중 오류:', error)
+      alert('집중세션 종료 중 오류가 발생했습니다.')
+    }
+  }, [isHost, focusSessionTimer, currentSessionId, focusSessionElapsed, room?.room_id, user?.id])
+
+  // 시간 포맷팅 함수
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    }
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
 
   // 대결 초대 응답 처리
   const handleInvitationResponse = useCallback(async (response: 'accepted' | 'rejected') => {
@@ -987,6 +1207,66 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
      }
    }, [room?.room_id])
 
+  // 집중세션 관련 Realtime 이벤트 핸들러들
+  const handleFocusSessionStarted = useCallback((data: { session_id: string, room_id: string, started_by: string }) => {
+    console.log('집중세션 시작 감지:', data)
+    
+    // 현재 룸의 세션인지 확인
+    if (data.room_id === room?.room_id) {
+      // 모든 참가자가 동시에 집중세션 시작
+      console.log('모든 참가자가 집중세션 시작')
+      
+      // 호스트가 아닌 경우에도 집중세션 시작 (동기화)
+      if (!isHost) {
+        setIsFocusSessionRunning(true)
+        setIsFocusSessionPaused(false)
+        setFocusSessionElapsed(0)
+        
+        // 타이머 시작
+        const timer = setInterval(() => {
+          setFocusSessionElapsed(prev => prev + 1)
+        }, 1000)
+        setFocusSessionTimer(timer)
+      }
+      
+      // 알림 추가
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '집중세션이 시작되었습니다!',
+        type: 'join'
+      }])
+    }
+  }, [room?.room_id, isHost])
+
+  const handleFocusSessionEnded = useCallback((data: { room_id: string, ended_by: string, duration_min: number }) => {
+    console.log('집중세션 종료 감지:', data)
+    
+    // 현재 룸의 세션인지 확인
+    if (data.room_id === room?.room_id) {
+      // 모든 참가자가 동시에 집중세션 종료
+      console.log('모든 참가자가 집중세션 종료')
+      
+      // 타이머 정리
+      if (focusSessionTimer) {
+        clearInterval(focusSessionTimer)
+        setFocusSessionTimer(null)
+      }
+      
+      // 로컬 상태 정리
+      setIsFocusSessionRunning(false)
+      setIsFocusSessionPaused(false)
+      setFocusSessionElapsed(0)
+      setCurrentSessionId(null)
+      
+      // 알림 추가
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '집중세션이 종료되었습니다.',
+        type: 'leave'
+      }])
+    }
+  }, [room?.room_id, focusSessionTimer])
+
   // 로그 제한을 위한 ref (필요한 경우에만 사용)
   const lastLogTimeRef = useRef<number>(0)
 
@@ -1080,6 +1360,8 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       onChallengeInvitationExpired: handleChallengeInvitationExpired,
       onChallengeStarted: handleChallengeStarted,
       onChallengeEnded: handleChallengeEnded,
+      onFocusSessionStarted: handleFocusSessionStarted,
+      onFocusSessionEnded: handleFocusSessionEnded,
       onError: (error) => {
         console.warn('Realtime 연결 실패, 폴링 방식으로 대체:', error)
         // Realtime 연결 실패 시에도 폴링으로 계속 작동
@@ -1137,6 +1419,16 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       setCompetitionScores({})
       setIsBreakTime(false)
       setShowCompetitionSettings(false)
+      
+      // 집중세션 상태 초기화
+      setIsFocusSessionRunning(false)
+      setIsFocusSessionPaused(false)
+      setFocusSessionElapsed(0)
+      if (focusSessionTimer) {
+        clearInterval(focusSessionTimer)
+        setFocusSessionTimer(null)
+      }
+      setCurrentSessionId(null)
       
       console.log('룸 변경 감지, 참가자 추적 상태 및 대결 상태 리셋')
     }
@@ -1264,8 +1556,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           }
         })
       }
+      
+      // 집중세션 타이머 정리
+      if (focusSessionTimer) {
+        clearInterval(focusSessionTimer)
+      }
     }
-  }, [user?.id])
+  }, [user?.id, focusSessionTimer])
 
   // 스터디룸 생성
   const handleCreateRoom = async () => {
@@ -1341,40 +1638,24 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     // 기능 비활성화
   }, [])
 
-  // 집중도 시뮬레이션 (실제로는 ML 모델에서 받아올 값)
-  useEffect(() => {
-    if (room && isConnected) {
-      const interval = setInterval(() => {
-        const newFocusScore = Math.floor(Math.random() * 100)
-        sendFocusUpdate(newFocusScore)
-      }, 10000) // 10초마다 업데이트
 
-      setFocusUpdateInterval(interval)
+
+          // 집중도 대결 시작 (챌린지 생성)
+  const startCompetition = useCallback(async () => {
+    console.log('대결 시작 시도:', {
+      participantsCount: participants.length,
+      isHost,
+      roomId: room?.room_id,
+      userId: user?.id,
+      roomHostId: room?.host_id,
+      roomHostIdType: typeof room?.host_id,
+      userIdType: typeof user?.id
+    })
+    
+    if (participants.length < 2) {
+      alert('집중도 대결을 시작하려면 최소 2명 이상의 참가자가 필요합니다.')
+      return
     }
-
-    return () => {
-      if (focusUpdateInterval) {
-        clearInterval(focusUpdateInterval)
-      }
-    }
-  }, [room?.room_id, isConnected, sendFocusUpdate])
-
-        // 집중도 대결 시작 (챌린지 생성)
-   const startCompetition = useCallback(async () => {
-     console.log('대결 시작 시도:', {
-       participantsCount: participants.length,
-       isHost,
-       roomId: room?.room_id,
-       userId: user?.id,
-       roomHostId: room?.host_id,
-       roomHostIdType: typeof room?.host_id,
-       userIdType: typeof user?.id
-     })
-     
-     if (participants.length < 2) {
-       alert('집중도 대결을 시작하려면 최소 2명 이상의 참가자가 필요합니다.')
-       return
-     }
 
     // 커스텀 탭에서 설정한 시간을 사용
     let duration = competitionDuration
@@ -1387,6 +1668,84 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
 
     try {
+      // 🚀 집중세션 자동 시작 체크
+      if (!isFocusSessionRunning) {
+        console.log('집중세션이 활성화되지 않음, 자동으로 시작합니다.')
+        
+        // 집중세션 자동 시작
+        setIsFocusSessionRunning(true)
+        setIsFocusSessionPaused(false)
+        setFocusSessionElapsed(0)
+        
+        // 데이터베이스에 세션 생성
+        const supabase = supabaseBrowser()
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError || !currentUser) {
+          alert('사용자 인증에 실패했습니다. 다시 로그인해주세요.')
+          return
+        }
+        
+        const { data: newSession, error: sessionError } = await supabase
+          .from('focus_session')
+          .insert({
+            user_id: currentUser.id,
+            started_at: new Date().toISOString(),
+            goal_min: duration,
+            context_tag: '집중도 대결 자동 세션',
+            session_type: 'competition'
+          })
+          .select()
+          .single()
+        
+        if (sessionError) {
+          console.error('자동 세션 생성 실패:', sessionError)
+          alert(`자동 세션 생성에 실패했습니다: ${sessionError.message}`)
+          return
+        }
+        
+        console.log('✅ 자동 집중세션 생성 성공:', newSession)
+        setCurrentSessionId(newSession.session_id)
+        
+        // 타이머 시작
+        const timer = setInterval(() => {
+          setFocusSessionElapsed(prev => prev + 1)
+        }, 1000)
+        setFocusSessionTimer(timer)
+        
+        // 모든 참가자에게 집중세션 시작 알림 전송 (Realtime)
+        try {
+          supabase
+            .channel(`social_room:${room?.room_id}`)
+            .send({
+              type: 'broadcast',
+              event: 'focus_session_started',
+              payload: {
+                session_id: newSession.session_id,
+                room_id: room?.room_id,
+                started_by: currentUser.id,
+                timestamp: new Date().toISOString()
+              }
+            })
+          console.log('자동 집중세션 시작 broadcast 이벤트 전송 완료')
+        } catch (error) {
+          console.warn('자동 집중세션 시작 알림 전송 실패:', error)
+        }
+        
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '집중도 대결을 위해 집중세션이 자동으로 시작되었습니다!',
+          type: 'join'
+        }])
+      } else {
+        console.log('집중세션이 이미 활성화되어 있음, 기존 세션 활용')
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '기존 집중세션의 데이터로 대결을 진행합니다!',
+          type: 'join'
+        }])
+      }
+
       // 뽀모도로 모드일 때는 공부 시간만 사용, 커스텀 모드일 때는 총 시간 사용
       const config = activeTab === 'pomodoro' 
         ? { work: competitionDuration, break: breakDuration }
@@ -1398,94 +1757,94 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         config
       })
       
-             // 참가자 정보 설정
-       const challengeParticipants = participants.map(p => ({
-         participant_id: `${newChallenge.challenge_id}-${p.user_id}`,
-         challenge_id: newChallenge.challenge_id,
-         user_id: p.user_id,
-         joined_at: new Date().toISOString(),
-         current_progress: 0
-       }))
-       challenge.setParticipants(challengeParticipants)
+      // 참가자 정보 설정
+      const challengeParticipants = participants.map(p => ({
+        participant_id: `${newChallenge.challenge_id}-${p.user_id}`,
+        challenge_id: newChallenge.challenge_id,
+        user_id: p.user_id,
+        joined_at: new Date().toISOString(),
+        current_progress: 0
+      }))
+      challenge.setParticipants(challengeParticipants)
       
-       // 새로 생성된 챌린지를 현재 챌린지로 설정
-       challenge.setCurrentChallenge(newChallenge)
+      // 새로 생성된 챌린지를 현재 챌린지로 설정
+      challenge.setCurrentChallenge(newChallenge)
       
-       // 설정 패널 닫기
-       setShowCompetitionSettings(false)
-       
-                                // 챌린지 생성 후 대결 초대 생성
-          console.log('챌린지 생성 완료, 대결 초대 생성...', newChallenge.challenge_id)
+      // 설정 패널 닫기
+      setShowCompetitionSettings(false)
+      
+      // 챌린지 생성 후 대결 초대 생성
+      console.log('챌린지 생성 완료, 대결 초대 생성...', newChallenge.challenge_id)
+      try {
+        // 먼저 만료된 초대 정리
+        await cleanupExpiredInvitations()
+        
+        const invitationData = {
+          room_id: room?.room_id,
+          challenge_id: newChallenge.challenge_id,
+          mode: activeTab,
+          config: activeTab === 'pomodoro' 
+            ? { work: competitionDuration, break: breakDuration }
+            : { durationMin: customHours * 60 + customMinutes }
+        }
+
+        const invitationResponse = await fetch('/api/social/challenge-invitation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invitationData)
+        })
+
+        if (invitationResponse.ok) {
+          const invitationResult = await invitationResponse.json()
+          console.log('대결 초대 생성 완료:', invitationResult.invitation)
+          
+          // 초대 상태 설정
+          setCurrentInvitation(invitationResult.invitation)
+          setShowInvitationPanel(true)
+          
+          // API에서 이미 broadcast 이벤트를 전송하므로 여기서는 제거
+          console.log('대결 초대 생성 완료 - API에서 broadcast 이벤트 전송됨')
+        } else if (invitationResponse.status === 409) {
+          // 이미 대기 중인 초대가 있는 경우
+          console.log('이미 대기 중인 대결 초대가 있습니다.')
+          
+          // 기존 초대를 로드하여 표시
           try {
-            // 먼저 만료된 초대 정리
-            await cleanupExpiredInvitations()
-            
-            const invitationData = {
-              room_id: room?.room_id,
-              challenge_id: newChallenge.challenge_id,
-              mode: activeTab,
-              config: activeTab === 'pomodoro' 
-                ? { work: competitionDuration, break: breakDuration }
-                : { durationMin: customHours * 60 + customMinutes }
-            }
-
-            const invitationResponse = await fetch('/api/social/challenge-invitation', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(invitationData)
-            })
-
-            if (invitationResponse.ok) {
-              const invitationResult = await invitationResponse.json()
-              console.log('대결 초대 생성 완료:', invitationResult.invitation)
-              
-              // 초대 상태 설정
-              setCurrentInvitation(invitationResult.invitation)
-              setShowInvitationPanel(true)
-              
-              // API에서 이미 broadcast 이벤트를 전송하므로 여기서는 제거
-              console.log('대결 초대 생성 완료 - API에서 broadcast 이벤트 전송됨')
-            } else if (invitationResponse.status === 409) {
-              // 이미 대기 중인 초대가 있는 경우
-              console.log('이미 대기 중인 대결 초대가 있습니다.')
-              
-              // 기존 초대를 로드하여 표시
-              try {
-                const existingInvitationResponse = await fetch(`/api/social/challenge-invitation?room_id=${room?.room_id}`)
-                if (existingInvitationResponse.ok) {
-                  const existingData = await existingInvitationResponse.json()
-                  if (existingData.invitation) {
-                    setCurrentInvitation(existingData.invitation)
-                    setShowInvitationPanel(true)
-                    console.log('기존 대결 초대를 표시합니다:', existingData.invitation)
-                  }
-                }
-              } catch (loadError) {
-                console.error('기존 초대 로드 실패:', loadError)
+            const existingInvitationResponse = await fetch(`/api/social/challenge-invitation?room_id=${room?.room_id}`)
+            if (existingInvitationResponse.ok) {
+              const existingData = await existingInvitationResponse.json()
+              if (existingData.invitation) {
+                setCurrentInvitation(existingData.invitation)
+                setShowInvitationPanel(true)
+                console.log('기존 대결 초대를 표시합니다:', existingData.invitation)
               }
-              
-              // 사용자에게 더 친화적인 메시지 표시
-              setNotifications(prev => [...prev, {
-                id: generateNotificationId(),
-                message: '이미 대기 중인 대결 초대가 있습니다. 기존 초대에 응답해주세요.',
-                type: 'join'
-              }])
-            } else {
-              console.error('대결 초대 생성 실패:', invitationResponse.status)
-              const errorData = await invitationResponse.json().catch(() => ({}))
-              alert(`대결 초대 생성에 실패했습니다: ${errorData.error || '알 수 없는 오류'}`)
             }
-          } catch (error) {
-            console.error('대결 초대 생성 중 오류:', error)
-            alert('대결 초대 생성에 실패했습니다.')
+          } catch (loadError) {
+            console.error('기존 초대 로드 실패:', loadError)
           }
+          
+          // 사용자에게 더 친화적인 메시지 표시
+          setNotifications(prev => [...prev, {
+            id: generateNotificationId(),
+            message: '이미 대기 중인 대결 초대가 있습니다. 기존 초대에 응답해주세요.',
+            type: 'join'
+          }])
+        } else {
+          console.error('대결 초대 생성 실패:', invitationResponse.status)
+          const errorData = await invitationResponse.json().catch(() => ({}))
+          alert(`대결 초대 생성에 실패했습니다: ${errorData.error || '알 수 없는 오류'}`)
+        }
+      } catch (error) {
+        console.error('대결 초대 생성 중 오류:', error)
+        alert('대결 초대 생성에 실패했습니다.')
+      }
     } catch (error) {
       console.error('챌린지 생성 실패:', error)
       alert('챌린지 생성에 실패했습니다.')
     }
-     }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, challenge, cleanupExpiredInvitations])
+  }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, challenge, cleanupExpiredInvitations, isFocusSessionRunning, room?.room_id])
 
-  // 집중도 대결 종료
+    // 집중도 대결 종료
   const endCompetition = useCallback(async () => {
     // 호스트가 아닌 경우 에러 알림만 표시
     if (!isHost) {
@@ -1500,13 +1859,24 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     const isCompetitionActive = challenge.currentChallenge?.state === 'active'
     if (!isCompetitionActive || !challenge.currentChallenge) return
 
-         // 최종 점수 계산 및 순위 결정
-     const finalScores = Object.entries(competitionScores)
-       .map(([userId, score]) => ({ userId, score }))
-       .sort((a, b) => b.score - a.score)
+         // 🚀 대결 종료 시 집중세션은 계속 유지 (사용자가 직접 종료할 때까지)
+     if (isFocusSessionRunning) {
+       console.log('대결이 종료되었지만 집중세션은 계속 유지됩니다.')
+       
+       setNotifications(prev => [...prev, {
+         id: generateNotificationId(),
+         message: '대결이 종료되었습니다. 집중세션은 계속 진행 중입니다.',
+         type: 'join'
+       }])
+     }
 
-     const winner = finalScores[0]?.userId || ''
-     const winnerName = participants.find(p => p.user_id === winner)?.user.name || 'Unknown'
+    // 최종 점수 계산 및 순위 결정
+    const finalScores = Object.entries(competitionScores)
+      .map(([userId, score]) => ({ userId, score }))
+      .sort((a, b) => b.score - a.score)
+
+    const winner = finalScores[0]?.userId || ''
+    const winnerName = participants.find(p => p.user_id === winner)?.user.name || 'Unknown'
 
     // 대결 기록을 데이터베이스에 저장
     try {
@@ -1546,16 +1916,16 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       console.error('대결 기록 저장 중 오류:', error)
     }
 
-         // 결과 알림 (뽀모도로 모드 구분)
-     const durationText = activeTab === 'pomodoro' 
-       ? `${competitionDuration}분 공부 + ${breakDuration}분 휴식`
-       : `${Math.floor(competitionDuration / 60)}시간 ${competitionDuration % 60}분`
-     
-     setNotifications(prev => [...prev, {
-       id: generateNotificationId(),
-       message: `🏆 ${winnerName}님이 ${durationText} 대결에서 우승했습니다!`,
-       type: 'join'
-     }])
+    // 결과 알림 (뽀모도로 모드 구분)
+    const durationText = activeTab === 'pomodoro' 
+      ? `${competitionDuration}분 공부 + ${breakDuration}분 휴식`
+      : `${Math.floor(competitionDuration / 60)}시간 ${competitionDuration % 60}분`
+    
+    setNotifications(prev => [...prev, {
+      id: generateNotificationId(),
+      message: `🏆 ${winnerName}님이 ${durationText} 대결에서 우승했습니다!`,
+      type: 'join'
+    }])
 
     // HUD 오버레이 숨기고 결과 패널 표시
     setShowChallengeHUD(false)
@@ -1585,7 +1955,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('챌린지 종료 실패:', error)
     }
-  }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge, isHost])
+  }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge, isHost, isFocusSessionRunning, currentSessionId, focusSessionElapsed, focusSessionTimer, room?.room_id, user?.id])
 
 
 
@@ -1780,6 +2150,64 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                   </CardContent>
                 </Card>
               )}
+
+              {/* 집중세션 컨트롤 패널 */}
+              <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">집중세션</h3>
+                      {!isFocusSessionRunning ? (
+                        <div className="flex items-center gap-3">
+                          <Button
+                            size="lg"
+                            onClick={startFocusSession}
+                            disabled={!isHost}
+                            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 py-3 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Play className="w-5 h-5 mr-2" />
+                            집중 시작!
+                          </Button>
+                          {!isHost && (
+                            <span className="text-sm text-slate-500">호스트만 집중세션을 시작할 수 있습니다.</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            onClick={pauseFocusSession}
+                            disabled={!isHost}
+                            className="px-6 py-3 rounded-xl bg-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isFocusSessionPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
+                            {isFocusSessionPaused ? "재개" : "일시정지"}
+                          </Button>
+                          
+                          <Button
+                            size="lg"
+                            variant="destructive"
+                            onClick={stopFocusSession}
+                            disabled={!isHost}
+                            className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Square className="w-5 h-5 mr-2" />
+                            세션 종료
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-slate-900">{formatTime(focusSessionElapsed)}</div>
+                        <div className="text-sm text-slate-600">세션 시간</div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* 집중도 대결 모드 */}
               <CompetitionPanel
