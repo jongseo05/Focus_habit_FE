@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     console.log('6. 받은 요청 데이터:', body)
-    const { room_id, mode, config } = body
+    const { room_id, mode, config, autoStart = false } = body
 
     // 필수 필드 검증
     if (!room_id || !mode || !config) {
@@ -28,9 +28,11 @@ export async function POST(request: NextRequest) {
 
     // 호스트 권한 확인
     console.log('7. 호스트 권한 확인 시도...')
+    console.log('7-1. 요청 데이터:', { room_id, user_id: user.id, user_email: user.email })
+    
     const { data: room, error: roomError } = await supabase
       .from('study_rooms')
-      .select('host_id')
+      .select('host_id, name, created_at')
       .eq('room_id', room_id)
       .single()
 
@@ -40,10 +42,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    console.log('10. 호스트 ID 비교:', { roomHostId: room.host_id, userId: user.id })
-    if (room.host_id !== user.id) {
+    console.log('10. 호스트 ID 비교:', { 
+      roomHostId: room.host_id, 
+      userId: user.id,
+      isHost: String(room.host_id) === String(user.id),
+      roomName: room.name,
+      roomHostIdType: typeof room.host_id,
+      userIdType: typeof user.id
+    })
+    
+    if (String(room.host_id) !== String(user.id)) {
       console.error('11. 호스트 권한 없음')
-      return NextResponse.json({ error: 'Only room host can create challenges' }, { status: 403 })
+      console.error('11-1. 상세 정보:', {
+        roomHostId: room.host_id,
+        userId: user.id,
+        userEmail: user.email,
+        roomName: room.name
+      })
+      return NextResponse.json({ 
+        error: 'Only room host can create challenges',
+        details: {
+          roomHostId: room.host_id,
+          userId: user.id,
+          roomName: room.name
+        }
+      }, { status: 403 })
     }
 
     // 새로운 대결 윈도우 생성
@@ -75,10 +98,42 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    console.log('16. 챌린지 생성 성공')
+    // 호스트를 자동으로 참가자로 추가
+    console.log('16. 호스트 자동 참가 처리...')
+    const { error: joinError } = await supabase
+      .from('challenge_participant')
+      .insert({
+        challenge_id: challenge.challenge_id,
+        user_id: user.id,
+        joined_at: new Date().toISOString(),
+        current_score: 0,
+        final_score: 0
+      })
+
+    if (joinError) {
+      console.error('17. 호스트 자동 참가 실패:', joinError)
+      // 참가 실패는 경고만 하고 챌린지 생성은 성공으로 처리
+    } else {
+      console.log('17. 호스트 자동 참가 성공')
+    }
+
+    console.log('18. 챌린지 생성 성공')
+    console.log('18-1. 반환할 challenge 객체:', challenge)
+    console.log('18-2. challenge.challenge_id:', challenge.challenge_id)
+    console.log('18-3. challenge.challenge_id 타입:', typeof challenge.challenge_id)
+    console.log('18-4. challenge.challenge_id constructor:', challenge.challenge_id?.constructor?.name)
+    
+    // challenge_id를 명시적으로 문자열로 변환
+    const sanitizedChallenge = {
+      ...challenge,
+      challenge_id: String(challenge.challenge_id)
+    }
+    console.log('18-5. sanitizedChallenge.challenge_id:', sanitizedChallenge.challenge_id)
+    console.log('18-6. sanitizedChallenge.challenge_id 타입:', typeof sanitizedChallenge.challenge_id)
+    
     return NextResponse.json({ 
       success: true, 
-      challenge,
+      challenge: sanitizedChallenge,
       message: 'Challenge created successfully' 
     })
 

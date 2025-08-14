@@ -15,14 +15,7 @@ import {
   LogOut,
   Hash
 } from 'lucide-react'
-import type { StudyRoom, RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { StudyRoom, ParticipantWithUser } from '@/types/social'
 
 interface StudyRoomHeaderProps {
   room: StudyRoom
@@ -53,6 +46,7 @@ export function StudyRoomHeader({
   onLeaveRoom,
   onEndRoom
 }: StudyRoomHeaderProps) {
+  // 불필요한 로그 제거
   return (
     <Card className="bg-white/80 backdrop-blur-sm">
       <CardHeader>
@@ -80,6 +74,14 @@ export function StudyRoomHeader({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* 방장 표시 */}
+            {isHost && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-md text-xs font-medium">
+                <Crown className="h-3 w-3" />
+                방장
+              </div>
+            )}
+            
             {/* Realtime 연결 상태 */}
             <div className={`flex items-center gap-1 text-xs ${
               isConnected ? 'text-green-600' : 'text-red-600'

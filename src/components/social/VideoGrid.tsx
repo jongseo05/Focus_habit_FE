@@ -5,22 +5,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Video } from 'lucide-react'
-import type { RoomParticipant } from '@/types/social'
+import type { RoomParticipant, ParticipantWithUser } from '@/types/social'
 
 interface VideoGridProps {
-  participants: RoomParticipant[]
+  participants: ParticipantWithUser[]
   currentUserId: string
   localStream: MediaStream | null
   remoteStreams: Map<string, MediaStream>
   onParticipantClick?: (participantId: string) => void
 }
 
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+
 
 // 개별 비디오 타일 컴포넌트
 function VideoTile({ 

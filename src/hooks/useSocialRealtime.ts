@@ -11,7 +11,10 @@ import type {
   ChallengeCreatedPayload,
   ChallengeStartedPayload,
   ChallengeTickPayload,
-  ChallengeEndedPayload
+  ChallengeEndedPayload,
+  ChallengeInvitationCreatedPayload,
+  ChallengeInvitationResponsePayload,
+  ChallengeInvitationExpiredPayload
 } from '@/types/social'
 
 interface UseSocialRealtimeOptions {
@@ -22,6 +25,10 @@ interface UseSocialRealtimeOptions {
   onRoomLeave?: (data: RoomLeaveMessage['data']) => void
   onEncouragement?: (data: EncouragementMessageWS['data']) => void
   onChallengeEvent?: (event: ChallengeEvent) => void
+  onChallengeInvitationCreated?: (data: ChallengeInvitationCreatedPayload) => void
+  onChallengeInvitationResponse?: (data: ChallengeInvitationResponsePayload) => void
+  onChallengeInvitationExpired?: (data: ChallengeInvitationExpiredPayload) => void
+  onChallengeStarted?: (data: ChallengeStartedPayload) => void
   onError?: (error: any) => void
 }
 
@@ -34,6 +41,10 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onRoomLeave,
     onEncouragement,
     onChallengeEvent,
+    onChallengeInvitationCreated,
+    onChallengeInvitationResponse,
+    onChallengeInvitationExpired,
+    onChallengeStarted,
     onError
   } = options
 
@@ -45,6 +56,10 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onEncouragementRef = useRef(onEncouragement)
   const onFocusUpdateRef = useRef(onFocusUpdate)
   const onChallengeEventRef = useRef(onChallengeEvent)
+  const onChallengeInvitationCreatedRef = useRef(onChallengeInvitationCreated)
+  const onChallengeInvitationResponseRef = useRef(onChallengeInvitationResponse)
+  const onChallengeInvitationExpiredRef = useRef(onChallengeInvitationExpired)
+  const onChallengeStartedRef = useRef(onChallengeStarted)
   
   // ref 업데이트
   useEffect(() => {
@@ -54,7 +69,11 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onEncouragementRef.current = onEncouragement
     onFocusUpdateRef.current = onFocusUpdate
     onChallengeEventRef.current = onChallengeEvent
-  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent])
+    onChallengeInvitationCreatedRef.current = onChallengeInvitationCreated
+    onChallengeInvitationResponseRef.current = onChallengeInvitationResponse
+    onChallengeInvitationExpiredRef.current = onChallengeInvitationExpired
+    onChallengeStartedRef.current = onChallengeStarted
+  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted])
 
   // 참가자 변경 처리
   const handleParticipantChange = useCallback((payload: any) => {
@@ -62,22 +81,26 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     
     if (payload.eventType === 'INSERT') {
       // 새 참가자 입장
-      onRoomJoinRef.current?.({
-        user_id: payload.new.user_id,
-        room_id: payload.new.room_id,
-        user_name: payload.new.user?.name || 'Unknown',
-        avatar_url: payload.new.user?.avatar_url,
-        timestamp: payload.new.joined_at
-      })
+      if (onRoomJoinRef.current) {
+        onRoomJoinRef.current({
+          user_id: payload.new.user_id,
+          room_id: payload.new.room_id,
+          user_name: payload.new.user?.name || 'Unknown',
+          avatar_url: payload.new.user?.avatar_url,
+          timestamp: payload.new.joined_at
+        })
+      }
     } else if (payload.eventType === 'UPDATE' && payload.new.left_at) {
       // 참가자 퇴장
-      onRoomLeaveRef.current?.({
-        user_id: payload.new.user_id,
-        room_id: payload.new.room_id,
-        user_name: payload.new.user?.name || 'Unknown',
-        avatar_url: payload.new.user?.avatar_url,
-        timestamp: payload.new.left_at
-      })
+      if (onRoomLeaveRef.current) {
+        onRoomLeaveRef.current({
+          user_id: payload.new.user_id,
+          room_id: payload.new.room_id,
+          user_name: payload.new.user?.name || 'Unknown',
+          avatar_url: payload.new.user?.avatar_url,
+          timestamp: payload.new.left_at
+        })
+      }
     }
   }, [])
 
@@ -86,14 +109,16 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     console.log('격려 메시지 변경:', payload)
     
     if (payload.eventType === 'INSERT') {
-      onEncouragementRef.current?.({
-        from_user_id: payload.new.from_user_id,
-        to_user_id: payload.new.to_user_id,
-        room_id: payload.new.room_id,
-        message_type: payload.new.message_type,
-        content: payload.new.content,
-        timestamp: payload.new.created_at
-      })
+      if (onEncouragementRef.current) {
+        onEncouragementRef.current({
+          from_user_id: payload.new.from_user_id,
+          to_user_id: payload.new.to_user_id,
+          room_id: payload.new.room_id,
+          message_type: payload.new.message_type,
+          content: payload.new.content,
+          timestamp: payload.new.created_at
+        })
+      }
     }
   }, [])
 
@@ -116,7 +141,9 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
       }
       
       console.log('전달할 데이터:', focusUpdateData)
-      onFocusUpdateRef.current?.(focusUpdateData)
+      if (onFocusUpdateRef.current) {
+        onFocusUpdateRef.current(focusUpdateData)
+      }
     } else {
       console.log('INSERT 이벤트가 아님:', payload.eventType)
     }
@@ -128,42 +155,48 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     
     if (payload.eventType === 'INSERT') {
       // 새로운 대결 생성
-      onChallengeEventRef.current?.({
-        type: 'challenge_created',
-        data: {
-          challenge_id: payload.new.challenge_id,
-          room_id: payload.new.room_id,
-          mode: payload.new.mode,
-          config: payload.new.config,
-          created_by: payload.new.created_by,
-          timestamp: payload.new.created_at
-        }
-      })
+      if (onChallengeEventRef.current) {
+        onChallengeEventRef.current({
+          type: 'challenge_created',
+          data: {
+            challenge_id: payload.new.challenge_id,
+            room_id: payload.new.room_id,
+            mode: payload.new.mode,
+            config: payload.new.config,
+            created_by: payload.new.created_by,
+            timestamp: payload.new.created_at
+          }
+        })
+      }
     } else if (payload.eventType === 'UPDATE') {
       if (payload.new.state === 'active' && payload.old.state === 'pending') {
         // 대결 시작
-        onChallengeEventRef.current?.({
-          type: 'challenge_started',
-          data: {
-            challenge_id: payload.new.challenge_id,
-            room_id: payload.new.room_id,
-            start_at: payload.new.start_at,
-            timestamp: payload.new.updated_at
-          }
-        })
+        if (onChallengeEventRef.current) {
+          onChallengeEventRef.current({
+            type: 'challenge_started',
+            data: {
+              challenge_id: payload.new.challenge_id,
+              room_id: payload.new.room_id,
+              start_at: payload.new.start_at,
+              timestamp: payload.new.updated_at
+            }
+          })
+        }
       } else if (payload.new.state === 'ended' && payload.old.state === 'active') {
         // 대결 종료
-        onChallengeEventRef.current?.({
-          type: 'challenge_ended',
-          data: {
-            challenge_id: payload.new.challenge_id,
-            room_id: payload.new.room_id,
-            final_scores: {}, // 실제로는 challenge_participant에서 조회
-            final_rankings: {},
-            winner_id: undefined,
-            timestamp: payload.new.updated_at
-          }
-        })
+        if (onChallengeEventRef.current) {
+          onChallengeEventRef.current({
+            type: 'challenge_ended',
+            data: {
+              challenge_id: payload.new.challenge_id,
+              room_id: payload.new.room_id,
+              final_scores: {}, // 실제로는 challenge_participant에서 조회
+              final_rankings: {},
+              winner_id: undefined,
+              timestamp: payload.new.updated_at
+            }
+          })
+        }
       }
     }
   }, [])
@@ -197,6 +230,94 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
         { event: '*', schema: 'public', table: 'challenge' },
         handleChallengeEvent
       )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'challenge_invitation' },
+        (payload) => {
+          console.log('challenge_invitation 테이블 변경 감지:', payload)
+          
+          // 테이블 변경사항이 있으면 초대 상태를 새로고침하도록 알림
+          if (payload.eventType === 'UPDATE') {
+            console.log('challenge_invitation UPDATE 감지:', {
+              old: payload.old,
+              new: payload.new,
+              oldResponses: payload.old?.responses,
+              newResponses: payload.new?.responses
+            })
+            
+            // 응답 상태가 변경된 경우에만 알림
+            const oldResponses = payload.old?.responses || {}
+            const newResponses = payload.new?.responses || {}
+            
+            // 응답이 실제로 변경되었는지 확인
+            const hasResponseChange = Object.keys(newResponses).some(userId => 
+              oldResponses[userId] !== newResponses[userId]
+            )
+            
+            console.log('응답 변경 확인:', {
+              hasResponseChange,
+              oldResponses,
+              newResponses,
+              changedUsers: Object.keys(newResponses).filter(userId => 
+                oldResponses[userId] !== newResponses[userId]
+              )
+            })
+            
+            if (hasResponseChange) {
+              console.log('응답 변경 감지 - onChallengeInvitationResponse 호출')
+              // 변경된 사용자 ID 찾기
+              const changedUserId = Object.keys(newResponses).find(userId => 
+                oldResponses[userId] !== newResponses[userId]
+              )
+              
+              if (changedUserId && onChallengeInvitationResponseRef.current) {
+                onChallengeInvitationResponseRef.current({
+                  invitation_id: payload.new.invitation_id,
+                  user_id: changedUserId,
+                  response: newResponses[changedUserId], // 실제 응답 값 사용
+                  responses: payload.new.responses,
+                  status: payload.new.status,
+                  timestamp: new Date().toISOString()
+                })
+              }
+            }
+          }
+        }
+      )
+      .on('broadcast', { event: 'challenge_invitation_created' }, (payload) => {
+        console.log('대결 초대 생성 이벤트 수신:', payload)
+        if (onChallengeInvitationCreatedRef.current) {
+          onChallengeInvitationCreatedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'challenge_invitation_response' }, (payload) => {
+        console.log('🎯 대결 초대 응답 broadcast 이벤트 수신:', payload)
+        console.log('payload 내용:', {
+          invitation_id: payload.payload?.invitation_id,
+          user_id: payload.payload?.user_id,
+          response: payload.payload?.response,
+          responses: payload.payload?.responses,
+          status: payload.payload?.status
+        })
+        
+        if (onChallengeInvitationResponseRef.current) {
+          console.log('✅ onChallengeInvitationResponse 콜백 호출')
+          onChallengeInvitationResponseRef.current(payload.payload)
+        } else {
+          console.log('❌ onChallengeInvitationResponse 콜백이 설정되지 않음')
+        }
+      })
+      .on('broadcast', { event: 'challenge_invitation_expired' }, (payload) => {
+        console.log('대결 초대 만료 이벤트 수신:', payload)
+        if (onChallengeInvitationExpiredRef.current) {
+          onChallengeInvitationExpiredRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'challenge_started' }, (payload) => {
+        console.log('대결 시작 이벤트 수신:', payload)
+        if (onChallengeStartedRef.current) {
+          onChallengeStartedRef.current(payload.payload)
+        }
+      })
       .on('presence', { event: 'sync' }, () => {
         console.log('Presence sync')
       })

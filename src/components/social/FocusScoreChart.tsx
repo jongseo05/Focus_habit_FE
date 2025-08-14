@@ -5,14 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { TrendingUp, Users, Activity, Maximize2, Minimize2 } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Legend } from 'recharts'
-import type { RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { ParticipantWithUser } from '@/types/social'
 
 interface FocusScoreChartProps {
   participants: ParticipantWithUser[]

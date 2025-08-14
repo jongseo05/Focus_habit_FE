@@ -15,14 +15,7 @@ import {
   TrendingUp,
   Trophy
 } from 'lucide-react'
-import type { RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { ParticipantWithUser } from '@/types/social'
 
 interface CompetitionTabProps {
   participants: ParticipantWithUser[]

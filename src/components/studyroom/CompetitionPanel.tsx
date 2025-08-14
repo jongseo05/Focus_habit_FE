@@ -15,14 +15,7 @@ import {
   Trophy
 } from 'lucide-react'
 import { CompetitionSettings } from './CompetitionSettings'
-import type { RoomParticipant } from '@/types/social'
-
-interface ParticipantWithUser extends RoomParticipant {
-  user: {
-    name: string
-    avatar_url?: string
-  }
-}
+import type { ParticipantWithUser } from '@/types/social'
 
 interface CompetitionPanelProps {
   isHost: boolean
@@ -43,6 +36,7 @@ interface CompetitionPanelProps {
   activeTab: 'pomodoro' | 'custom'
   customHours: number
   customMinutes: number
+  hasPendingInvitation: boolean
   onShowCompetitionSettings: (show: boolean) => void
   onActiveTabChange: (tab: 'pomodoro' | 'custom') => void
   onCompetitionDurationChange: (duration: number) => void
@@ -67,6 +61,7 @@ export function CompetitionPanel({
   activeTab,
   customHours,
   customMinutes,
+  hasPendingInvitation,
   onShowCompetitionSettings,
   onActiveTabChange,
   onCompetitionDurationChange,
@@ -97,6 +92,11 @@ export function CompetitionPanel({
                   </Badge>
                 )}
               </div>
+            ) : hasPendingInvitation ? (
+              <Badge variant="outline" className="flex items-center gap-1 text-orange-600 border-orange-300">
+                <Timer className="h-3 w-3" />
+                초대 대기 중
+              </Badge>
             ) : (
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Target className="h-3 w-3" />
@@ -109,11 +109,17 @@ export function CompetitionPanel({
                 size="sm"
                 onClick={isCompetitionActive ? onEndCompetition : () => onShowCompetitionSettings(true)}
                 className="bg-blue-600 hover:bg-blue-700"
+                disabled={hasPendingInvitation}
               >
                 {isCompetitionActive ? (
                   <>
                     <Square className="h-4 w-4 mr-1" />
                     대결 종료
+                  </>
+                ) : hasPendingInvitation ? (
+                  <>
+                    <Timer className="h-4 w-4 mr-1" />
+                    초대 대기 중
                   </>
                 ) : (
                   <>
@@ -128,26 +134,8 @@ export function CompetitionPanel({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* 대결 설정 모달 */}
-        {showCompetitionSettings && (
-          <CompetitionSettings
-            activeTab={activeTab}
-            competitionDuration={competitionDuration}
-            breakDuration={breakDuration}
-            customHours={customHours}
-            customMinutes={customMinutes}
-            onActiveTabChange={onActiveTabChange}
-            onCompetitionDurationChange={onCompetitionDurationChange}
-            onBreakDurationChange={onBreakDurationChange}
-            onCustomHoursChange={onCustomHoursChange}
-            onCustomMinutesChange={onCustomMinutesChange}
-            onStartCompetition={onStartCompetition}
-            onCancel={() => onShowCompetitionSettings(false)}
-          />
-        )}
-
-        {/* 실시간 순위 */}
-        {isCompetitionActive && (
+        {/* 대결 중일 때는 순위만 표시 */}
+        {isCompetitionActive ? (
           <div className="space-y-3">
             <h4 className="font-medium text-blue-700 flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
@@ -201,6 +189,27 @@ export function CompetitionPanel({
                 })}
             </div>
           </div>
+                ) : (
+          <>
+            {/* 대결 설정 모달 */}
+            {showCompetitionSettings && (
+              <CompetitionSettings
+                activeTab={activeTab}
+                competitionDuration={competitionDuration}
+                breakDuration={breakDuration}
+                customHours={customHours}
+                customMinutes={customMinutes}
+                hasPendingInvitation={hasPendingInvitation}
+                onActiveTabChange={onActiveTabChange}
+                onCompetitionDurationChange={onCompetitionDurationChange}
+                onBreakDurationChange={onBreakDurationChange}
+                onCustomHoursChange={onCustomHoursChange}
+                onCustomMinutesChange={onCustomMinutesChange}
+                onStartCompetition={onStartCompetition}
+                onCancel={() => onShowCompetitionSettings(false)}
+              />
+            )}
+          </>
         )}
 
         {/* 대결 기록 */}
@@ -236,10 +245,12 @@ export function CompetitionPanel({
           <div className="text-center py-6 text-gray-600">
             <Sword className="h-12 w-12 mx-auto text-blue-500 mb-3" />
             <p className="text-sm">
-              {isHost ? '대결 시작 버튼을 눌러 집중도 대결을 시작하세요!' : '방장이 대결을 시작할 때까지 기다려주세요.'}
+              {hasPendingInvitation ? '대결 초대가 대기 중입니다. 참가자들의 응답을 기다려주세요.' :
+               isHost ? '대결 시작 버튼을 눌러 집중도 대결을 시작하세요!' : '방장이 대결을 시작할 때까지 기다려주세요.'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              각 라운드 동안의 집중도 × 지속시간으로 점수가 계산됩니다
+              {hasPendingInvitation ? '모든 참가자가 동의하면 대결이 자동으로 시작됩니다.' :
+               '각 라운드 동안의 집중도 × 지속시간으로 점수가 계산됩니다'}
             </p>
           </div>
         )}
