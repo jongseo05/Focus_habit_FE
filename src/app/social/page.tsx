@@ -44,6 +44,9 @@ import CreateStudyRoomForm from '@/components/social/CreateStudyRoomForm'
 import type { StudyRoom as StudyRoomType } from '@/types/social'
 import Link from 'next/link'
 import { useSignOut, useAuth } from '@/hooks/useAuth'
+import { FriendsList } from '@/components/social/FriendsList'
+import { FriendRequests } from '@/components/social/FriendRequests'
+import { FriendRanking } from '@/components/social/FriendRanking'
 
 export default function SocialPage() {
   const [activeRooms, setActiveRooms] = useState<StudyRoomType[]>([])
@@ -51,6 +54,7 @@ export default function SocialPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'study' | 'work' | 'reading'>('all')
+
   
   // Auth hooks
   const { user } = useAuth()
@@ -398,20 +402,28 @@ export default function SocialPage() {
 
             
 
-            {/* 친구 탭 */}
-            <TabsContent value="friends" className="space-y-6">
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    친구 시스템
-                  </h3>
-                  <p className="text-gray-600">
-                    곧 출시될 예정입니다. 친구들과 집중도를 비교하고 격려를 나눠보세요!
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                                      {/* 친구 탭 */}
+             <TabsContent value="friends" className="space-y-6">
+                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 친구 목록 */}
+                  <FriendsList 
+                    onAddFriend={() => {
+                      // 친구 목록 컴포넌트 내부에서 처리됨
+                    }}
+                    onFriendAdded={() => {
+                      // 친구 목록 새로고침 (React Query가 자동으로 처리)
+                    }}
+                  />
+                  
+                  {/* 친구 요청 */}
+                  <FriendRequests />
+                </div>
+               
+               {/* 친구 랭킹 */}
+               <FriendRanking />
+               
+               
+             </TabsContent>
 
             {/* 챌린지 탭 */}
             <TabsContent value="challenges" className="space-y-6">

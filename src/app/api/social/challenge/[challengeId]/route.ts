@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { challengeId: string } }
+  { params }: { params: Promise<{ challengeId: string }> }
 ) {
   try {
     const supabase = await supabaseServer()
@@ -14,7 +14,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { challengeId } = params
+    const { challengeId } = await params
     const body = await request.json()
     const { state, end_at } = body
 
@@ -83,7 +83,7 @@ export async function PATCH(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { challengeId: string } }
+  { params }: { params: Promise<{ challengeId: string }> }
 ) {
   try {
     const supabase = await supabaseServer()
@@ -94,7 +94,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { challengeId } = params
+    const { challengeId } = await params
 
     // 대결 윈도우 상세 정보 조회
     const { data: challenge, error: challengeError } = await supabase

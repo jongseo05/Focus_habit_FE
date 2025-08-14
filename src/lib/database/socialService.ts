@@ -417,12 +417,14 @@ export class FriendService {
       return {
         friend_id: friendId,
         friend_name: friend.name || '',
-        friend_avatar_url: friend.avatar_url,
+        friend_avatar: friend.avatar_url,
         comparison_data: {
           daily_average_hours: friendStats.dailyAverageHours,
           weekly_average_hours: friendStats.weeklyAverageHours,
           best_focus_score: friendStats.bestFocusScore,
           average_focus_score: friendStats.averageFocusScore,
+          total_study_sessions: (friendSessions || []).length,
+          rank: 0, // 임시값, 실제로는 계산 필요
           study_pattern: friendStats.studyPattern,
           focus_style: friendStats.focusStyle
         }

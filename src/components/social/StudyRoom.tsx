@@ -1097,7 +1097,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 </Card>
               )}
 
-                                            {/* 집중도 대결 모드 */}
+               {/* 집중도 대결 모드 */}
                 <Card className="bg-white border-blue-200">
                  <CardHeader>
                    <div className="flex items-center justify-between">

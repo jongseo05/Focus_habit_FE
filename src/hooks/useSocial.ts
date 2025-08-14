@@ -7,8 +7,11 @@ import type {
   CreateStudyRoomData,
   FocusCompetition,
   UserFriend,
-  EncouragementMessage,
-  SocialStats
+  FriendsListResponse,
+  CreateFriendRequestData,
+  FriendRequestsResponse,
+  FriendRequestResponse,
+  FriendRankingResponse
 } from '@/types/social'
 
 // =====================================================
@@ -210,18 +213,23 @@ export function useCreateCompetition() {
 }
 
 // =====================================================
-// 3. 친구 시스템 관련 훅
+// 3. 친구 시스템 관련 훅 (업데이트됨)
 // =====================================================
 
-export function useFriends() {
+// 친구 목록 조회
+export function useFriends(search?: string) {
   const { data: user } = useUser()
 
   return useQuery({
-    queryKey: ['friends'],
-    queryFn: async (): Promise<UserFriend[]> => {
+    queryKey: ['friends', search],
+    queryFn: async (): Promise<FriendsListResponse> => {
       if (!user) throw new Error('로그인이 필요합니다.')
 
-      const response = await fetch('/api/social/friends')
+      const params = new URLSearchParams()
+      if (search) params.append('search', search)
+      params.append('limit', '50')
+
+      const response = await fetch(`/api/social/friends?${params}`)
       if (!response.ok) {
         throw new Error('친구 목록을 불러오는데 실패했습니다.')
       }
@@ -231,35 +239,61 @@ export function useFriends() {
   })
 }
 
+// 친구 요청 보내기
 export function useSendFriendRequest() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (data: { toUserId: string; message?: string }): Promise<void> => {
-      const response = await fetch('/api/social/friends/request', {
+    mutationFn: async (data: CreateFriendRequestData) => {
+      const response = await fetch('/api/social/friends', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       })
-
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || '친구 요청 전송에 실패했습니다.')
+        throw new Error(error.error || '친구 요청을 보내는데 실패했습니다.')
       }
+      return response.json()
     },
     onSuccess: () => {
+      // 친구 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['friends'] })
+      // 친구 요청 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
     }
   })
 }
 
+// 친구 검색
+export function useFriendSearch() {
+  const { data: user } = useUser()
+
+  return useMutation({
+    mutationFn: async (search: string) => {
+      if (!user) throw new Error('로그인이 필요합니다.')
+
+      const response = await fetch('/api/social/friends', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search, limit: 20 })
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '사용자 검색에 실패했습니다.')
+      }
+      return response.json()
+    }
+  })
+}
+
+// 받은 친구 요청 목록 조회
 export function useFriendRequests() {
   const { data: user } = useUser()
 
   return useQuery({
     queryKey: ['friend-requests'],
-    queryFn: async (): Promise<any[]> => {
+    queryFn: async (): Promise<FriendRequestsResponse> => {
       if (!user) throw new Error('로그인이 필요합니다.')
 
       const response = await fetch('/api/social/friends/requests')
@@ -272,25 +306,97 @@ export function useFriendRequests() {
   })
 }
 
+// 친구 요청 응답 (수락/거절)
 export function useRespondToFriendRequest() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (data: { requestId: string; status: 'accepted' | 'rejected' }): Promise<void> => {
-      const response = await fetch(`/api/social/friends/requests/${data.requestId}`, {
-        method: 'PUT',
+    mutationFn: async (data: FriendRequestResponse) => {
+      const response = await fetch('/api/social/friends/requests', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: data.status })
+        body: JSON.stringify(data)
       })
-
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || '친구 요청 응답에 실패했습니다.')
+        throw new Error(error.error || '요청 응답 처리에 실패했습니다.')
       }
+      return response.json()
     },
     onSuccess: () => {
+      // 친구 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['friends'] })
+      // 친구 요청 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
+    }
+  })
+}
+
+// 친구 랭킹 조회
+export function useFriendRanking(period: 'daily' | 'weekly' | 'monthly' = 'weekly') {
+  const { data: user } = useUser()
+
+  return useQuery({
+    queryKey: ['friend-ranking', period],
+    queryFn: async (): Promise<FriendRankingResponse> => {
+      if (!user) throw new Error('로그인이 필요합니다.')
+
+      const response = await fetch(`/api/social/friends/ranking?period=${period}`)
+      if (!response.ok) {
+        throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
+      }
+      return response.json()
+    },
+    enabled: !!user,
+  })
+}
+
+// 친구 삭제
+export function useRemoveFriend() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (friendId: string) => {
+      const response = await fetch(`/api/social/friends/${friendId}`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '친구 삭제에 실패했습니다.')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      // 친구 목록 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ['friends'] })
+      // 친구 랭킹 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ['friend-ranking'] })
+    }
+  })
+}
+
+// 친구 격려 메시지 기능은 제외됨
+
+// 친구 활동 상태 업데이트
+export function useUpdateFriendActivityStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: { status: string, current_focus_score?: number }) => {
+      const response = await fetch('/api/social/friends/activity-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '활동 상태 업데이트에 실패했습니다.')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      // 친구 목록 캐시 무효화 (활동 상태 포함)
+      queryClient.invalidateQueries({ queryKey: ['friends'] })
     }
   })
 }
@@ -299,70 +405,72 @@ export function useRespondToFriendRequest() {
 // 4. 격려 메시지 관련 훅
 // =====================================================
 
-export function useEncouragementMessages() {
-  const { data: user } = useUser()
+// 격려 메시지 기능은 제외됨
+// export function useEncouragementMessages() {
+//   const { data: user } = useUser()
 
-  return useQuery({
-    queryKey: ['encouragement-messages'],
-    queryFn: async (): Promise<EncouragementMessage[]> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
+//   return useQuery({
+//     queryKey: ['encouragement-messages'],
+//     queryFn: async (): Promise<any[]> => {
+//       if (!user) throw new Error('로그인이 필요합니다.')
 
-      const response = await fetch('/api/social/encouragement')
-      if (!response.ok) {
-        throw new Error('격려 메시지를 불러오는데 실패했습니다.')
-      }
-      return response.json()
-    },
-    enabled: !!user,
-  })
-}
+//       const response = await fetch('/api/social/encouragement')
+//       if (!response.ok) {
+//         throw new Error('격려 메시지를 불러오는데 실패했습니다.')
+//       }
+//       return response.json()
+//     },
+//     enabled: !!user,
+//   })
+// }
 
-export function useSendEncouragement() {
-  const queryClient = useQueryClient()
+// 격려 메시지 기능은 제외됨
+// export function useSendEncouragement() {
+//   const queryClient = useQueryClient()
 
-  return useMutation({
-    mutationFn: async (data: {
-      toUserId: string
-      roomId?: string
-      messageType: 'text' | 'emoji' | 'sticker' | 'ai_generated'
-      content: string
-    }): Promise<void> => {
-      const response = await fetch('/api/social/encouragement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      })
+//   return useMutation({
+//     mutationFn: async (data: {
+//       toUserId: string
+//       roomId?: string
+//       messageType: 'text' | 'emoji' | 'sticker' | 'ai_generated'
+//       content: string
+//     }): Promise<void> => {
+//       const response = await fetch('/api/social/encouragement', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify(data)
+//       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '격려 메시지 전송에 실패했습니다.')
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
-    }
-  })
-}
+//       if (!response.ok) {
+//         const error = await response.json()
+//         throw new Error(error.error || '격려 메시지 전송에 실패했습니다.')
+//       }
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
+//     }
+//   })
+// }
 
-export function useMarkMessageAsRead() {
-  const queryClient = useQueryClient()
+// export function useMarkMessageAsRead() {
+//   const queryClient = useQueryClient()
 
-  return useMutation({
-    mutationFn: async (messageId: string): Promise<void> => {
-      const response = await fetch(`/api/social/encouragement/${messageId}/read`, {
-        method: 'PUT'
-      })
+//   return useMutation({
+//     mutationFn: async (messageId: string): Promise<void> => {
+//       const response = await fetch(`/api/social/encouragement/${messageId}/read`, {
+//         method: 'PUT'
+//       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '메시지 읽음 처리에 실패했습니다.')
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
-    }
-  })
-}
+//       if (!response.ok) {
+//         const error = await response.json()
+//         throw new Error(error.error || '메시지 읽음 처리에 실패했습니다.')
+//       }
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
+//     }
+//   })
+// }
 
 // =====================================================
 // 5. 소셜 통계 관련 훅
@@ -373,7 +481,7 @@ export function useSocialStats() {
 
   return useQuery({
     queryKey: ['social-stats'],
-    queryFn: async (): Promise<SocialStats | null> => {
+    queryFn: async (): Promise<any | null> => {
       if (!user) throw new Error('로그인이 필요합니다.')
 
       const response = await fetch('/api/social/stats')

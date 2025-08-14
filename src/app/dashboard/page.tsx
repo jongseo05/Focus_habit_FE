@@ -2285,7 +2285,7 @@ const calculateAndSaveFocusScore = async () => {
                                 {analysis.status === 'focused' ? '집중 상태' : '방해 상태'}
                               </div>
                               <div className="text-xs text-slate-500 truncate">
-                                "{analysis.text}"
+                                &quot;{analysis.text}&quot;
                               </div>
                             </div>
                             <div className="text-right">

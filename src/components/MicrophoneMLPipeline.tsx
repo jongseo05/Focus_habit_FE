@@ -317,7 +317,7 @@ export default function MicrophoneMLPipeline() {
                 <div className="p-3 bg-blue-50 rounded-lg">
                   <div className="text-sm font-medium text-blue-800">분석된 텍스트</div>
                   <div className="text-xs text-blue-600">
-                    "{lastFeatures.text}"
+                    &quot;{lastFeatures.text}&quot;
                   </div>
                 </div>
 

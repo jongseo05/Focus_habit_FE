@@ -581,7 +581,7 @@ const WeeklyLearningPatterns = ({ patterns }: { patterns: any }) => {
                   <h4 className="text-lg font-semibold text-indigo-900">학습 스타일 분석</h4>
                 </div>
                 <div className="space-y-3 text-sm text-indigo-800">
-                  <p className="font-medium text-base">당신은 '아침형 학습자'입니다!</p>
+                  <p className="font-medium text-base">당신은 &apos;아침형 학습자&apos;입니다!</p>
                   <p>오전 9-11시 집중도가 평균보다 <span className="font-bold text-blue-600">25%</span> 높아요.</p>
                   <p className="text-indigo-600">💡 이 시간대에 중요한 학습을 계획하세요.</p>
                 </div>

@@ -129,31 +129,39 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     if (payload.eventType === 'INSERT') {
       // 새로운 대결 생성
       onChallengeEventRef.current?.({
-        type: 'CHALLENGE_CREATED',
-        payload: {
+        type: 'challenge_created',
+        data: {
+          challenge_id: payload.new.challenge_id,
+          room_id: payload.new.room_id,
+          mode: payload.new.mode,
           config: payload.new.config,
-          start_countdown_sec: 10
+          created_by: payload.new.created_by,
+          timestamp: payload.new.created_at
         }
       })
     } else if (payload.eventType === 'UPDATE') {
       if (payload.new.state === 'active' && payload.old.state === 'pending') {
         // 대결 시작
         onChallengeEventRef.current?.({
-          type: 'CHALLENGE_STARTED',
-          payload: {
+          type: 'challenge_started',
+          data: {
+            challenge_id: payload.new.challenge_id,
+            room_id: payload.new.room_id,
             start_at: payload.new.start_at,
-            mode: payload.new.mode,
-            config: payload.new.config
+            timestamp: payload.new.updated_at
           }
         })
       } else if (payload.new.state === 'ended' && payload.old.state === 'active') {
         // 대결 종료
         onChallengeEventRef.current?.({
-          type: 'CHALLENGE_ENDED',
-          payload: {
-            end_at: payload.new.end_at,
+          type: 'challenge_ended',
+          data: {
+            challenge_id: payload.new.challenge_id,
+            room_id: payload.new.room_id,
             final_scores: {}, // 실제로는 challenge_participant에서 조회
-            badges: {}
+            final_rankings: {},
+            winner_id: undefined,
+            timestamp: payload.new.updated_at
           }
         })
       }

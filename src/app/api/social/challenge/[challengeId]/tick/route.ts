@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { challengeId: string } }
+  { params }: { params: Promise<{ challengeId: string }> }
 ) {
   try {
     const supabase = await supabaseServer()
@@ -14,7 +14,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { challengeId } = params
+    const { challengeId } = await params
     const body = await request.json()
     const { scores, rankings } = body
 
@@ -81,7 +81,7 @@ export async function POST(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { challengeId: string } }
+  { params }: { params: Promise<{ challengeId: string }> }
 ) {
   try {
     const supabase = await supabaseServer()
@@ -92,7 +92,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { challengeId } = params
+    const { challengeId } = await params
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '10')
 
