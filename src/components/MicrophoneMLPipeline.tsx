@@ -66,38 +66,84 @@ export default function MicrophoneMLPipeline() {
     }
   };
 
-  // GPT API를 통한 텍스트 분석 (실제 구현 시 fine-tuning된 모델 사용)
+  // GPT API를 통한 텍스트 분석
   const analyzeTextWithGPT = async (text: string): Promise<{
     is_study_related: boolean;
     confidence: number;
     context: string;
   }> => {
     try {
-      // TODO: 실제 GPT fine-tuning API 호출로 교체
-      // 현재는 시뮬레이션된 분석 결과 반환
+      console.log('🤖 MicrophoneMLPipeline: GPT API 호출 시도:', text);
       
-      // 간단한 키워드 기반 분석 (임시)
-      const studyKeywords = ['공부', '학습', '코딩', '프로그래밍', '과제', '시험', '책', '강의', '수업'];
-      const studyKeywordCount = studyKeywords.filter(keyword => text.includes(keyword)).length;
+      const response = await fetch('/api/classify-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
       
-      const is_study_related = studyKeywordCount > 0;
-      const confidence = Math.min(0.5 + (studyKeywordCount * 0.1), 0.95);
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🤖 MicrophoneMLPipeline: GPT 분류 결과:', result);
+        
+        if (result.label === 'study' || result.label === 'no_study') {
+          const is_study_related = result.label === 'study';
+          const confidence = result.confidence || 0.9;
+          
+          // 문맥 분석
+          let context = 'unknown';
+          if (text.includes('코딩') || text.includes('프로그래밍')) context = 'programming';
+          else if (text.includes('공부') || text.includes('학습')) context = 'study';
+          else if (text.includes('과제') || text.includes('시험')) context = 'assignment';
+          else if (text.includes('책') || text.includes('강의')) context = 'reading';
+          else if (text.includes('토론') || text.includes('발표')) context = 'discussion';
+          else if (text.includes('문제') || text.includes('풀이')) context = 'problem_solving';
+          else if (is_study_related) context = 'study_general';
+          
+          return { is_study_related, confidence, context };
+        }
+      }
       
-      // 문맥 분석
-      let context = 'unknown';
-      if (text.includes('코딩') || text.includes('프로그래밍')) context = 'programming';
-      else if (text.includes('공부') || text.includes('학습')) context = 'study';
-      else if (text.includes('과제') || text.includes('시험')) context = 'assignment';
-      else if (text.includes('책') || text.includes('강의')) context = 'reading';
+      // API 호출 실패 시 키워드 기반 fallback
+      console.warn('🤖 MicrophoneMLPipeline: GPT API 호출 실패, 키워드 기반으로 대체');
+      return analyzeTextWithKeywords(text);
       
-      // 실제 GPT API 호출 시뮬레이션 (1초 지연)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      return { is_study_related, confidence, context };
     } catch (error) {
-      // 오류 시 기본값 반환
-      return { is_study_related: false, confidence: 0.5, context: 'unknown' };
+      console.warn('🤖 MicrophoneMLPipeline: GPT API 오류, 키워드 기반으로 대체:', error);
+      return analyzeTextWithKeywords(text);
     }
+  };
+
+  // 키워드 기반 분석 (fallback용)
+  const analyzeTextWithKeywords = (text: string): {
+    is_study_related: boolean;
+    confidence: number;
+    context: string;
+  } => {
+    const studyKeywords = [
+      '공부', '학습', '수업', '문제', '책', '읽기', '쓰기', '계산', '공식', '이론',
+      '시험', '과제', '프로젝트', '리포트', '논문', '연구', '분석', '실험',
+      '강의', '교과서', '참고서', '문제집', '연습', '복습', '예습',
+      '수학', '영어', '과학', '역사', '국어', '물리', '화학', '생물',
+      '토론', '발표', '질문', '답변', '설명', '정리', '요약',
+      '집중', '암기', '이해', '풀이', '해결', '방법', '원리',
+      '코딩', '프로그래밍'
+    ];
+    
+    const studyKeywordCount = studyKeywords.filter(keyword => text.includes(keyword)).length;
+    const is_study_related = studyKeywordCount > 0;
+    const confidence = Math.min(0.5 + (studyKeywordCount * 0.1), 0.95);
+    
+    // 문맥 분석
+    let context = 'unknown';
+    if (text.includes('코딩') || text.includes('프로그래밍')) context = 'programming';
+    else if (text.includes('공부') || text.includes('학습')) context = 'study';
+    else if (text.includes('과제') || text.includes('시험')) context = 'assignment';
+    else if (text.includes('책') || text.includes('강의')) context = 'reading';
+    else if (text.includes('토론') || text.includes('발표')) context = 'discussion';
+    else if (text.includes('문제') || text.includes('풀이')) context = 'problem_solving';
+    else if (is_study_related) context = 'study_general';
+    
+    return { is_study_related, confidence, context };
   };
 
   // 음성 인식 설정

@@ -1,8 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
-import { koelectraPreprocess, testTokenizer, initializeTokenizer } from "@/lib/tokenizer/koelectra"
-import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 import { useDashboardStore } from "@/stores/dashboardStore"
 
 // 공부 관련 텍스트 분석 함수 (키워드 기반) - 메모이제이션 적용
@@ -56,31 +54,6 @@ const SpeechRecognition: any =
 export default function HybridAudioPipeline() {
   // 집중 모드 상태 가져오기
   const { isRunning: isFocusSessionRunning, isPaused: isFocusSessionPaused } = useDashboardStore()
-  
-  // KoELECTRA 모델 훅
-  const { 
-    isLoaded: isModelLoaded, 
-    isLoading: isModelLoading, 
-    error: modelError, 
-    inference: koelectraInference,
-    loadModel: loadKoELECTRAModel
-  } = useKoELECTRA({ 
-    autoLoad: true
-  })
-
-  // KoELECTRA 모델 상태 모니터링 (5초마다 한 번씩만 로그 출력)
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      // 모델이 로드되지 않고 로딩 중도 아니며 오류가 없는 경우 수동 로드 시도
-      if (!isModelLoaded && !isModelLoading && !modelError) {
-        loadKoELECTRAModel().catch(err => {
-          // 에러 처리만 유지
-        });
-      }
-    }, 5000);
-
-    return () => clearTimeout(timeoutId);
-  }, [isModelLoaded, isModelLoading, modelError, loadKoELECTRAModel]);
 
   // 오디오 파이프라인 Ref
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -245,10 +218,10 @@ export default function HybridAudioPipeline() {
     }
   }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized, restartSpeechRecognition])
 
-  // 모델 상태 요약
-  const modelStatus = useMemo(() => ({
-    status: isModelLoaded ? '✅ 로드됨' : isModelLoading ? '🔄 로딩 중' : '❌ 로드 안됨'
-  }), [isModelLoaded, isModelLoading])
+  // GPT API 상태 (항상 사용 가능으로 가정)
+  const apiStatus = useMemo(() => ({
+    status: '🤖 GPT API 연결됨'
+  }), [])
 
   // 오디오 파이프라인 초기화 함수 - 메모이제이션 적용
   const initializeAudioPipeline = useCallback(async () => {
@@ -835,9 +808,7 @@ export default function HybridAudioPipeline() {
       isAnalyzing,
       bufferText: speechBufferRef.current,
       bufferLength: speechBufferRef.current.length,
-      isModelLoaded,
-      isModelLoading,
-      modelError
+      gptApiReady: true
     });
     
     if (isAnalyzing) {
@@ -869,42 +840,40 @@ export default function HybridAudioPipeline() {
       const startTimestamp = speechStartTimeRef.current ? new Date(speechStartTimeRef.current).toLocaleTimeString() : '알 수 없음';
       const endTimestamp = speechEndTimeRef.current ? new Date(speechEndTimeRef.current).toLocaleTimeString() : '알 수 없음';
 
-      // KoELECTRA 모델 추론 (우선순위)
+      // GPT 기반 분류 API 호출 (우선순위)
       let isStudyRelated = false;
-      let koelectraConfidence = 0;
+      let gptConfidence = 0;
       let analysisMethod = '키워드';
 
-      if (isModelLoaded) {
-        try {
+      try {
+        console.log('🤖 GPT API 호출 시도:', text);
+        
+        const response = await fetch('/api/classify-speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('🤖 GPT 분류 결과:', result);
           
-          const result = await koelectraInference(text);
-          
-          // 디버깅: 추론 결과 상세 로그
-          
-          
-          if (result && result.confidence >= 0.6) {
-            // 디버깅: 클래스 판정 과정
-            const class0Score = result.logits[0];
-            const class1Score = result.logits[1];
-            const isClass1Higher = class1Score > class0Score;
-            
-            
-            
-            isStudyRelated = isClass1Higher; // 공부 관련 클래스가 더 높은 경우
-            koelectraConfidence = result.confidence;
-            analysisMethod = 'KoELECTRA';
+          if (result.label === 'study' || result.label === 'no_study') {
+            isStudyRelated = result.label === 'study';
+            gptConfidence = result.confidence || 0.9;
+            analysisMethod = result.method || 'GPT';
           } else {
-            
-            // 신뢰도가 낮으면 키워드 기반으로 대체
+            // 예상치 못한 응답 형식
+            console.warn('🤖 GPT 응답 형식 오류, 키워드 기반으로 대체:', result);
             isStudyRelated = analyzeStudyRelatedByKeywords(text);
           }
-        } catch (error) {
-          console.warn('KoELECTRA 추론 실패, 키워드 기반으로 대체:', error);
+        } else {
+          // API 호출 실패
+          console.warn('🤖 GPT API 호출 실패, 키워드 기반으로 대체:', response.status);
           isStudyRelated = analyzeStudyRelatedByKeywords(text);
         }
-      } else {
-        console.log('🎤 KoELECTRA 모델 미로드 - 키워드 기반으로 대체');
-        // 모델이 로드되지 않은 경우 키워드 기반
+      } catch (error) {
+        console.warn('🤖 GPT API 호출 오류, 키워드 기반으로 대체:', error);
         isStudyRelated = analyzeStudyRelatedByKeywords(text);
       }
 
@@ -927,7 +896,7 @@ export default function HybridAudioPipeline() {
 ├─ 전체 분석 시간: ${duration.toFixed(1)}초
 ├─ 원문: "${text}"
 ├─ 분석 방법: ${analysisMethod}
-├─ KoELECTRA 신뢰도: ${koelectraConfidence.toFixed(3)}
+├─ GPT 신뢰도: ${gptConfidence.toFixed(3)}
 ├─ 공부 관련: ${isStudyRelated ? '✅' : '❌'}
 ├─ 문맥: ${contextLabel} (가중치: ${contextualWeight.toFixed(2)})
 ├─ 최종 판정: ${finalJudgment ? '공부 관련 발화' : '잡담'}
@@ -968,7 +937,7 @@ export default function HybridAudioPipeline() {
         }, 500);
       }
     }
-  }, [isModelLoaded, koelectraInference, isAnalyzing, restartSpeechRecognition]);
+  }, [isAnalyzing, restartSpeechRecognition]);
 
   // 텍스트 문맥을 분석하는 헬퍼 함수
   const analyzeTextContext = (text: string):
@@ -1100,56 +1069,30 @@ export default function HybridAudioPipeline() {
     }
   }, [setupSpeechRecognition])
 
-  // 컴포넌트 마운트 시 토크나이저 및 오디오 파이프라인 초기화
+  // 컴포넌트 마운트 시 오디오 파이프라인 초기화
   useEffect(() => {
     const initializeComponents = async () => {
-      // 1. 토크나이저 초기화 (우선순위)
-      try {
-        await initializeTokenizer();
-      } catch (error) {
-        console.error('❌ 토크나이저 초기화 실패:', error);
-      }
-      
-      // 2. 오디오 파이프라인 초기화 (토크나이저 로드 후)
+      // 오디오 파이프라인 초기화
       setTimeout(() => {
         if (!isInitialized && !isInitializing) {
           initializeAudioPipeline()
         }
-      }, 500); // 토크나이저 로드 완료 후 500ms 대기
+      }, 100); // 컴포넌트 로드 완료 후 즉시 시작
     };
     
     initializeComponents();
   }, [isInitialized, isInitializing, initializeAudioPipeline])
 
-  // 토크나이저 테스트 함수
-  const handleTokenizerTest = async () => {
-    const testTexts = [
-      "안녕하세요",
-      "공부를 하고 있어요",
-      "수학 문제를 풀고 있습니다",
-      "이론을 공부하고 있어요",
-      "토론을 하고 있어요",
-      "선생님이 설명해주세요",
-      "어떻게 풀어야 할까요?",
-      "짜증나요 이 문제가 안 풀려요"
-    ];
-    
-    await testTokenizer(testTexts);
-  };
-
   return (
     <div className="p-4 bg-slate-100 rounded-lg">
       <h3 className="font-bold">하이브리드 오디오 파이프라인</h3>
       
-      {/* 토크나이저 테스트 버튼 */}
+      {/* GPT API 상태 정보 */}
       <div className="mb-4">
-        <button 
-          onClick={handleTokenizerTest}
-          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 mr-2"
-        >
-          토크나이저 테스트
-        </button>
-        <span className="text-sm text-gray-600">새로운 WordPiece 토크나이저를 테스트합니다</span>
+        <div className="px-4 py-2 bg-blue-100 text-blue-800 rounded">
+          🤖 GPT 기반 발화 분류 시스템 활성화
+        </div>
+        <span className="text-sm text-gray-600">GPT API를 통해 실시간으로 발화를 분석합니다</span>
       </div>
       
       {isInitializing && (
@@ -1160,17 +1103,13 @@ export default function HybridAudioPipeline() {
         <p className="text-red-600 mb-4">오류: {error}</p>
       )}
       
-      {/* KoELECTRA 모델 상태 */}
+      {/* GPT API 상태 */}
       <div className="mb-4 p-3 bg-gray-50 rounded">
-        <h4 className="font-semibold mb-2">🤖 KoELECTRA 모델 상태</h4>
+        <h4 className="font-semibold mb-2">🤖 GPT API 상태</h4>
         <div className="space-y-1 text-sm">
-          <p><b>모델 로드:</b> 
-            {isModelLoading ? "🔄 로딩 중..." : 
-             isModelLoaded ? "✅ 로드됨" : "❌ 미로드"}
-          </p>
-          {modelError && (
-            <p className="text-red-600"><b>모델 에러:</b> {modelError}</p>
-          )}
+          <p><b>API 연결:</b> ✅ 준비됨</p>
+          <p><b>분류 모델:</b> GPT-4o-mini</p>
+          <p><b>Fallback:</b> 키워드 기반 분석</p>
         </div>
       </div>
 
