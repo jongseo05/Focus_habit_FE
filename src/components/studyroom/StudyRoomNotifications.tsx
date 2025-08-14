@@ -14,7 +14,7 @@ export function StudyRoomNotifications({ notifications }: StudyRoomNotifications
   if (notifications.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="fixed top-4 left-4 z-50 space-y-2">
       {notifications.slice(-3).map((notification) => (
         <div
           key={notification.id}

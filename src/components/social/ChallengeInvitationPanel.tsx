@@ -76,6 +76,13 @@ export function ChallengeInvitationPanel({
     const responseKey = `${invitation.invitation_id}-${currentUserId}`
     const isProcessing = window.sessionStorage.getItem(responseKey) === 'processing'
     setIsResponding(isProcessing)
+    
+    console.log('응답 상태 업데이트:', {
+      userResponse,
+      hasResponded: userResponse === 'accepted' || userResponse === 'rejected',
+      isProcessing,
+      responses: invitation.responses
+    })
   }, [invitation.responses, currentUserId, invitation.invitation_id])
 
   const formatTime = (seconds: number) => {
@@ -195,47 +202,36 @@ export function ChallengeInvitationPanel({
           </div>
 
           {/* 응답 버튼 */}
-          {!hasResponded && (
+          {!hasResponded && !isResponding && (
             <div className="flex gap-2 pt-2">
               <Button
                 onClick={onAccept}
-                disabled={isResponding}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-green-600 hover:bg-green-700"
               >
-                {isResponding ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 mr-1 border-b-2 border-white"></div>
-                    처리 중...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    동의
-                  </>
-                )}
+                <CheckCircle className="h-4 w-4 mr-1" />
+                동의
               </Button>
               <Button
                 onClick={onReject}
-                disabled={isResponding}
                 variant="destructive"
-                className="flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1"
               >
-                {isResponding ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 mr-1 border-b-2 border-white"></div>
-                    처리 중...
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="h-4 w-4 mr-1" />
-                    거부
-                  </>
-                )}
+                <XCircle className="h-4 w-4 mr-1" />
+                거부
               </Button>
             </div>
           )}
 
-          {hasResponded && (
+          {isResponding && (
+            <div className="text-center pt-2">
+              <div className="flex items-center justify-center gap-2 text-blue-600">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span>응답 처리 중...</span>
+              </div>
+            </div>
+          )}
+
+          {hasResponded && !isResponding && (
             <div className="text-center pt-2">
               <Badge variant="outline" className="text-sm">
                 이미 응답했습니다
@@ -247,3 +243,4 @@ export function ChallengeInvitationPanel({
     </div>
   )
 }
+

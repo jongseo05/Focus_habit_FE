@@ -65,6 +65,12 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   })
   const [focusUpdateInterval, setFocusUpdateInterval] = useState<NodeJS.Timeout | null>(null)
   const [notifications, setNotifications] = useState<Array<{id: string, message: string, type: 'join' | 'leave'}>>([])
+  const notificationIdCounter = useRef(0)
+  
+  // 고유한 알림 ID 생성 함수
+  const generateNotificationId = useCallback(() => {
+    return `notification-${++notificationIdCounter.current}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  }, [])
 
   // 초기 참가자 로드 완료 여부를 추적하는 ref
   const initialLoadDoneRef = useRef<boolean>(false)
@@ -259,7 +265,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       console.log('이미 응답함:', currentUserResponse)
       // 사용자에게 친화적인 알림 표시
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '이미 이 대결 초대에 응답했습니다.',
         type: 'join'
       }])
@@ -271,7 +277,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     if (window.sessionStorage.getItem(responseKey)) {
       console.log('응답 처리 중입니다. 잠시만 기다려주세요.')
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '응답 처리 중입니다. 잠시만 기다려주세요.',
         type: 'join'
       }])
@@ -280,6 +286,15 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     
     // 응답 처리 중 표시
     window.sessionStorage.setItem(responseKey, 'processing')
+    
+    // 로컬 상태를 즉시 업데이트하여 중복 클릭 방지
+    setCurrentInvitation(prev => prev ? {
+      ...prev,
+      responses: {
+        ...prev.responses,
+        [user?.id || '']: response
+      }
+    } : null)
     
     try {
       const responseData = await fetch('/api/social/challenge-invitation/response', {
@@ -295,16 +310,24 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         const result = await responseData.json()
         console.log('대결 초대 응답 완료:', result)
         
-        // 응답 처리 완료 표시
-        window.sessionStorage.removeItem(responseKey)
-        
-        // 초대 상태 업데이트 (서버 응답의 responses를 사용)
-        const updatedInvitation = {
-          ...currentInvitation,
-          responses: result.responses || currentInvitation.responses,
-          status: result.status || currentInvitation.status
-        }
-        setCurrentInvitation(updatedInvitation)
+                 // 응답 처리 완료 표시
+         window.sessionStorage.removeItem(responseKey)
+         
+         // 초대 상태 업데이트 (서버 응답의 responses를 사용)
+         const updatedInvitation = {
+           ...currentInvitation,
+           responses: result.responses || currentInvitation.responses,
+           status: result.status || currentInvitation.status
+         }
+         setCurrentInvitation(updatedInvitation)
+         
+         // 응답 완료 알림
+         const responseText = response === 'accepted' ? '동의' : '거부'
+         setNotifications(prev => [...prev, {
+           id: generateNotificationId(),
+           message: `대결 초대에 ${responseText}했습니다.`,
+           type: 'join'
+         }])
         
         // 모든 참가자가 동의했는지 확인 (서버 응답의 responses 사용)
         const allAccepted = Object.values(updatedInvitation.responses).every(response => response === 'accepted')
@@ -330,7 +353,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
             // 호스트가 아닌 경우 초대 패널은 유지하고 호스트가 시작할 때까지 대기
             console.log('호스트가 아닌 사용자, 호스트의 대결 시작 대기')
             setNotifications(prev => [...prev, {
-              id: Date.now().toString(),
+              id: generateNotificationId(),
               message: '모든 참가자가 동의했습니다. 호스트가 대결을 시작할 예정입니다.',
               type: 'join'
             }])
@@ -345,13 +368,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           
           if (rejectedCount > 0) {
             setNotifications(prev => [...prev, {
-              id: Date.now().toString(),
+              id: generateNotificationId(),
               message: '누군가 대결 초대를 거부했습니다.',
               type: 'leave'
             }])
           } else if (pendingCount > 0) {
             setNotifications(prev => [...prev, {
-              id: Date.now().toString(),
+              id: generateNotificationId(),
               message: `아직 ${pendingCount}명의 참가자가 응답하지 않았습니다.`,
               type: 'join'
             }])
@@ -375,7 +398,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           
           // 사용자에게 친화적인 알림 표시
           setNotifications(prev => [...prev, {
-            id: Date.now().toString(),
+            id: generateNotificationId(),
             message: '이미 이 대결 초대에 응답했습니다.',
             type: 'join'
           }])
@@ -383,7 +406,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           // 다른 에러의 경우 상세 정보와 함께 표시
           const errorMessage = errorData.error || errorData.details || '알 수 없는 오류'
           setNotifications(prev => [...prev, {
-            id: Date.now().toString(),
+            id: generateNotificationId(),
             message: `대결 초대 응답 실패: ${errorMessage}`,
             type: 'leave'
           }])
@@ -395,7 +418,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       window.sessionStorage.removeItem(responseKey)
       
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '대결 초대 응답 중 오류가 발생했습니다.',
         type: 'leave'
       }])
@@ -451,7 +474,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           
           // 알림 추가
           setNotifications(prev => [...prev, {
-            id: Date.now().toString(),
+            id: generateNotificationId(),
             message: '만료된 대결 초대가 정리되었습니다.',
             type: 'join'
           }])
@@ -534,6 +557,16 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   }, [room?.room_id, onClose, leaveRoomMutation])
 
   const handleEndRoom = useCallback(async () => {
+    // 호스트가 아닌 경우 에러 알림 표시
+    if (!isHost) {
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '호스트만 스터디룸을 종료할 수 있습니다.',
+        type: 'leave'
+      }])
+      return
+    }
+
     if (!confirm('정말로 스터디룸을 종료하시겠습니까? 모든 참가자가 퇴장됩니다.')) {
       return
     }
@@ -552,7 +585,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       console.error('스터디룸 종료 실패:', error)
       alert('스터디룸 종료에 실패했습니다.')
     }
-  }, [room?.room_id, onClose, endRoomMutation])
+  }, [room?.room_id, onClose, endRoomMutation, isHost])
 
   // Supabase Realtime 메시지 핸들러들
   const handleRoomJoin = useCallback((data: RoomJoinMessage['data']) => {
@@ -591,7 +624,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     
     // 알림 추가
     setNotifications(prev => [...prev, {
-      id: Date.now().toString(),
+      id: generateNotificationId(),
       message: `${data.user_name}님이 입장했습니다!`,
       type: 'join'
     }])
@@ -609,7 +642,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         
         // 알림 추가
         setNotifications(notifications => [...notifications, {
-          id: Date.now().toString(),
+          id: generateNotificationId(),
           message: `${leavingParticipant.user.name}님이 퇴장했습니다.`,
           type: 'leave'
         }])
@@ -651,7 +684,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       
       // 알림 추가
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '새로운 집중도 대결 초대가 도착했습니다!',
         type: 'join'
       }])
@@ -673,18 +706,32 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         newStatus: data.status
       })
       
-      // 초대 상태 업데이트 (서버 응답의 responses를 사용)
-      setCurrentInvitation(prev => prev ? {
-        ...prev,
-        responses: data.responses,
-        status: data.status
-      } : null)
+             // 초대 상태 업데이트 (서버 응답의 responses를 사용)
+       setCurrentInvitation(prev => prev ? {
+         ...prev,
+         responses: data.responses,
+         status: data.status
+       } : null)
+       
+       // 응답 상태 변경 알림 (다른 사용자의 응답인 경우)
+       if (data.user_id !== user?.id) {
+         const respondingUser = participants.find(p => p.user_id === data.user_id)
+         if (respondingUser) {
+           const responseText = data.response === 'accepted' ? '동의' : '거부'
+           setNotifications(prev => [...prev, {
+             id: generateNotificationId(),
+             message: `${respondingUser.user.name}님이 대결 초대에 ${responseText}했습니다.`,
+             type: 'join'
+           }])
+         }
+       }
       
-      // 응답 처리 중 상태 해제 (실시간 이벤트로 응답 완료 확인)
-      if (data.user_id === user?.id) {
-        const responseKey = `${data.invitation_id}-${data.user_id}`
-        window.sessionStorage.removeItem(responseKey)
-      }
+             // 응답 처리 중 상태 해제 (실시간 이벤트로 응답 완료 확인)
+       if (data.user_id === user?.id) {
+         const responseKey = `${data.invitation_id}-${data.user_id}`
+         window.sessionStorage.removeItem(responseKey)
+         console.log('응답 처리 중 상태 해제됨:', responseKey)
+       }
       
       // 모든 참가자가 동의했는지 확인 (서버 응답의 responses 사용)
       if (data.status === 'accepted') {
@@ -740,7 +787,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           }
           
           setNotifications(prev => [...prev, {
-            id: Date.now().toString(),
+            id: generateNotificationId(),
             message: '모든 참가자가 동의했습니다. 대결이 시작됩니다!',
             type: 'join'
           }])
@@ -763,14 +810,14 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           } else if (pendingCount > 0) {
             // 아직 응답하지 않은 참가자가 있는 경우
             setNotifications(prev => [...prev, {
-              id: Date.now().toString(),
+              id: generateNotificationId(),
               message: `아직 ${pendingCount}명의 참가자가 응답하지 않았습니다.`,
               type: 'join'
             }])
           } else {
             // 모든 참가자가 응답했지만 모두 동의하지 않은 경우
             setNotifications(prev => [...prev, {
-              id: Date.now().toString(),
+              id: generateNotificationId(),
               message: '모든 참가자가 응답했지만 모두 동의하지 않았습니다.',
               type: 'leave'
             }])
@@ -783,7 +830,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         
         // 알림 추가
         setNotifications(prev => [...prev, {
-          id: Date.now().toString(),
+          id: generateNotificationId(),
           message: '대결 초대가 거부되었습니다.',
           type: 'leave'
         }])
@@ -796,7 +843,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         if (respondingUser) {
           const responseText = data.response === 'accepted' ? '동의' : '거부'
           setNotifications(prev => [...prev, {
-            id: Date.now().toString(),
+            id: generateNotificationId(),
             message: `${respondingUser.user.name}님이 대결 초대에 ${responseText}했습니다.`,
             type: 'join'
           }])
@@ -820,7 +867,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       
       // 알림 추가
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '대결 초대가 만료되었습니다.',
         type: 'leave'
       }])
@@ -839,7 +886,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       
       // 알림 추가
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '대결이 시작되었습니다!',
         type: 'join'
       }])
@@ -882,7 +929,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       
       // 알림 추가
       setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
+        id: generateNotificationId(),
         message: '대결이 종료되었습니다!',
         type: 'leave'
       }])
@@ -933,7 +980,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
        
        // 알림 추가
        setNotifications(prev => [...prev, {
-         id: Date.now().toString(),
+         id: generateNotificationId(),
          message: '만료된 대결 초대가 정리되었습니다.',
          type: 'join'
        }])
@@ -1419,7 +1466,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
               
               // 사용자에게 더 친화적인 메시지 표시
               setNotifications(prev => [...prev, {
-                id: Date.now().toString(),
+                id: generateNotificationId(),
                 message: '이미 대기 중인 대결 초대가 있습니다. 기존 초대에 응답해주세요.',
                 type: 'join'
               }])
@@ -1440,6 +1487,16 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
   // 집중도 대결 종료
   const endCompetition = useCallback(async () => {
+    // 호스트가 아닌 경우 에러 알림만 표시
+    if (!isHost) {
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '호스트만 대결을 종료할 수 있습니다.',
+        type: 'leave'
+      }])
+      return
+    }
+
     const isCompetitionActive = challenge.currentChallenge?.state === 'active'
     if (!isCompetitionActive || !challenge.currentChallenge) return
 
@@ -1495,7 +1552,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
        : `${Math.floor(competitionDuration / 60)}시간 ${competitionDuration % 60}분`
      
      setNotifications(prev => [...prev, {
-       id: Date.now().toString(),
+       id: generateNotificationId(),
        message: `🏆 ${winnerName}님이 ${durationText} 대결에서 우승했습니다!`,
        type: 'join'
      }])
@@ -1528,7 +1585,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('챌린지 종료 실패:', error)
     }
-  }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge])
+  }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge, isHost])
 
 
 
@@ -1602,31 +1659,41 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
              currentScores={competitionScores}
              timeLeft={competitionTimeLeft}
              isBreakTime={isBreakTime}
-             onClose={() => {
-               // 모든 참가자에게 경쟁 종료 알림 전송 (Supabase Realtime)
-               try {
-                 const supabase = supabaseBrowser()
-                 supabase
-                   .channel(`social_room:${room?.room_id}`)
-                   .send({
-                     type: 'broadcast',
-                     event: 'challenge_ended',
-                     payload: {
-                       challenge_id: challenge.currentChallenge?.challenge_id,
-                       room_id: room?.room_id,
-                       ended_by: user?.id,
-                       timestamp: new Date().toISOString()
-                     }
-                   })
-                 console.log('경쟁 종료 broadcast 이벤트 전송 완료')
-               } catch (error) {
-                 console.warn('경쟁 종료 알림 전송 실패:', error)
-               }
-               
-               // 로컬에서도 경쟁 종료 처리
-               setShowChallengeHUD(false)
-               endCompetition()
-             }}
+                           onClose={() => {
+                // 호스트가 아닌 경우 에러 알림만 표시하고 실제 종료는 하지 않음
+                if (!isHost) {
+                  setNotifications(prev => [...prev, {
+                    id: generateNotificationId(),
+                    message: '호스트만 대결을 종료할 수 있습니다.',
+                    type: 'leave'
+                  }])
+                  return
+                }
+
+                // 모든 참가자에게 경쟁 종료 알림 전송 (Supabase Realtime)
+                try {
+                  const supabase = supabaseBrowser()
+                  supabase
+                    .channel(`social_room:${room?.room_id}`)
+                    .send({
+                      type: 'broadcast',
+                      event: 'challenge_ended',
+                      payload: {
+                        challenge_id: challenge.currentChallenge?.challenge_id,
+                        room_id: room?.room_id,
+                        ended_by: user?.id,
+                        timestamp: new Date().toISOString()
+                      }
+                    })
+                  console.log('경쟁 종료 broadcast 이벤트 전송 완료')
+                } catch (error) {
+                  console.warn('경쟁 종료 알림 전송 실패:', error)
+                }
+                
+                // 로컬에서도 경쟁 종료 처리
+                setShowChallengeHUD(false)
+                endCompetition()
+              }}
            />
         )}
 

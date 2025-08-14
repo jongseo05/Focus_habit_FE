@@ -90,17 +90,17 @@ export function StudyRoomHeader({
               {isConnected ? '실시간 연결됨' : '연결 중...'}
             </div>
            
-            {isHost && (
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={onEndRoom}
-                disabled={false}
-              >
-                <LogOut className="h-4 w-4 mr-1" />
-                스터디룸 종료
-              </Button>
-            )}
+            <Button 
+              variant={isHost ? "destructive" : "secondary"}
+              size="sm"
+              onClick={onEndRoom}
+              disabled={false}
+              className={!isHost ? 'opacity-60 cursor-not-allowed hover:opacity-60' : ''}
+              title={!isHost ? '호스트만 스터디룸을 종료할 수 있습니다' : '스터디룸 종료'}
+            >
+              <LogOut className="h-4 w-4 mr-1" />
+              {isHost ? '스터디룸 종료' : '종료 (호스트만)'}
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 
