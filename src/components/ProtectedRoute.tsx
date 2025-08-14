@@ -31,10 +31,7 @@ export default function ProtectedRoute({
   if (loading) {
     return loadingComponent || (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
-          <p className="text-sm text-gray-500">로딩 중...</p>
-        </div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
       </div>
     )
   }
