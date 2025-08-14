@@ -1056,73 +1056,99 @@ export class ReportService {
   }
 
   /**
-   * 활동 데이터 생성 (실제 ML 피쳐 기반)
+   * 활동 데이터 생성 (학습 패턴 기반)
    */
   private static generateActivityData(events: any[], sessions: any[], mlFeatures: any[] = []) {
     const activities = []
     
     // 세션 시작 이벤트
     sessions.forEach(session => {
+      const duration = session.ended_at 
+        ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / (1000 * 60)
+        : 0
+      
       activities.push({
         timestamp: session.started_at,
-        action: "집중 세션 시작",
+        action: "학습 세션 시작",
         type: "positive" as const,
         impact: 50,
-        description: `${session.session_type || '학습'} 세션을 시작했습니다`
+        description: `${session.session_type || '학습'} 세션을 시작했습니다${duration > 0 ? ` (${Math.round(duration)}분간)` : ''}`
       })
     })
     
-    // 높은 집중도 구간 감지
-    mlFeatures.forEach(feature => {
-      if (feature.focus_status === 'focused' && feature.focus_confidence > 0.9) {
+    // 장시간 집중 구간 감지 (15분 이상 연속 집중)
+    let consecutiveFocusCount = 0
+    let focusStartTime = null
+    
+    mlFeatures.forEach((feature, index) => {
+      if (feature.focus_status === 'focused') {
+        if (consecutiveFocusCount === 0) {
+          focusStartTime = feature.ts
+        }
+        consecutiveFocusCount++
+      } else {
+        if (consecutiveFocusCount >= 50) { // 약 15분 이상 (30초 간격 가정)
+          activities.push({
+            timestamp: focusStartTime,
+            action: "장시간 집중",
+            type: "positive" as const,
+            impact: 40,
+            description: `${Math.round(consecutiveFocusCount * 0.5)}분간 높은 집중력을 유지했습니다`
+          })
+        }
+        consecutiveFocusCount = 0
+        focusStartTime = null
+      }
+    })
+    
+    // 집중력 저하 패턴 감지 
+    let consecutiveDistractionCount = 0
+    let distractionStartTime = null
+    
+    mlFeatures.forEach((feature, index) => {
+      if (feature.focus_status === 'distracted') {
+        if (consecutiveDistractionCount === 0) {
+          distractionStartTime = feature.ts
+        }
+        consecutiveDistractionCount++
+      } else {
+        if (consecutiveDistractionCount >= 20) { // 약 10분 이상 집중력 저하
+          activities.push({
+            timestamp: distractionStartTime,
+            action: "집중력 저하 구간",
+            type: "negative" as const,
+            impact: -20,
+            description: `${Math.round(consecutiveDistractionCount * 0.5)}분간 집중도가 낮았습니다. 휴식이나 환경 변화가 필요할 수 있어요`
+          })
+        }
+        consecutiveDistractionCount = 0
+        distractionStartTime = null
+      }
+    })
+    
+    // 학습 성과 마일스톤
+    sessions.forEach((session, index) => {
+      if (index > 0 && index % 3 === 0) { // 3세션마다
         activities.push({
-          timestamp: feature.ts,
-          action: "고집중 구간",
+          timestamp: session.started_at,
+          action: "학습 마일스톤",
           type: "positive" as const,
           impact: 30,
-          description: `높은 집중도(${Math.round(feature.focus_confidence * 100)}%)를 달성했습니다`
+          description: `${index + 1}번째 학습 세션을 달성했습니다! 꾸준한 노력이 빛나고 있어요`
         })
       }
     })
     
-    // 집중력 저하 구간 감지 
-    mlFeatures.forEach(feature => {
-      if (feature.focus_status === 'distracted' && feature.focus_confidence > 0.7) {
-        activities.push({
-          timestamp: feature.ts,
-          action: "집중력 저하",
-          type: "negative" as const,
-          impact: -20,
-          description: "집중도가 낮아졌습니다. 잠시 휴식을 취해보세요"
-        })
-      }
-    })
-    
-    // 자세 불량 감지
-    mlFeatures.forEach(feature => {
-      const pitch = feature.head_pose_pitch
-      const yaw = feature.head_pose_yaw
-      if (pitch && yaw && (Math.abs(pitch) > 40 || Math.abs(yaw) > 35)) {
-        activities.push({
-          timestamp: feature.ts,
-          action: "자세 불량",
-          type: "neutral" as const,
-          impact: -10,
-          description: "바른 자세로 앉아보세요"
-        })
-      }
-    })
-    
-    // 중복 제거 및 정렬 (같은 시간대의 비슷한 이벤트 제거)
+    // 중복 제거 및 정렬
     const uniqueActivities = activities
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .filter((activity, index, arr) => {
         if (index === 0) return true
         const prev = arr[index - 1]
         const timeDiff = new Date(activity.timestamp).getTime() - new Date(prev.timestamp).getTime()
-        return timeDiff > 60000 || activity.action !== prev.action // 1분 이상 차이나거나 다른 액션
+        return timeDiff > 300000 || activity.action !== prev.action // 5분 이상 차이나거나 다른 액션
       })
-      .slice(0, 20) // 최대 20개만 표시
+      .slice(0, 15) // 최대 15개만 표시
     
     return uniqueActivities
   }
@@ -1176,7 +1202,7 @@ export class ReportService {
   }
 
   /**
-   * 주간 피드백 생성 (실제 ML 피쳐 기반)
+   * 주간 피드백 생성 (학습 패턴 기반)
    */
   private static generateWeeklyFeedback(sessions: any[], samples: any[], events: any[], avgScore: number, totalFocusTime: number, mlFeatures: any[] = []) {
     const feedback = []
@@ -1186,67 +1212,83 @@ export class ReportService {
       feedback.push({
         type: "success" as const,
         title: "훌륭한 집중력!",
-        message: "이번 주 평균 집중도가 매우 높았습니다. 현재 패턴을 유지하세요.",
+        message: "이번 주 평균 집중도가 매우 높았습니다. 현재 학습 패턴을 유지하세요.",
         actionable: false,
         priority: "high" as const
       })
     } else if (avgScore < 60) {
       feedback.push({
         type: "warning" as const,
-        title: "집중도 개선 필요",
-        message: "평균 집중도가 낮습니다. 환경 개선과 휴식 시간 조절을 고려해보세요.",
+        title: "학습 패턴 최적화 필요",
+        message: "평균 집중도가 낮습니다. 학습 시간대나 세션 길이를 조절해보세요.",
         actionable: true,
         priority: "high" as const
       })
     }
     
-    // 2. 자세 분석 기반 피드백
-    if (mlFeatures.length > 0) {
-      const badPostureCount = mlFeatures.filter(f => {
-        const pitch = f.head_pose_pitch
-        const yaw = f.head_pose_yaw
-        return pitch && yaw && (Math.abs(pitch) > 30 || Math.abs(yaw) > 25)
-      }).length
+    // 2. 세션 길이 패턴 분석
+    if (sessions.length > 0) {
+      const sessionDurations = sessions.map(s => {
+        if (!s.ended_at) return 0
+        const start = new Date(s.started_at)
+        const end = new Date(s.ended_at)
+        return (end.getTime() - start.getTime()) / (1000 * 60) // 분 단위
+      }).filter(d => d > 0)
       
-      const badPostureRatio = badPostureCount / mlFeatures.length
+      const avgSessionLength = sessionDurations.reduce((sum, d) => sum + d, 0) / sessionDurations.length
       
-      if (badPostureRatio > 0.3) { // 30% 이상이 나쁜 자세
+      if (avgSessionLength > 90) {
         feedback.push({
           type: "tip" as const,
-          title: "자세 개선 필요",
-          message: "머리를 너무 많이 돌리거나 기울이는 패턴이 감지되었습니다. 모니터 높이와 거리를 조절해보세요.",
+          title: "학습 세션 길이 조절",
+          message: `평균 세션이 ${Math.round(avgSessionLength)}분으로 깁니다. 45-60분 단위로 나누어 집중도를 높여보세요.`,
           actionable: true,
           priority: "medium" as const
         })
-      }
-    }
-    
-    // 3. 눈 건강 분석 기반 피드백
-    if (mlFeatures.length > 0) {
-      const poorEyeHealthCount = mlFeatures.filter(f => {
-        const ear = f.ear_value
-        return ear && (ear < 0.2 || ear > 0.4) // 정상 범위 벗어남
-      }).length
-      
-      const poorEyeHealthRatio = poorEyeHealthCount / mlFeatures.length
-      
-      if (poorEyeHealthRatio > 0.4) { // 40% 이상이 비정상
+      } else if (avgSessionLength < 20) {
         feedback.push({
-          type: "info" as const,
-          title: "눈 휴식 권장",
-          message: "눈의 깜빡임 패턴이 불규칙합니다. 20-20-20 규칙(20분마다 20피트 거리 20초간 바라보기)을 시도해보세요.",
+          type: "tip" as const,
+          title: "학습 세션 길이 증가",
+          message: `평균 세션이 ${Math.round(avgSessionLength)}분으로 짧습니다. 25-30분 이상 집중해보세요.`,
           actionable: true,
           priority: "medium" as const
         })
       }
     }
     
-    // 4. 학습 시간 피드백
+    // 3. 학습 일관성 분석
+    const uniqueDays = new Set(sessions.map(s => new Date(s.started_at).toISOString().split('T')[0])).size
+    if (uniqueDays < 5) {
+      feedback.push({
+        type: "info" as const,
+        title: "학습 일관성 향상",
+        message: `일주일 중 ${uniqueDays}일만 학습했습니다. 매일 조금씩이라도 꾸준히 학습하면 더 좋은 결과를 얻을 수 있어요.`,
+        actionable: true,
+        priority: "medium" as const
+      })
+    }
+    
+    // 4. 집중도 하락 패턴 분석
+    if (mlFeatures.length > 0) {
+      // 시간대별 집중도 하락 구간 찾기
+      const distractedFeatures = mlFeatures.filter(f => f.focus_status === 'distracted')
+      if (distractedFeatures.length > mlFeatures.length * 0.3) {
+        feedback.push({
+          type: "tip" as const,
+          title: "휴식 시간 최적화",
+          message: "집중력 저하 구간이 많이 감지되었습니다. 짧은 휴식을 자주 취하거나 학습 환경을 점검해보세요.",
+          actionable: true,
+          priority: "medium" as const
+        })
+      }
+    }
+    
+    // 5. 학습 시간 패턴 피드백
     if (totalFocusTime < 600) { // 10시간 미만
       feedback.push({
         type: "info" as const,
-        title: "학습 시간 증가",
-        message: "이번 주 총 학습 시간이 목표보다 적습니다. 점진적으로 학습 시간을 늘려보세요.",
+        title: "학습 시간 계획 수립",
+        message: "이번 주 총 학습 시간이 목표보다 적습니다. 주간 학습 계획을 세워 점진적으로 늘려보세요.",
         actionable: true,
         priority: "low" as const
       })

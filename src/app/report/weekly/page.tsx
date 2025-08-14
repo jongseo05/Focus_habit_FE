@@ -603,35 +603,53 @@ const WeeklyLearningPatterns = ({
       icon: <Clock className="w-5 h-5 text-white" />,
       color: 'bg-blue-500',
       title: `'${bestDay.dayOfWeek}요일형 학습자'입니다!`,
-      description: `${bestDay.dayOfWeek}요일 집중도가 ${bestDay.focusScore}점으로 가장 높았어요.`,
-      advice: '💡 이 요일에 중요한 학습을 계획하세요.'
+      description: `${bestDay.dayOfWeek}요일 집중도가 ${bestDay.focusScore}점으로 가장 높았어요. 이 요일에 중요하고 어려운 과목을 배치하면 학습 효과가 극대화됩니다.`,
+      advice: '💡 가장 집중도가 높은 요일에 중요한 과목이나 새로운 개념 학습을 계획하세요.'
     })
 
-    // 2. 집중력 트렌드 분석  
-    const trendText = overview.trend === 'up' ? '상승' : overview.trend === 'down' ? '하락' : '안정'
+    // 2. 학습 리듬 분석  
+    const trendText = overview.trend === 'up' ? '향상' : overview.trend === 'down' ? '변화' : '안정'
     
     insights.push({
-      type: '집중력 트렌드',
+      type: '학습 리듬 분석',
       icon: <TrendingUp className="w-5 h-5 text-white" />,
       color: 'bg-emerald-500',
-      title: `지난 주 대비 집중도 ${overview.trend === 'up' ? '향상' : overview.trend === 'down' ? '저하' : '유지'}`,
-      description: `평균 집중도가 ${overview.change}점 ${trendText}했습니다.`,
-      advice: overview.trend === 'up' ? '💡 현재 패턴을 유지하세요!' : '💡 학습 환경을 점검해보세요.'
+      title: `지난 주 대비 집중 패턴 ${trendText}`,
+      description: `평균 집중도가 ${overview.change}점 변화했습니다. ${overview.trend === 'up' ? '학습 리듬이 좋아지고 있어요!' : overview.trend === 'down' ? '학습 방법을 조정해볼 시점입니다.' : '안정적인 학습 패턴을 유지하고 있어요.'}`,
+      advice: overview.trend === 'up' ? '💡 현재 학습 스케줄과 방법을 유지하세요!' : '💡 학습 시간대나 과목 순서를 바꿔보세요.'
     })
 
-    // 3. 피드백 기반 조언
-    if (feedback.length > 0) {
-      const highPriorityFeedback = feedback.find((f: any) => f.priority === 'high')
-      if (highPriorityFeedback) {
-        insights.push({
-          type: '개선 제안',
-          icon: <BarChart3 className="w-5 h-5 text-white" />,
-          color: 'bg-purple-500',
-          title: highPriorityFeedback.title,
-          description: highPriorityFeedback.message,
-          advice: '💡 ' + (highPriorityFeedback.actionable ? '즉시 적용 가능한 조언입니다.' : '참고하세요.')
-        })
-      }
+    // 3. 학습 패턴 기반 조언
+    const activeDays = timeData.filter((day: any) => day.sessionDuration > 0).length
+    const avgSessionDuration = timeData.reduce((sum: number, day: any) => sum + day.sessionDuration, 0) / timeData.length
+    
+    if (activeDays < 4) {
+      insights.push({
+        type: '학습 습관 개선',
+        icon: <Target className="w-5 h-5 text-white" />,
+        color: 'bg-orange-500',
+        title: '학습 일관성 향상이 필요해요',
+        description: `일주일 중 ${activeDays}일만 학습했습니다. 꾸준한 학습이 기억 정착에 중요합니다.`,
+        advice: '💡 매일 15-20분이라도 짧게 학습하는 습관을 만들어보세요.'
+      })
+    } else if (avgSessionDuration > 90) {
+      insights.push({
+        type: '학습 세션 최적화',
+        icon: <Activity className="w-5 h-5 text-white" />,
+        color: 'bg-green-500',
+        title: '학습 세션을 짧게 나누어보세요',
+        description: `평균 세션이 ${Math.round(avgSessionDuration)}분으로 깁니다. 너무 긴 세션은 집중도를 떨어뜨릴 수 있어요.`,
+        advice: '💡 45-60분 학습 후 10-15분 휴식하는 패턴을 시도해보세요.'
+      })
+    } else {
+      insights.push({
+        type: '학습 습관 개선',
+        icon: <Target className="w-5 h-5 text-white" />,
+        color: 'bg-purple-500',
+        title: '훌륭한 학습 패턴입니다!',
+        description: `일주일 중 ${activeDays}일 학습하고 적절한 세션 길이를 유지하고 있어요.`,
+        advice: '💡 현재 패턴을 유지하면서 학습 내용의 깊이를 더해보세요.'
+      })
     }
 
     return insights

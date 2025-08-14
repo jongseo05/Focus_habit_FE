@@ -57,7 +57,7 @@ async function generateWeeklyInsights(weeklyData: any) {
     const summary = generateDataSummary(weeklyData)
     
     const prompt = `
-당신은 집중력 향상 전문가입니다. 아래 사용자의 주간 집중 데이터를 분석하고 3가지 개인화된 인사이트를 제공해주세요.
+당신은 학습 패턴 분석 전문가입니다. 아래 사용자의 주간 집중 데이터를 분석하고 **학습 방법과 학습 습관 개선**에 관한 3가지 개인화된 인사이트를 제공해주세요.
 
 === 주간 데이터 요약 ===
 ${summary}
@@ -69,40 +69,40 @@ ${summary}
 - 학습 일관성: 매일 꾸준히 학습하는 정도
 
 === 요청사항 ===
-다음 형식으로 정확히 3개의 인사이트를 JSON 배열로 반환해주세요:
+**학습 패턴 관점**에서 다음 형식으로 정확히 3개의 인사이트를 JSON 배열로 반환해주세요:
 
 [
   {
     "type": "학습 스타일 분석",
-    "title": "구체적인 분석 제목",
-    "description": "데이터 기반 구체적 설명",
-    "advice": "💡 실행 가능한 조언",
+    "title": "요일별/시간대별 학습 패턴 분석",
+    "description": "언제 집중도가 높은지, 최적의 학습 시간대 분석",
+    "advice": "💡 가장 집중도가 높은 시간에 중요한 과목을 배치하세요",
     "icon": "Clock",
     "color": "bg-blue-500"
   },
   {
-    "type": "집중력 트렌드" 또는 "자세 분석" 또는 "눈 건강",
-    "title": "트렌드/자세/눈건강 분석 제목", 
-    "description": "변화 패턴 또는 문제점 설명",
-    "advice": "💡 개선 방안",
+    "type": "학습 세션 최적화" 또는 "학습 리듬 분석" 또는 "집중력 패턴",
+    "title": "세션 길이, 휴식 패턴, 학습 리듬 분석", 
+    "description": "얼마나 오래 집중할 수 있는지, 언제 휴식이 필요한지 분석",
+    "advice": "💡 45분 학습 + 10분 휴식 패턴을 시도해보세요",
     "icon": "TrendingUp" 또는 "Target" 또는 "Activity",
     "color": "bg-emerald-500" 또는 "bg-orange-500" 또는 "bg-green-500"
   },
   {
-    "type": "개선 제안",
-    "title": "맞춤형 제안 제목",
-    "description": "문제점과 해결방안",
-    "advice": "💡 구체적 실행 방법",
+    "type": "학습 습관 개선",
+    "title": "학습 일관성 및 습관 개선 방안",
+    "description": "꾸준한 학습을 위한 구체적인 개선 방안",
+    "advice": "💡 매일 같은 시간에 학습하는 루틴을 만들어보세요",
     "icon": "Target",
     "color": "bg-purple-500"
   }
 ]
 
 === 가이드라인 ===
-- 실제 측정된 얼굴/눈/자세 데이터 기반 분석
-- 자세가 70% 미만이면 자세 개선 조언
-- 눈 건강이 70% 미만이면 눈 휴식 조언  
-- 구체적 수치와 개인화된 조언 제공
+- **학습 방법론에 집중**: 언제, 얼마나, 어떻게 공부할지에 대한 조언
+- **실행 가능한 학습 전략**: 구체적인 학습 계획과 방법 제시
+- **개인 맞춤형**: 사용자의 실제 집중 패턴을 바탕으로 한 조언
+- 기술적 조언(자세, 눈 건강) 대신 **학습 효율성** 관점의 조언
 - 긍정적이고 동기부여가 되는 톤
 - 한국어로 작성
 - JSON 형식만 반환 (다른 텍스트 없이)
@@ -211,46 +211,58 @@ function getDefaultInsights(weeklyData: any) {
     {
       type: "학습 스타일 분석",
       title: `'${bestDay.dayOfWeek}요일형 학습자'입니다!`,
-      description: `${bestDay.dayOfWeek}요일 집중도가 ${bestDay.focusScore}점으로 가장 높았어요.`,
-      advice: "💡 이 요일에 중요한 학습을 계획하세요.",
+      description: `${bestDay.dayOfWeek}요일 집중도가 ${bestDay.focusScore}점으로 가장 높았어요. 이 요일에 중요하고 어려운 과목을 배치하면 학습 효과가 극대화됩니다.`,
+      advice: "💡 가장 집중도가 높은 요일에 중요한 과목이나 새로운 개념 학습을 계획하세요.",
       icon: "Clock",
       color: "bg-blue-500"
     },
     {
-      type: "집중력 트렌드",
-      title: `지난 주 대비 집중도 ${overview.trend === 'up' ? '향상' : overview.trend === 'down' ? '저하' : '유지'}`,
-      description: `평균 집중도가 ${overview.change || 0}점 변화했습니다.`,
-      advice: overview.trend === 'up' ? "💡 현재 패턴을 유지하세요!" : "💡 학습 환경을 점검해보세요.",
+      type: "학습 리듬 분석",
+      title: `지난 주 대비 집중 패턴 ${overview.trend === 'up' ? '향상' : overview.trend === 'down' ? '변화' : '안정'}`,
+      description: `평균 집중도가 ${overview.change || 0}점 변화했습니다. ${overview.trend === 'up' ? '학습 리듬이 좋아지고 있어요!' : overview.trend === 'down' ? '학습 방법을 조정해볼 시점입니다.' : '안정적인 학습 패턴을 유지하고 있어요.'}`,
+      advice: overview.trend === 'up' ? "💡 현재 학습 스케줄과 방법을 유지하세요!" : "💡 학습 시간대나 과목 순서를 바꿔보세요.",
       icon: "TrendingUp", 
       color: "bg-emerald-500"
     }
   ]
 
-  // 실제 피쳐 기반 조건부 인사이트
-  if (breakdown.posture < 70) {
+  // 학습 패턴 기반 조건부 인사이트
+  const activeDays = timeData.filter((day: any) => day.sessionDuration > 0).length
+  const avgSessionDuration = timeData.reduce((sum: number, day: any) => sum + day.sessionDuration, 0) / timeData.length
+  
+  if (activeDays < 4) {
     insights.push({
-      type: "자세 개선",
-      title: "자세 교정이 필요합니다",
-      description: `자세 점수가 ${breakdown.posture}%로 낮습니다. 머리 각도를 조절해보세요.`,
-      advice: "💡 모니터를 눈높이에 맞춰 설정하고 등받이에 기대어 앉으세요.",
+      type: "학습 습관 개선",
+      title: "학습 일관성 향상이 필요해요",
+      description: `일주일 중 ${activeDays}일만 학습했습니다. 꾸준한 학습이 기억 정착에 중요합니다.`,
+      advice: "💡 매일 15-20분이라도 짧게 학습하는 습관을 만들어보세요.",
       icon: "Target",
       color: "bg-orange-500"
     })
-  } else if (breakdown.eyeHealth < 70) {
+  } else if (avgSessionDuration > 90) {
     insights.push({
-      type: "눈 건강",
-      title: "눈 휴식이 필요합니다",
-      description: `눈 건강 점수가 ${breakdown.eyeHealth}%입니다. 깜빡임 패턴을 개선해보세요.`,
-      advice: "💡 20-20-20 규칙을 실천하세요 (20분마다 20피트 거리를 20초간 바라보기).",
+      type: "학습 세션 최적화",
+      title: "학습 세션을 짧게 나누어보세요",
+      description: `평균 세션이 ${Math.round(avgSessionDuration)}분으로 깁니다. 너무 긴 세션은 집중도를 떨어뜨릴 수 있어요.`,
+      advice: "💡 45-60분 학습 후 10-15분 휴식하는 패턴을 시도해보세요.",
+      icon: "Activity",
+      color: "bg-green-500"
+    })
+  } else if (avgSessionDuration < 25) {
+    insights.push({
+      type: "학습 세션 최적화", 
+      title: "조금 더 긴 집중 시간을 연습해보세요",
+      description: `평균 세션이 ${Math.round(avgSessionDuration)}분으로 짧습니다. 깊이 있는 학습을 위해 집중 시간을 늘려보세요.`,
+      advice: "💡 30-40분 연속 집중을 목표로 점진적으로 늘려보세요.",
       icon: "Activity",
       color: "bg-green-500"
     })
   } else {
     insights.push({
-      type: "개선 제안",
-      title: "꾸준한 학습 습관 만들기",
-      description: `이번 주 총 ${overview.totalSessions || 0}회 학습하셨습니다.`,
-      advice: "💡 매일 조금씩이라도 꾸준히 학습해보세요.",
+      type: "학습 습관 개선",
+      title: "훌륭한 학습 패턴입니다!",
+      description: `일주일 중 ${activeDays}일 학습하고 적절한 세션 길이를 유지하고 있어요.`,
+      advice: "💡 현재 패턴을 유지하면서 학습 내용의 깊이를 더해보세요.",
       icon: "Target",
       color: "bg-purple-500"
     })
