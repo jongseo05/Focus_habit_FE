@@ -49,6 +49,30 @@ export async function POST(
       )
     }
 
+    // focus_updates 테이블에 집중도 업데이트 기록 삽입 (Realtime 이벤트 발생용)
+    const focusUpdatePayload = {
+      user_id: user.id,
+      room_id: roomId,
+      focus_score: focus_score,
+      created_at: new Date().toISOString()
+    }
+    
+    console.log('focus_updates 삽입 시도:', focusUpdatePayload)
+    
+    const { data: focusUpdateData, error: focusUpdateError } = await supabase
+      .from('focus_updates')
+      .insert(focusUpdatePayload)
+      .select()
+
+    if (focusUpdateError) {
+      console.error('focus_updates 삽입 실패:', focusUpdateError)
+      console.error('삽입 시도한 데이터:', focusUpdatePayload)
+      // focus_updates 삽입 실패는 로그만 남기고 계속 진행 (주요 기능은 room_participants 업데이트)
+    } else {
+      console.log('focus_updates 삽입 성공:', focusUpdateData)
+      console.log('Realtime 이벤트 발생 예상 - focus_updates 테이블 변경됨')
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: '집중도가 업데이트되었습니다.',

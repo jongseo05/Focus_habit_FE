@@ -33,13 +33,17 @@ import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
 import { useVideoRoom } from '@/hooks/useVideoRoom'
 import { FocusScoreChart } from './FocusScoreChart'
 import { VideoGrid } from './VideoGrid'
+import { ChallengeHUD } from './ChallengeHUD'
+import { ChallengeResultPanel } from './ChallengeResultPanel'
 import type { 
   StudyRoom, 
   RoomParticipant, 
   CreateStudyRoomData,
   FocusUpdateMessage,
   RoomJoinMessage,
-  EncouragementMessageWS
+  EncouragementMessageWS,
+  Challenge,
+  ChallengeParticipant
 } from '@/types/social'
 
 interface StudyRoomProps {
@@ -92,6 +96,14 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   const [customMinutes, setCustomMinutes] = useState<number>(30)
   const [isBreakTime, setIsBreakTime] = useState(false)
   const [breakDuration, setBreakDuration] = useState<number>(5) // 기본 5분 휴식
+  
+  // HUD 오버레이 관련 상태
+  const [showChallengeHUD, setShowChallengeHUD] = useState(false)
+  const [showResultPanel, setShowResultPanel] = useState(false)
+  const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(null)
+  const [challengeParticipants, setChallengeParticipants] = useState<ChallengeParticipant[]>([])
+  const [finalScores, setFinalScores] = useState<{[key: string]: number}>({})
+  const [challengeBadges, setChallengeBadges] = useState<{[key: string]: string[]}>({})
 
   // 비디오룸 훅
   const videoRoom = useVideoRoom({
@@ -207,18 +219,78 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     console.log('격려 메시지 수신 (기능 비활성화):', data)
   }, [])
 
+  // 로그 제한을 위한 ref들
+  const lastLogTimeRef = useRef<number>(0)
+  const lastInactiveLogTimeRef = useRef<number>(0)
+  const lastBreakLogTimeRef = useRef<number>(0)
+  const lastScoreLogTimeRef = useRef<number>(0)
+
   // 집중도 점수 업데이트 (대결 중일 때, 휴식 시간에는 점수 계산 안함)
   const updateCompetitionScore = useCallback((userId: string, focusScore: number) => {
-    if (!isCompetitionActive || isBreakTime) return
+    // 로그 제한: 10초에 한번만 출력
+    const now = Date.now()
+    if (now - lastLogTimeRef.current > 10000) {
+      console.log('updateCompetitionScore 호출:', { 
+        userId, 
+        focusScore, 
+        isCompetitionActive, 
+        isBreakTime,
+        currentCompetitionScores: competitionScores
+      })
+      lastLogTimeRef.current = now
+    }
+    
+    if (!isCompetitionActive) {
+      if (now - lastInactiveLogTimeRef.current > 10000) {
+        console.log('대결이 비활성 상태 - 점수 업데이트 건너뜀')
+        lastInactiveLogTimeRef.current = now
+      }
+      return
+    }
+    
+    if (isBreakTime) {
+      if (now - lastBreakLogTimeRef.current > 10000) {
+        console.log('휴식 시간 - 점수 업데이트 건너뜀')
+        lastBreakLogTimeRef.current = now
+      }
+      return
+    }
 
-    setCompetitionScores(prev => ({
-      ...prev,
-      [userId]: (prev[userId] || 0) + (focusScore * competitionDuration) // 지속시간 가중치 적용
-    }))
-  }, [isCompetitionActive, isBreakTime, competitionDuration])
+    // 점수 계산: 집중도 × 0.1 (더 현실적인 점수)
+    const scoreIncrement = Math.round(focusScore * 0.1)
+    
+    setCompetitionScores(prev => {
+      const newScores = {
+        ...prev,
+        [userId]: (prev[userId] || 0) + scoreIncrement
+      }
+      if (now - lastScoreLogTimeRef.current > 10000) {
+        console.log('점수 업데이트 완료:', { 
+          userId, 
+          scoreIncrement, 
+          focusScore, 
+          prevScores: prev,
+          newScores 
+        })
+        lastScoreLogTimeRef.current = now
+      }
+      return newScores
+    })
+  }, [isCompetitionActive, isBreakTime, competitionScores])
 
-  // 집중도 업데이트 시 대결 점수도 업데이트
+  // 집중도 업데이트 시 대결 점수도 업데이트 (Realtime 대신 폴링 사용)
   const handleFocusUpdate = useCallback((data: FocusUpdateMessage['data']) => {
+    const now = Date.now()
+    if (now - lastLogTimeRef.current > 10000) {
+      console.log('집중도 업데이트 수신:', data)
+      console.log('현재 대결 상태:', { 
+        isCompetitionActive, 
+        isBreakTime,
+        currentCompetitionScores: competitionScores
+      })
+      lastLogTimeRef.current = now
+    }
+    
     // 다른 참가자의 집중도 업데이트
     setParticipants(prev => prev.map(p => 
       p.user_id === data.user_id 
@@ -228,9 +300,47 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
     // 대결 중이면 점수 업데이트
     if (isCompetitionActive) {
+      if (now - lastLogTimeRef.current > 10000) {
+        console.log('대결 중 - 점수 업데이트 호출')
+      }
       updateCompetitionScore(data.user_id, data.focus_score)
+    } else {
+      if (now - lastInactiveLogTimeRef.current > 10000) {
+        console.log('대결 비활성 상태 - 점수 업데이트 건너뜀')
+        lastInactiveLogTimeRef.current = now
+      }
     }
-  }, [isCompetitionActive, updateCompetitionScore])
+  }, [isCompetitionActive, isBreakTime, updateCompetitionScore, competitionScores])
+
+     // 폴링으로 참가자 집중도 업데이트 (Realtime 대체)
+   useEffect(() => {
+     if (!room?.room_id || !isCompetitionActive) return
+ 
+     const pollInterval = setInterval(async () => {
+       try {
+         // 모든 참가자의 집중도 조회
+         for (const participant of participants) {
+           const response = await fetch(`/api/social/study-room/${room.room_id}/focus-score?user_id=${participant.user_id}`)
+           if (response.ok) {
+             const data = await response.json()
+             console.log('폴링으로 집중도 조회:', data)
+             
+             // 집중도 업데이트 처리
+             handleFocusUpdate({
+               user_id: data.user_id,
+               room_id: room.room_id,
+               focus_score: data.focus_score,
+               timestamp: data.last_activity
+             })
+           }
+         }
+       } catch (error) {
+         console.error('폴링 중 오류:', error)
+       }
+     }, 5000) // 5초마다 폴링
+ 
+     return () => clearInterval(pollInterval)
+   }, [room?.room_id, isCompetitionActive, participants, handleFocusUpdate])
 
   // 소셜 Realtime 연결
   const { 
@@ -347,9 +457,18 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
   }
 
-  // 집중도 업데이트 전송 (API + Realtime)
+    // 집중도 업데이트 전송 (API + Realtime)
   const sendFocusUpdate = useCallback(async (focusScore: number) => {
-    if (!room || !user) return
+    const now = Date.now()
+    
+    console.log('sendFocusUpdate 함수 호출됨:', { focusScore, room: !!room, user: !!user })
+    
+    if (!room || !user) {
+      console.log('sendFocusUpdate - room 또는 user가 없음:', { room: !!room, user: !!user })
+      return
+    }
+    
+    console.log('sendFocusUpdate API 호출 시작:', { focusScore, roomId: room.room_id, userId: user.id })
     
     try {
       // API를 통해 집중도 업데이트
@@ -359,17 +478,23 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         body: JSON.stringify({ focus_score: focusScore })
       })
       
-      if (response.ok) {
-        // API 업데이트 성공 후 Realtime으로 브로드캐스트
-        sendFocusUpdateWS(focusScore)
+      console.log('API 응답 상태:', response.status)
+      
+             if (response.ok) {
+        console.log('API 집중도 업데이트 성공')
+        console.log('Realtime 이벤트 대기 중...')
         
         // 로컬 상태도 업데이트
         setCurrentFocusScore(focusScore)
+      } else {
+        console.error('API 집중도 업데이트 실패:', response.status)
+        const errorText = await response.text()
+        console.error('API 에러 내용:', errorText)
       }
     } catch (error) {
       console.error('집중도 업데이트 실패:', error)
     }
-  }, [room, user, sendFocusUpdateWS])
+  }, [room, user])
 
   // 격려 메시지 전송 (Realtime) - 기능 제거됨
   const sendEncouragement = useCallback((toUserId: string) => {
@@ -378,24 +503,52 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
   // 집중도 시뮬레이션 (실제로는 ML 모델에서 받아올 값)
   useEffect(() => {
+    const now = Date.now()
+    if (now - lastLogTimeRef.current > 10000) {
+      console.log('집중도 시뮬레이션 useEffect 실행:', { room: !!room, isConnected })
+      lastLogTimeRef.current = now
+    }
+    
     if (room && isConnected) {
+      const startNow = Date.now()
+      if (startNow - lastLogTimeRef.current > 10000) {
+        console.log('집중도 시뮬레이션 시작:', { roomId: room.room_id, isConnected })
+        lastLogTimeRef.current = startNow
+      }
+      
       const interval = setInterval(() => {
         const newFocusScore = Math.floor(Math.random() * 100)
+        const intervalNow = Date.now()
+        if (intervalNow - lastLogTimeRef.current > 10000) {
+          console.log('집중도 시뮬레이션 - 새로운 점수 생성:', newFocusScore)
+          console.log('sendFocusUpdate 함수 호출 예정...')
+          lastLogTimeRef.current = intervalNow
+        }
         sendFocusUpdate(newFocusScore)
-      }, 5000) // 5초마다 업데이트
+      }, 2000) // 2초마다 업데이트 (실제 시뮬레이션은 빠르게)
 
       setFocusUpdateInterval(interval)
+      const setupNow = Date.now()
+      if (setupNow - lastLogTimeRef.current > 10000) {
+        console.log('집중도 시뮬레이션 인터벌 설정 완료')
+        lastLogTimeRef.current = setupNow
+      }
     }
 
     return () => {
       if (focusUpdateInterval) {
+        const cleanupNow = Date.now()
+        if (cleanupNow - lastLogTimeRef.current > 10000) {
+          console.log('집중도 시뮬레이션 정리')
+          lastLogTimeRef.current = cleanupNow
+        }
         clearInterval(focusUpdateInterval)
       }
     }
   }, [room?.room_id, isConnected, sendFocusUpdate])
 
   // 집중도 대결 시작
-  const startCompetition = useCallback(() => {
+  const startCompetition = useCallback(async () => {
     if (participants.length < 2) {
       alert('집중도 대결을 시작하려면 최소 2명 이상의 참가자가 필요합니다.')
       return
@@ -411,24 +564,82 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       }
     }
 
-    setIsCompetitionActive(true)
-    setIsBreakTime(false) // 공부 시간으로 시작
-    setCompetitionRound(prev => prev + 1)
-    setCompetitionTimeLeft(duration * 60) // 분을 초로 변환
-    setCompetitionScores({})
+    try {
     
-    // 모든 참가자의 초기 점수 설정
-    const initialScores: {[key: string]: number} = {}
-    participants.forEach(p => {
-      initialScores[p.user_id] = 0
-    })
-    setCompetitionScores(initialScores)
-    
-    setShowCompetitionSettings(false)
-  }, [participants.length, competitionDuration, activeTab, customHours, customMinutes, breakDuration])
+
+      // 뽀모도로 모드일 때는 공부 시간만 사용, 커스텀 모드일 때는 총 시간 사용
+      const config = activeTab === 'pomodoro' 
+        ? { work: competitionDuration, break: breakDuration }
+        : { durationMin: duration }
+      
+      
+      
+             // API를 통해 챌린지 생성
+       const response = await fetch('/api/social/challenge', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           room_id: room?.room_id,
+           mode: activeTab,
+           config,
+           start_at: new Date().toISOString() // 현재 시간으로 시작 시간 설정
+         })
+       })
+
+             if (response.ok) {
+                   const responseData = await response.json()
+          
+          // API 응답에서 challenge 객체 추출
+          const challenge = responseData.challenge
+          setCurrentChallenge(challenge)
+        
+                 // 참가자 정보 설정
+         const challengeParticipants = participants.map(p => ({
+           participant_id: `${challenge.challenge_id}-${p.user_id}`,
+           challenge_id: challenge.challenge_id,
+           user_id: p.user_id,
+           joined_at: new Date().toISOString(),
+           current_progress: 0
+         }))
+         setChallengeParticipants(challengeParticipants)
+        
+        // HUD 오버레이 표시
+        setShowChallengeHUD(true)
+        setShowCompetitionSettings(false)
+        
+        // 기존 대결 상태도 업데이트 (하위 호환성)
+        setIsCompetitionActive(true)
+        setIsBreakTime(false)
+        setCompetitionRound(prev => prev + 1)
+        
+        // 뽀모도로 모드일 때는 공부 시간만, 커스텀 모드일 때는 총 시간
+        const timeLeft = activeTab === 'pomodoro' 
+          ? competitionDuration * 60  // 공부 시간만
+          : duration * 60  // 총 시간
+        setCompetitionTimeLeft(timeLeft)
+        
+                 // 모든 참가자의 점수를 0으로 초기화
+         const initialScores: {[key: string]: number} = {}
+         participants.forEach(p => {
+           initialScores[p.user_id] = 0
+         })
+         setCompetitionScores(initialScores)
+         
+         console.log('대결 시작 - 초기 점수:', initialScores)
+         console.log('대결 시작 - 상태 설정:', {
+           isCompetitionActive: true,
+           isBreakTime: false,
+           participants: participants.map(p => p.user_id)
+         })
+      }
+    } catch (error) {
+      console.error('챌린지 생성 실패:', error)
+      alert('챌린지 생성에 실패했습니다.')
+    }
+  }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, room?.room_id])
 
   // 집중도 대결 종료
-  const endCompetition = useCallback(() => {
+  const endCompetition = useCallback(async () => {
     if (!isCompetitionActive) return
 
     // 최종 점수 계산 및 순위 결정
@@ -458,11 +669,45 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       type: 'join'
     }])
 
+    // HUD 오버레이 숨기고 결과 패널 표시
+    setShowChallengeHUD(false)
+    setFinalScores(competitionScores)
+    
+    // 배지 생성 (간단한 예시)
+    const badges: {[key: string]: string[]} = {}
+    Object.entries(competitionScores).forEach(([userId, score]) => {
+      const userBadges = []
+      if (score > 1000) userBadges.push('집중의 달인')
+      if (score > 500) userBadges.push('성실한 학습자')
+      if (score > 100) userBadges.push('첫걸음')
+      badges[userId] = userBadges
+    })
+    setChallengeBadges(badges)
+    
+    setShowResultPanel(true)
+
+    // 기존 상태 정리
     setIsCompetitionActive(false)
     setIsBreakTime(false)
     setCompetitionTimeLeft(0)
     setCompetitionScores({})
-  }, [isCompetitionActive, competitionScores, competitionRound, competitionDuration, participants, activeTab, breakDuration])
+    
+    // API를 통해 챌린지 종료
+    if (currentChallenge) {
+      try {
+        await fetch(`/api/social/challenge/${currentChallenge.challenge_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            state: 'ended',
+            end_at: new Date().toISOString()
+          })
+        })
+      } catch (error) {
+        console.error('챌린지 종료 API 호출 실패:', error)
+      }
+    }
+  }, [isCompetitionActive, competitionScores, competitionRound, competitionDuration, participants, activeTab, breakDuration, currentChallenge])
 
   // 대결 타이머 (뽀모도로 사이클 포함)
   useEffect(() => {
@@ -530,7 +775,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 <input
                   type="number"
                   min="2"
-                  max="50"
+                  max="4"
                   value={roomForm.max_participants}
                   onChange={(e) => setRoomForm(prev => ({ ...prev, max_participants: parseInt(e.target.value) }))}
                   className="w-full p-2 border rounded-md"
@@ -612,6 +857,40 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
             </div>
           ))}
         </div>
+      )}
+
+             {/* 챌린지 HUD 오버레이 */}
+       {showChallengeHUD && currentChallenge && (
+         <ChallengeHUD
+           challenge={currentChallenge}
+           participants={challengeParticipants}
+           currentUserId={user?.id || ''}
+           currentFocusScore={currentFocusScore}
+           currentScores={competitionScores}
+           onClose={() => {
+             setShowChallengeHUD(false)
+             endCompetition()
+           }}
+         />
+       )}
+
+      {/* 챌린지 결과 패널 */}
+      {showResultPanel && currentChallenge && (
+        <ChallengeResultPanel
+          challenge={currentChallenge}
+          participants={challengeParticipants}
+          finalScores={finalScores}
+          badges={challengeBadges}
+          onClose={() => setShowResultPanel(false)}
+          onRestart={() => {
+            setShowResultPanel(false)
+            setShowCompetitionSettings(true)
+          }}
+          onShare={() => {
+            // 공유 기능 구현
+            console.log('결과 공유')
+          }}
+        />
       )}
       
       <div className="container mx-auto px-4 py-8">
@@ -1025,11 +1304,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                          실시간 순위
                        </h4>
                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                         {Object.entries(competitionScores)
-                           .sort(([,a], [,b]) => b - a)
-                           .map(([userId, score], index) => {
-                             const participant = participants.find(p => p.user_id === userId)
-                             if (!participant) return null
+                         {participants
+                           .map(participant => {
+                             const score = competitionScores[participant.user_id] || 0
+                             return { participant, score, userId: participant.user_id }
+                           })
+                           .sort((a, b) => b.score - a.score)
+                           .map(({ participant, score, userId }, index) => {
                              
                              return (
                                <div 

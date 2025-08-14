@@ -6,7 +6,12 @@ import type {
   FocusUpdateMessage,
   RoomJoinMessage,
   RoomLeaveMessage,
-  EncouragementMessageWS
+  EncouragementMessageWS,
+  ChallengeEvent,
+  ChallengeCreatedPayload,
+  ChallengeStartedPayload,
+  ChallengeTickPayload,
+  ChallengeEndedPayload
 } from '@/types/social'
 
 interface UseSocialRealtimeOptions {
@@ -16,6 +21,7 @@ interface UseSocialRealtimeOptions {
   onRoomJoin?: (data: RoomJoinMessage['data']) => void
   onRoomLeave?: (data: RoomLeaveMessage['data']) => void
   onEncouragement?: (data: EncouragementMessageWS['data']) => void
+  onChallengeEvent?: (event: ChallengeEvent) => void
   onError?: (error: any) => void
 }
 
@@ -27,6 +33,7 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onRoomJoin,
     onRoomLeave,
     onEncouragement,
+    onChallengeEvent,
     onError
   } = options
 
@@ -37,6 +44,7 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onRoomLeaveRef = useRef(onRoomLeave)
   const onEncouragementRef = useRef(onEncouragement)
   const onFocusUpdateRef = useRef(onFocusUpdate)
+  const onChallengeEventRef = useRef(onChallengeEvent)
   
   // ref 업데이트
   useEffect(() => {
@@ -45,7 +53,8 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onRoomLeaveRef.current = onRoomLeave
     onEncouragementRef.current = onEncouragement
     onFocusUpdateRef.current = onFocusUpdate
-  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate])
+    onChallengeEventRef.current = onChallengeEvent
+  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent])
 
   // 참가자 변경 처리
   const handleParticipantChange = useCallback((payload: any) => {
@@ -90,22 +99,75 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
 
   // 집중도 업데이트 처리
   const handleFocusUpdateChange = useCallback((payload: any) => {
-    console.log('집중도 업데이트:', payload)
+    console.log('집중도 업데이트 Realtime 이벤트 수신:', payload)
+    console.log('이벤트 타입:', payload.eventType)
+    console.log('새 데이터:', payload.new)
+    console.log('전체 payload 구조:', JSON.stringify(payload, null, 2))
     
     if (payload.eventType === 'INSERT') {
-      onFocusUpdateRef.current?.({
+      console.log('INSERT 이벤트 감지 - onFocusUpdate 콜백 호출')
+      console.log('콜백 함수 존재 여부:', !!onFocusUpdateRef.current)
+      
+      const focusUpdateData = {
         user_id: payload.new.user_id,
         room_id: payload.new.room_id,
         focus_score: payload.new.focus_score,
         timestamp: payload.new.created_at
+      }
+      
+      console.log('전달할 데이터:', focusUpdateData)
+      onFocusUpdateRef.current?.(focusUpdateData)
+    } else {
+      console.log('INSERT 이벤트가 아님:', payload.eventType)
+    }
+  }, [])
+
+  // 대결 이벤트 처리
+  const handleChallengeEvent = useCallback((payload: any) => {
+    console.log('대결 이벤트:', payload)
+    
+    if (payload.eventType === 'INSERT') {
+      // 새로운 대결 생성
+      onChallengeEventRef.current?.({
+        type: 'CHALLENGE_CREATED',
+        payload: {
+          config: payload.new.config,
+          start_countdown_sec: 10
+        }
       })
+    } else if (payload.eventType === 'UPDATE') {
+      if (payload.new.state === 'active' && payload.old.state === 'pending') {
+        // 대결 시작
+        onChallengeEventRef.current?.({
+          type: 'CHALLENGE_STARTED',
+          payload: {
+            start_at: payload.new.start_at,
+            mode: payload.new.mode,
+            config: payload.new.config
+          }
+        })
+      } else if (payload.new.state === 'ended' && payload.old.state === 'active') {
+        // 대결 종료
+        onChallengeEventRef.current?.({
+          type: 'CHALLENGE_ENDED',
+          payload: {
+            end_at: payload.new.end_at,
+            final_scores: {}, // 실제로는 challenge_participant에서 조회
+            badges: {}
+          }
+        })
+      }
     }
   }, [])
 
   // Supabase Realtime 구독
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId) {
+      console.log('roomId가 없어서 Realtime 구독 건너뜀')
+      return
+    }
 
+    console.log('Supabase Realtime 구독 시작:', { roomId })
     const supabase = supabaseBrowser()
     const channel = supabase.channel(`social_room:${roomId}`)
       .on('postgres_changes', 
@@ -118,7 +180,14 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'focus_updates' },
-        handleFocusUpdateChange
+        (payload) => {
+          console.log('focus_updates 테이블 변경 감지:', payload)
+          handleFocusUpdateChange(payload)
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'challenge' },
+        handleChallengeEvent
       )
       .on('presence', { event: 'sync' }, () => {
         console.log('Presence sync')
@@ -131,9 +200,12 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
       })
       .subscribe((status) => {
         console.log('Supabase Realtime status:', status)
+        console.log('구독된 테이블들:', ['room_participants', 'encouragement_messages', 'focus_updates', 'challenge'])
+        console.log('Realtime 연결 상태:', { status, isConnected: status === 'SUBSCRIBED' })
         setIsConnected(status === 'SUBSCRIBED')
         
         if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime 연결 실패')
           onErrorRef.current?.(new Error('Realtime connection failed'))
         }
       })
@@ -143,7 +215,7 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     return () => {
       channel.unsubscribe()
     }
-  }, [roomId])
+  }, [roomId, handleParticipantChange, handleEncouragementChange, handleFocusUpdateChange, handleChallengeEvent])
 
   // 룸 입장 (Presence 사용)
   const joinRoom = useCallback(async (userName: string, avatarUrl?: string) => {

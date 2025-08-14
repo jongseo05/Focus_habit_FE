@@ -207,7 +207,7 @@ export function useSignaling({
     return () => {
       leaveRoom()
     }
-  }, [joinRoom, leaveRoom])
+  }, [roomId, userId]) // joinRoom, leaveRoom 대신 roomId, userId만 의존성으로 사용
 
   return {
     isConnected: roomJoined.current,

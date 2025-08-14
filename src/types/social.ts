@@ -264,3 +264,65 @@ export interface FriendComparison {
     focus_style: 'short_intense' | 'long_steady' | 'mixed'
   }
 }
+
+// 대결 윈도우 관련 타입
+export interface Challenge {
+  challenge_id: string
+  room_id: string
+  mode: 'pomodoro' | 'custom'
+  config: ChallengeConfig
+  state: 'pending' | 'active' | 'ended'
+  start_at: string
+  end_at?: string
+  created_at: string
+}
+
+export interface ChallengeConfig {
+  // 뽀모도로 모드
+  work?: number // 공부 시간 (분)
+  break?: number // 휴식 시간 (분)
+  // 커스텀 모드
+  durationMin?: number // 총 시간 (분)
+}
+
+export interface ChallengeParticipant {
+  challenge_id: string
+  user_id: string
+  joined_at: string
+  left_at?: string
+  final_score?: number
+}
+
+export interface ChallengeTick {
+  challenge_id: string
+  ts: string
+  scores: { [userId: string]: number }
+}
+
+// 실시간 이벤트 타입
+export interface ChallengeEvent {
+  type: 'CHALLENGE_CREATED' | 'CHALLENGE_STARTED' | 'CHALLENGE_TICK' | 'CHALLENGE_ENDED'
+  payload: any
+}
+
+export interface ChallengeCreatedPayload {
+  config: ChallengeConfig
+  start_countdown_sec: number
+}
+
+export interface ChallengeStartedPayload {
+  start_at: string
+  mode: 'pomodoro' | 'custom'
+  config: ChallengeConfig
+}
+
+export interface ChallengeTickPayload {
+  per_user_scores: { [userId: string]: number }
+  rankings: Array<{ userId: string, score: number, rank: number }>
+}
+
+export interface ChallengeEndedPayload {
+  end_at: string
+  final_scores: { [userId: string]: number }
+  badges: { [userId: string]: string[] }
+}
