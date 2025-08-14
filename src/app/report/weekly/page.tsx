@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { BarChart3, ArrowLeft, Calendar, Loader2, AlertCircle, TrendingUp, Target, Clock, Zap, Activity } from "lucide-react"
 import Link from "next/link"
-import { useWeeklyReport, useWeeklyStats, useWeeklyPatterns } from "@/hooks/useWeeklyReport"
+import { useWeeklyReport, useWeeklyStats, useWeeklyPatterns, useWeeklyInsights } from "@/hooks/useWeeklyReport"
 import { useState, useRef, useEffect } from "react"
 import { AnimatePresence } from "framer-motion"
 
@@ -558,11 +558,34 @@ const WeeklyGoals = ({ achievements }: { achievements?: any[] }) => {
 }
 
 // 주간 학습 패턴 분석
-const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weeklyData: any }) => {
+const WeeklyLearningPatterns = ({ 
+  patterns, 
+  weeklyData, 
+  gptInsights, 
+  insightsLoading 
+}: { 
+  patterns: any; 
+  weeklyData: any; 
+  gptInsights?: any[];
+  insightsLoading?: boolean;
+}) => {
   if (!weeklyData) return null
 
-  // 실제 데이터에서 인사이트 생성
-  const generateInsights = () => {
+  // 아이콘 매핑
+  const getIconComponent = (iconName: string) => {
+    const iconMap: Record<string, any> = {
+      'Clock': <Clock className="w-5 h-5 text-white" />,
+      'TrendingUp': <TrendingUp className="w-5 h-5 text-white" />,
+      'Target': <Target className="w-5 h-5 text-white" />,
+      'BarChart3': <BarChart3 className="w-5 h-5 text-white" />,
+      'Activity': <Activity className="w-5 h-5 text-white" />,
+      'Zap': <Zap className="w-5 h-5 text-white" />
+    }
+    return iconMap[iconName] || <BarChart3 className="w-5 h-5 text-white" />
+  }
+
+  // 기본 인사이트 생성 함수 (GPT 실패 시 백업용)
+  const generateDefaultInsights = () => {
     const overview = weeklyData.overview
     const timeData = weeklyData.timeSeriesData || []
     const feedback = weeklyData.feedback || []
@@ -586,13 +609,12 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
 
     // 2. 집중력 트렌드 분석  
     const trendText = overview.trend === 'up' ? '상승' : overview.trend === 'down' ? '하락' : '안정'
-    const trendColor = overview.trend === 'up' ? 'text-green-600' : overview.trend === 'down' ? 'text-red-600' : 'text-blue-600'
     
     insights.push({
       type: '집중력 트렌드',
       icon: <TrendingUp className="w-5 h-5 text-white" />,
       color: 'bg-emerald-500',
-      title: `지난 주 대비 집중도 ${trendColor.includes('green') ? '향상' : trendColor.includes('red') ? '저하' : '유지'}`,
+      title: `지난 주 대비 집중도 ${overview.trend === 'up' ? '향상' : overview.trend === 'down' ? '저하' : '유지'}`,
       description: `평균 집중도가 ${overview.change}점 ${trendText}했습니다.`,
       advice: overview.trend === 'up' ? '💡 현재 패턴을 유지하세요!' : '💡 학습 환경을 점검해보세요.'
     })
@@ -615,7 +637,13 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
     return insights
   }
 
-  const insights = generateInsights()
+  // GPT 인사이트가 있으면 사용, 없으면 기본 인사이트 사용
+  const insights = gptInsights && gptInsights.length > 0 
+    ? gptInsights.map((insight: any) => ({
+        ...insight,
+        icon: getIconComponent(insight.icon)
+      }))
+    : generateDefaultInsights()
 
   return (
     <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-green-50/30 to-emerald-50/20 border-0">
@@ -641,8 +669,44 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
             </div>
             
             <div className="space-y-6">
-              {insights.map((insight, index) => (
-                <div key={index} className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+              {/* GPT 인사이트 로딩 상태 */}
+              {insightsLoading && (
+                <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                    <h4 className="text-lg font-semibold text-indigo-900">AI 인사이트 생성 중...</h4>
+                  </div>
+                  <div className="text-sm text-indigo-700">
+                    <p>당신의 학습 패턴을 분석하여 맞춤형 조언을 생성하고 있습니다.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* GPT 인사이트 배지 (성공 시에만 표시) */}
+              {!insightsLoading && gptInsights && gptInsights.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">AI</span>
+                    </div>
+                    <span className="text-sm font-medium text-purple-700">
+                      GPT-4가 분석한 개인화된 인사이트
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 인사이트 표시 */}
+              {!insightsLoading && insights.map((insight, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="bg-white/60 rounded-xl p-6 border border-indigo-200"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className={`w-10 h-10 ${insight.color} rounded-lg flex items-center justify-center`}>
                       {insight.icon}
@@ -654,12 +718,17 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
                     <p>{insight.description}</p>
                     <p className="text-indigo-600">{insight.advice}</p>
                   </div>
-                </div>
+                </motion.div>
               ))}
               
               {/* 통계 요약 추가 */}
-              {weeklyData.overview && (
-                <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+              {!insightsLoading && weeklyData.overview && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="bg-white/60 rounded-xl p-6 border border-indigo-200"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
                       <BarChart3 className="w-5 h-5 text-white" />
@@ -684,7 +753,7 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
                       <span className="font-bold text-green-600">{weeklyData.overview.peakScore}점</span>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               )}
             </div>
           </div>
@@ -696,6 +765,7 @@ const WeeklyLearningPatterns = ({ patterns, weeklyData }: { patterns: any; weekl
 export default function WeeklyReportPage() {
   const { data: weeklyData, isLoading, error } = useWeeklyReport()
   const { patterns } = useWeeklyPatterns()
+  const { data: gptInsights, isLoading: insightsLoading } = useWeeklyInsights(weeklyData)
 
   if (isLoading) {
     return (
@@ -812,7 +882,12 @@ export default function WeeklyReportPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <WeeklyLearningPatterns patterns={patterns} weeklyData={weeklyData} />
+            <WeeklyLearningPatterns 
+              patterns={patterns} 
+              weeklyData={weeklyData} 
+              gptInsights={gptInsights}
+              insightsLoading={insightsLoading}
+            />
           </motion.div>
         </div>
       </main>
