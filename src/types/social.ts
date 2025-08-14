@@ -16,6 +16,8 @@ export interface StudyRoom {
   is_active: boolean
   session_type: 'study' | 'work' | 'reading' | 'other'
   goal_minutes?: number
+  linked_challenge_id?: UUID
+  linked_challenge?: GroupChallenge
   started_at: Timestamp
   ended_at?: Timestamp
   created_at: Timestamp

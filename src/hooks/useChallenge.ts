@@ -1,0 +1,227 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import type { Challenge, ChallengeParticipant, ChallengeConfig } from '@/types/social'
+
+interface UseChallengeProps {
+  roomId: string
+  userId: string
+}
+
+interface CreateChallengeData {
+  mode: 'pomodoro' | 'custom'
+  config: ChallengeConfig
+}
+
+export function useChallenge({ roomId, userId }: UseChallengeProps) {
+  const [challenges, setChallenges] = useState<Challenge[]>([])
+  const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(null)
+  const [participants, setParticipants] = useState<ChallengeParticipant[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // 챌린지 생성
+  const createChallenge = useCallback(async (data: CreateChallengeData) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch('/api/social/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room_id: roomId,
+          ...data
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create challenge')
+      }
+
+      const result = await response.json()
+      const newChallenge = result.challenge
+      
+      setCurrentChallenge(newChallenge)
+      setChallenges(prev => [newChallenge, ...prev])
+      
+      return newChallenge
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create challenge'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [roomId])
+
+  // 챌린지 참가
+  const joinChallenge = useCallback(async (challengeId: string) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/social/challenge/${challengeId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to join challenge')
+      }
+
+      const result = await response.json()
+      const newParticipant = result.participant
+      
+      setParticipants(prev => [...prev, newParticipant])
+      
+      return newParticipant
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to join challenge'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [userId])
+
+  // 챌린지 종료
+  const endChallenge = useCallback(async (challengeId: string) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/social/challenge/${challengeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          state: 'ended',
+          end_at: new Date().toISOString()
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to end challenge')
+      }
+
+      const result = await response.json()
+      const updatedChallenge = result.challenge
+      
+      setCurrentChallenge(prev => 
+        prev?.challenge_id === challengeId ? updatedChallenge : prev
+      )
+      setChallenges(prev => 
+        prev.map(c => c.challenge_id === challengeId ? updatedChallenge : c)
+      )
+      
+      return updatedChallenge
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to end challenge'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 챌린지 목록 조회
+  const fetchChallenges = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/social/challenge?room_id=${roomId}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch challenges')
+      }
+
+      const result = await response.json()
+      setChallenges(result.challenges || [])
+      
+      // 가장 최근 활성 챌린지 찾기
+      const activeChallenge = result.challenges?.find((c: Challenge) => c.state === 'active')
+      if (activeChallenge) {
+        setCurrentChallenge(activeChallenge)
+      }
+      
+      return result.challenges
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch challenges'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [roomId])
+
+  // 챌린지 참가자 조회
+  const fetchParticipants = useCallback(async (challengeId: string) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/social/challenge/${challengeId}/participants`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch participants')
+      }
+
+      const result = await response.json()
+      setParticipants(result.participants || [])
+      
+      return result.participants
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch participants'
+      setError(errorMessage)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 점수 업데이트
+  const updateScore = useCallback(async (challengeId: string, scores: { [key: string]: number }) => {
+    try {
+      const response = await fetch(`/api/social/challenge/${challengeId}/tick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scores })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update scores')
+      }
+
+      const result = await response.json()
+      return result
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update scores'
+      setError(errorMessage)
+      throw err
+    }
+  }, [])
+
+  return {
+    challenges,
+    currentChallenge,
+    participants,
+    loading,
+    error,
+    createChallenge,
+    joinChallenge,
+    endChallenge,
+    fetchChallenges,
+    fetchParticipants,
+    updateScore,
+    setCurrentChallenge,
+    setParticipants
+  }
+}

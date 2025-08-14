@@ -892,3 +892,24 @@ BEGIN
     RAISE NOTICE '기존에 없는 테이블, 인덱스, 정책, 트리거만 생성되었습니다.';
     RAISE NOTICE '이미 존재하는 스키마는 건너뛰었습니다.';
 END $$;
+
+-- =====================================================
+-- 스터디룸-챌린지 연동을 위한 스키마 수정
+-- =====================================================
+
+-- study_rooms 테이블에 linked_challenge_id 컬럼 추가
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'study_rooms' 
+        AND column_name = 'linked_challenge_id'
+    ) THEN
+        ALTER TABLE study_rooms 
+        ADD COLUMN linked_challenge_id UUID REFERENCES group_challenges(challenge_id) ON DELETE SET NULL;
+        
+        RAISE NOTICE 'study_rooms 테이블에 linked_challenge_id 컬럼이 추가되었습니다.';
+    ELSE
+        RAISE NOTICE 'linked_challenge_id 컬럼이 이미 존재합니다.';
+    END IF;
+END $$;

@@ -6,16 +6,14 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ roomId: string }> }
 ) {
-  console.log('=== 참가자 목록 조회 시작 ===')
   const { roomId } = await params
-  console.log('룸 ID:', roomId)
+  console.log('참가자 목록 API 호출:', { roomId })
   
   try {
     const supabase = await supabaseServer()
     
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    console.log('인증된 사용자:', user?.id)
     
     if (authError || !user) {
       console.error('인증 실패:', authError)
@@ -24,13 +22,13 @@ export async function GET(
         { status: 401 }
       )
     }
+    
+    console.log('인증된 사용자:', { userId: user.id, email: user.email })
 
     // 현재 참가 중인 참가자 목록 조회 (left_at이 null인 경우)
-    console.log('참가자 쿼리 시작...')
     
     try {
       // 먼저 현재 사용자가 이 룸에 참가했는지 확인
-      console.log('현재 사용자 참가 상태 확인...')
       const { data: currentParticipant, error: checkError } = await supabase
         .from('room_participants')
         .select('*')
@@ -38,12 +36,8 @@ export async function GET(
         .eq('user_id', user.id)
         .single()
 
-      console.log('현재 사용자 참가 상태:', currentParticipant)
-      console.log('참가 상태 확인 에러:', checkError)
-
       // 참가하지 않았다면 자동으로 참가
       if (!currentParticipant) {
-        console.log('현재 사용자가 룸에 참가하지 않음 - 자동 참가')
         const { error: joinError } = await supabase
           .from('room_participants')
           .insert({
@@ -57,12 +51,9 @@ export async function GET(
 
         if (joinError) {
           console.error('자동 참가 실패:', joinError)
-        } else {
-          console.log('자동 참가 성공')
         }
       } else if (currentParticipant.left_at) {
         // 나간 후 다시 참가하는 경우
-        console.log('재참가 처리')
         const { error: rejoinError } = await supabase
           .from('room_participants')
           .update({
@@ -76,26 +67,20 @@ export async function GET(
 
         if (rejoinError) {
           console.error('재참가 실패:', rejoinError)
-        } else {
-          console.log('재참가 성공')
         }
-      } else {
-        console.log('이미 참가 중인 상태')
       }
 
       // 잠시 대기 후 참가자 목록 조회 (트랜잭션 완료 대기)
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // 참가자 목록 조회 (RLS 문제를 피하기 위해 조인 없이)
-      console.log('참가자 목록 조회...')
+      console.log('참가자 목록 조회 시작')
       const { data: participants, error } = await supabase
         .from('room_participants')
         .select('*')
         .eq('room_id', roomId)
         .is('left_at', null)
         .order('joined_at', { ascending: true })
-
-      console.log('참가자 쿼리 결과:', { participants, error })
 
       if (error) {
         console.error('참가자 목록 조회 실패:', error)
@@ -104,16 +89,25 @@ export async function GET(
           count: 0
         })
       }
+      
+      console.log('참가자 목록 조회 결과:', { 
+        count: participants?.length || 0, 
+        participants: participants?.map(p => ({ user_id: p.user_id, is_host: p.is_host }))
+      })
 
       // 각 참가자의 사용자 정보를 개별적으로 가져오기
       const formattedParticipants = []
       for (const participant of participants || []) {
         try {
-          // 사용자 정보 조회 (서버 사이드에서 직접 조회)
-          const { data: userData, error: userError } = await supabase.auth.admin.getUserById(participant.user_id)
+          // 사용자 정보 조회 (profiles 테이블에서 조회)
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('display_name, avatar_url')
+            .eq('user_id', participant.user_id)
+            .single()
           
-          if (userError) {
-            console.error(`사용자 ${participant.user_id} 정보 조회 실패:`, userError)
+          if (profileError) {
+            console.error(`사용자 ${participant.user_id} 프로필 조회 실패:`, profileError)
             // 에러가 있어도 기본 정보로 계속 진행
             formattedParticipants.push({
               ...participant,
@@ -123,20 +117,16 @@ export async function GET(
               }
             })
           } else {
-            const userName = userData.user?.user_metadata?.name || 
-                           userData.user?.email?.split('@')[0] || 
-                           '사용자'
-            
             formattedParticipants.push({
               ...participant,
               user: {
-                name: userName,
-                avatar_url: userData.user?.user_metadata?.avatar_url || null
+                name: profileData?.display_name || '사용자',
+                avatar_url: profileData?.avatar_url || null
               }
             })
           }
         } catch (userFetchError) {
-          console.error(`사용자 ${participant.user_id} 정보 조회 중 에러:`, userFetchError)
+          console.error(`사용자 ${participant.user_id} 프로필 조회 중 에러:`, userFetchError)
           // 에러가 있어도 기본 정보로 계속 진행
           formattedParticipants.push({
             ...participant,
@@ -148,12 +138,15 @@ export async function GET(
         }
       }
 
-      console.log('변환된 참가자 목록:', formattedParticipants)
-
       const participantCount = formattedParticipants.length
-      console.log('참가자 수:', participantCount)
-
-      console.log('=== 참가자 목록 조회 완료 ===')
+      console.log('최종 참가자 목록 응답:', { 
+        count: participantCount, 
+        participants: formattedParticipants.map(p => ({ 
+          user_id: p.user_id, 
+          name: p.user.name, 
+          is_host: p.is_host 
+        }))
+      })
       return NextResponse.json({
         participants: formattedParticipants,
         count: participantCount

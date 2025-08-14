@@ -53,9 +53,7 @@ function VideoTile({
 
   return (
     <div
-      className={`relative cursor-pointer w-full h-full ${
-        gridLayout === '3' && index === 2 ? 'col-span-2' : ''
-      }`}
+      className="relative cursor-pointer w-full h-full"
       onClick={() => onParticipantClick?.(participant.participant_id)}
     >
       <Card className="h-full bg-gradient-to-br from-blue-100 to-blue-200 border-0 overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl">
@@ -111,33 +109,34 @@ export function VideoGrid({
       setGridLayout('2')
     } else if (participantCount === 3) {
       setGridLayout('3')
-    } else {
+    } else if (participantCount === 4) {
       setGridLayout('4')
+    } else {
+      // 5명 이상일 때는 3열로 배치
+      setGridLayout('4') // 4번 레이아웃을 3열로 사용
     }
   }, [participants.length])
 
   // 그리드 레이아웃별 클래스 결정
   const getGridClasses = () => {
+    const participantCount = participants.length
+    
     switch (gridLayout) {
       case '1':
         return 'grid-cols-1'
       case '2':
         return 'grid-cols-2'
       case '3':
-        return 'grid-cols-2'
+        return 'grid-cols-3' // 3명일 때 가로로 3명 배치
       case '4':
-        return 'grid-cols-2'
+        if (participantCount === 4) {
+          return 'grid-cols-2 grid-rows-2' // 4명일 때 2x2 정사각형 배치
+        } else {
+          return 'grid-cols-3' // 5명 이상일 때 3열로 배치
+        }
       default:
         return 'grid-cols-1'
     }
-  }
-
-  // 3명일 때 특별한 레이아웃 처리
-  const getSpecialLayout = () => {
-    if (gridLayout === '3') {
-      return 'grid-rows-2'
-    }
-    return ''
   }
 
   if (participants.length === 0) {
@@ -158,7 +157,7 @@ export function VideoGrid({
   return (
     <Card className="bg-white border-0 shadow-lg rounded-xl">
       <CardContent className="p-0">
-        <div className={`grid ${getGridClasses()} ${getSpecialLayout()} gap-6 h-[416px] w-full p-6`}>
+        <div className={`grid ${getGridClasses()} gap-6 h-[416px] w-full p-6`}>
           {participants.map((participant, index) => (
             <VideoTile
               key={participant.participant_id}

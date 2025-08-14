@@ -1,40 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { 
-  Users, 
-  Clock, 
-  Crown, 
-  Video,
-  Mic,
-  MicOff,
-  VideoOff,
-  Settings,
-  LogOut,
-  Plus,
-  Hash,
-  Activity,
-  Trophy,
-  Sword,
-  Target,
-  Timer,
-  Play,
-  Square,
-  Award,
-  TrendingUp
-} from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { VideoOff } from 'lucide-react'
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useUser } from '@/hooks/useAuth'
 import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
 import { useVideoRoom } from '@/hooks/useVideoRoom'
+import { useChallenge } from '@/hooks/useChallenge'
 import { FocusScoreChart } from './FocusScoreChart'
 import { VideoGrid } from './VideoGrid'
 import { ChallengeHUD } from './ChallengeHUD'
 import { ChallengeResultPanel } from './ChallengeResultPanel'
+import {
+  StudyRoomHeader,
+  StudyRoomNotifications,
+  StudyRoomCreateForm,
+  CompetitionPanel,
+  StudyRoomEmpty
+} from '../studyroom'
 import type { 
   StudyRoom, 
   RoomParticipant, 
@@ -66,7 +50,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   const [currentFocusScore, setCurrentFocusScore] = useState(0)
   const [isHost, setIsHost] = useState(false)
   const [showCreateRoom, setShowCreateRoom] = useState(!room)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [roomForm, setRoomForm] = useState<CreateStudyRoomData>({
     host_id: user?.id || '',
     name: '',
@@ -78,9 +62,12 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   const [focusUpdateInterval, setFocusUpdateInterval] = useState<NodeJS.Timeout | null>(null)
   const [notifications, setNotifications] = useState<Array<{id: string, message: string, type: 'join' | 'leave'}>>([])
 
-  // 집중도 대결 관련 상태
-  const [isCompetitionActive, setIsCompetitionActive] = useState(false)
-  const [competitionRound, setCompetitionRound] = useState<number>(0)
+  // 초기 참가자 로드 완료 여부를 추적하는 ref
+  const initialLoadDoneRef = useRef<boolean>(false)
+  const currentRoomIdRef = useRef<string | undefined>(undefined)
+  const lastParticipantCountRef = useRef<number>(0)
+
+  // 집중도 대결 관련 상태 (챌린지 훅으로 대체)
   const [competitionDuration, setCompetitionDuration] = useState<number>(25) // 기본 25분
   const [competitionTimeLeft, setCompetitionTimeLeft] = useState<number>(0)
   const [competitionScores, setCompetitionScores] = useState<{[key: string]: number}>({})
@@ -100,8 +87,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   // HUD 오버레이 관련 상태
   const [showChallengeHUD, setShowChallengeHUD] = useState(false)
   const [showResultPanel, setShowResultPanel] = useState(false)
-  const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(null)
-  const [challengeParticipants, setChallengeParticipants] = useState<ChallengeParticipant[]>([])
   const [finalScores, setFinalScores] = useState<{[key: string]: number}>({})
   const [challengeBadges, setChallengeBadges] = useState<{[key: string]: string[]}>({})
 
@@ -112,37 +97,69 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     participants
   })
 
+  // 챌린지 훅
+  const challenge = useChallenge({
+    roomId: room?.room_id || '',
+    userId: user?.id || ''
+  })
+
   // 참가자 목록 로드
-  const loadParticipants = useCallback(async () => {
+  const loadParticipants = useCallback(async (isInitialLoad = false) => {
+    if (!room?.room_id) return
+    
     try {
-      setLoading(true)
-      console.log('참가자 목록 로드 시작, room_id:', room?.room_id)
+      if (isInitialLoad) {
+        setLoading(true)
+        console.log('참가자 목록 초기 로딩 시작')
+      } else {
+        console.log('참가자 목록 업데이트 시작')
+      }
       
-      const response = await fetch(`/api/social/study-room/${room?.room_id}/participants`)
+      console.log('참가자 목록 로드 시작:', room.room_id, '초기 로딩:', isInitialLoad)
+      
+      const response = await fetch(`/api/social/study-room/${room.room_id}/participants`)
       console.log('참가자 API 응답 상태:', response.status)
       
       if (response.ok) {
         const data = await response.json()
-        console.log('참가자 API 응답 데이터:', data)
-        console.log('참가자 목록:', data.participants)
+        console.log('참가자 목록 데이터:', data)
+        const newParticipants = data.participants || []
+        setParticipants(newParticipants)
         
-        setParticipants(data.participants || [])
+        // 참가자 수 업데이트
+        lastParticipantCountRef.current = newParticipants.length
+        
+        if (isInitialLoad) {
+          console.log('참가자 목록 초기 로딩 완료, 참가자 수:', newParticipants.length)
+        } else {
+          console.log('참가자 목록 업데이트 완료, 참가자 수:', newParticipants.length)
+        }
       } else {
         const errorData = await response.json()
         console.error('참가자 API 에러:', errorData)
+        // 에러가 발생해도 로딩 상태는 해제하고 빈 배열로 설정
+        setParticipants([])
+        if (isInitialLoad) {
+          setLoading(false)
+        }
       }
     } catch (error) {
       console.error('참가자 목록 로드 실패:', error)
+      // 에러가 발생해도 로딩 상태는 해제
+      if (isInitialLoad) {
+        setLoading(false)
+      }
     } finally {
-      setLoading(false)
+      if (isInitialLoad) {
+        setLoading(false)
+        console.log('참가자 목록 로딩 상태 해제')
+      }
     }
   }, [room?.room_id])
 
   const handleLeaveRoom = useCallback(async () => {
     try {
-      setLoading(true)
-      
-      // Realtime으로 퇴장 알림 전송은 useSocialRealtime 훅 호출 후에 처리
+      // 나가기 시에는 로딩 상태를 변경하지 않음 (사용자 경험 개선)
       await leaveRoomMutation.mutateAsync({ roomId: room?.room_id! })
 
       // 나가기 성공 시 룸 닫기
@@ -152,8 +169,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('스터디룸 나가기 실패:', error)
       alert('스터디룸 나가기에 실패했습니다.')
-    } finally {
-      setLoading(false)
     }
   }, [room?.room_id, onClose, leaveRoomMutation])
 
@@ -163,7 +178,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
 
     try {
-      setLoading(true)
+      // 세션 종료 시에는 로딩 상태를 변경하지 않음 (사용자 경험 개선)
       await endRoomMutation.mutateAsync({ roomId: room?.room_id! })
       
       alert('스터디룸이 성공적으로 종료되었습니다.')
@@ -175,17 +190,43 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('스터디룸 종료 실패:', error)
       alert('스터디룸 종료에 실패했습니다.')
-    } finally {
-      setLoading(false)
     }
   }, [room?.room_id, onClose, endRoomMutation])
 
-  // WebSocket 메시지 핸들러들
+  // Supabase Realtime 메시지 핸들러들
   const handleRoomJoin = useCallback((data: RoomJoinMessage['data']) => {
     // 새 참가자 입장 로직
-    console.log('새 참가자 입장:', data)
-    // 참가자 목록 새로고침
-    loadParticipants()
+    console.log('새 참가자 입장 감지 (Supabase Realtime):', data.user_name)
+    
+    // Supabase Realtime을 통해 실시간으로 참가자 목록 업데이트
+    // API 호출 없이 즉시 참가자 목록에 추가
+    setParticipants(prev => {
+      const newParticipant: ParticipantWithUser = {
+        participant_id: `${data.room_id}-${data.user_id}`,
+        user_id: data.user_id,
+        room_id: data.room_id,
+        joined_at: data.timestamp,
+        left_at: undefined,
+        current_focus_score: 0,
+        is_host: false,
+        is_connected: true,
+        last_activity: data.timestamp,
+        user: {
+          name: data.user_name,
+          avatar_url: data.avatar_url
+        }
+      }
+      
+      // 이미 존재하는 참가자인지 확인
+      const exists = prev.some(p => p.user_id === data.user_id)
+      if (exists) {
+        console.log('이미 존재하는 참가자:', data.user_name)
+        return prev
+      }
+      
+      console.log('참가자 목록에 추가:', data.user_name)
+      return [...prev, newParticipant]
+    })
     
     // 알림 추가
     setNotifications(prev => [...prev, {
@@ -193,24 +234,31 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       message: `${data.user_name}님이 입장했습니다!`,
       type: 'join'
     }])
-  }, [loadParticipants])
+  }, [])
 
   const handleRoomLeave = useCallback((data: { user_id: string }) => {
     // 참가자 퇴장 로직
-    console.log('참가자 퇴장:', data)
-    // 참가자 목록 새로고침
-    loadParticipants()
+    console.log('참가자 퇴장 감지 (Supabase Realtime):', data.user_id)
     
-    // 알림 추가
-    const leavingParticipant = participants.find(p => p.user_id === data.user_id)
-    if (leavingParticipant) {
-      setNotifications(prev => [...prev, {
-        id: Date.now().toString(),
-        message: `${leavingParticipant.user.name}님이 퇴장했습니다.`,
-        type: 'leave'
-      }])
-    }
-  }, [loadParticipants, participants])
+    // Supabase Realtime을 통해 실시간으로 참가자 목록에서 제거
+    setParticipants(prev => {
+      const leavingParticipant = prev.find(p => p.user_id === data.user_id)
+      if (leavingParticipant) {
+        console.log('참가자 목록에서 제거:', leavingParticipant.user.name)
+        
+        // 알림 추가
+        setNotifications(notifications => [...notifications, {
+          id: Date.now().toString(),
+          message: `${leavingParticipant.user.name}님이 퇴장했습니다.`,
+          type: 'leave'
+        }])
+        
+        // 참가자 목록에서 제거
+        return prev.filter(p => p.user_id !== data.user_id)
+      }
+      return prev
+    })
+  }, [])
 
 
 
@@ -219,40 +267,18 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     console.log('격려 메시지 수신 (기능 비활성화):', data)
   }, [])
 
-  // 로그 제한을 위한 ref들
+  // 로그 제한을 위한 ref (필요한 경우에만 사용)
   const lastLogTimeRef = useRef<number>(0)
-  const lastInactiveLogTimeRef = useRef<number>(0)
-  const lastBreakLogTimeRef = useRef<number>(0)
-  const lastScoreLogTimeRef = useRef<number>(0)
 
   // 집중도 점수 업데이트 (대결 중일 때, 휴식 시간에는 점수 계산 안함)
   const updateCompetitionScore = useCallback((userId: string, focusScore: number) => {
-    // 로그 제한: 10초에 한번만 출력
-    const now = Date.now()
-    if (now - lastLogTimeRef.current > 10000) {
-      console.log('updateCompetitionScore 호출:', { 
-        userId, 
-        focusScore, 
-        isCompetitionActive, 
-        isBreakTime,
-        currentCompetitionScores: competitionScores
-      })
-      lastLogTimeRef.current = now
-    }
+    const isCompetitionActive = challenge.currentChallenge?.state === 'active'
     
     if (!isCompetitionActive) {
-      if (now - lastInactiveLogTimeRef.current > 10000) {
-        console.log('대결이 비활성 상태 - 점수 업데이트 건너뜀')
-        lastInactiveLogTimeRef.current = now
-      }
       return
     }
     
     if (isBreakTime) {
-      if (now - lastBreakLogTimeRef.current > 10000) {
-        console.log('휴식 시간 - 점수 업데이트 건너뜀')
-        lastBreakLogTimeRef.current = now
-      }
       return
     }
 
@@ -264,32 +290,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         ...prev,
         [userId]: (prev[userId] || 0) + scoreIncrement
       }
-      if (now - lastScoreLogTimeRef.current > 10000) {
-        console.log('점수 업데이트 완료:', { 
-          userId, 
-          scoreIncrement, 
-          focusScore, 
-          prevScores: prev,
-          newScores 
-        })
-        lastScoreLogTimeRef.current = now
-      }
       return newScores
     })
-  }, [isCompetitionActive, isBreakTime, competitionScores])
+  }, [challenge.currentChallenge?.state, isBreakTime, competitionScores])
 
   // 집중도 업데이트 시 대결 점수도 업데이트 (Realtime 대신 폴링 사용)
   const handleFocusUpdate = useCallback((data: FocusUpdateMessage['data']) => {
-    const now = Date.now()
-    if (now - lastLogTimeRef.current > 10000) {
-      console.log('집중도 업데이트 수신:', data)
-      console.log('현재 대결 상태:', { 
-        isCompetitionActive, 
-        isBreakTime,
-        currentCompetitionScores: competitionScores
-      })
-      lastLogTimeRef.current = now
-    }
+    const isCompetitionActive = challenge.currentChallenge?.state === 'active'
     
     // 다른 참가자의 집중도 업데이트
     setParticipants(prev => prev.map(p => 
@@ -300,20 +307,13 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
     // 대결 중이면 점수 업데이트
     if (isCompetitionActive) {
-      if (now - lastLogTimeRef.current > 10000) {
-        console.log('대결 중 - 점수 업데이트 호출')
-      }
       updateCompetitionScore(data.user_id, data.focus_score)
-    } else {
-      if (now - lastInactiveLogTimeRef.current > 10000) {
-        console.log('대결 비활성 상태 - 점수 업데이트 건너뜀')
-        lastInactiveLogTimeRef.current = now
-      }
     }
-  }, [isCompetitionActive, isBreakTime, updateCompetitionScore, competitionScores])
+  }, [challenge.currentChallenge?.state, isBreakTime, updateCompetitionScore, competitionScores])
 
      // 폴링으로 참가자 집중도 업데이트 (Realtime 대체)
    useEffect(() => {
+     const isCompetitionActive = challenge.currentChallenge?.state === 'active'
      if (!room?.room_id || !isCompetitionActive) return
  
      const pollInterval = setInterval(async () => {
@@ -323,7 +323,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
            const response = await fetch(`/api/social/study-room/${room.room_id}/focus-score?user_id=${participant.user_id}`)
            if (response.ok) {
              const data = await response.json()
-             console.log('폴링으로 집중도 조회:', data)
              
              // 집중도 업데이트 처리
              handleFocusUpdate({
@@ -337,10 +336,10 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
        } catch (error) {
          console.error('폴링 중 오류:', error)
        }
-     }, 5000) // 5초마다 폴링
+     }, 10000) // 10초마다 폴링
  
      return () => clearInterval(pollInterval)
-   }, [room?.room_id, isCompetitionActive, participants, handleFocusUpdate])
+   }, [room?.room_id, challenge.currentChallenge?.state, participants, handleFocusUpdate])
 
   // 소셜 Realtime 연결
   const { 
@@ -358,33 +357,74 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     onEncouragement: handleEncouragement
   })
 
-  // Realtime 연결 후 룸 입장
+  // Supabase Realtime 연결 후 룸 입장
   useEffect(() => {
     if (room?.room_id && user && isConnected) {
+      console.log('Supabase Realtime 연결됨, 룸 입장 시도')
       joinRoom(user.user_metadata?.name || 'Unknown', user.user_metadata?.avatar_url)
       // 룸 입장 후 참가자 목록은 이미 위의 useEffect에서 로드됨
     }
   }, [room?.room_id, user, isConnected, joinRoom])
 
+  // Supabase Realtime 연결 상태 변경 시 참가자 목록 새로고침
+  useEffect(() => {
+    if (isConnected && room?.room_id && initialLoadDoneRef.current) {
+      console.log('Supabase Realtime 재연결 감지, 참가자 목록 새로고침')
+      // 연결이 복구되었을 때 참가자 목록을 새로고침 (로딩 상태 없이)
+      loadParticipants(false)
+    }
+  }, [isConnected, room?.room_id, loadParticipants])
+
+  // 참가자 수 변경 감지 및 자동 새로고침
+  useEffect(() => {
+    if (initialLoadDoneRef.current && participants.length !== lastParticipantCountRef.current) {
+      console.log('참가자 수 변경 감지:', lastParticipantCountRef.current, '->', participants.length)
+      lastParticipantCountRef.current = participants.length
+    }
+  }, [participants.length])
+
+  // 주기적인 참가자 목록 동기화 (Supabase Realtime 이벤트를 놓쳤을 경우 대비)
+  useEffect(() => {
+    if (!room?.room_id || !initialLoadDoneRef.current || !isConnected) return
+
+    const syncInterval = setInterval(() => {
+      console.log('주기적 참가자 목록 동기화 실행')
+      loadParticipants(false)
+    }, 30000) // 30초마다 동기화
+
+    return () => clearInterval(syncInterval)
+  }, [room?.room_id, initialLoadDoneRef.current, isConnected, loadParticipants])
+
   // 참가자 목록 로드 및 호스트 확인
   useEffect(() => {
-    if (room?.room_id) {
-      // 룸 입장 시 한 번만 참가자 목록 로드
-      loadParticipants()
+    console.log('참가자 목록 로드 useEffect 실행:', { roomId: room?.room_id, userId: user?.id })
+    
+    // 룸이 변경되면 초기 로드 플래그 리셋
+    if (room?.room_id && room.room_id !== currentRoomIdRef.current) {
+      initialLoadDoneRef.current = false
+      currentRoomIdRef.current = room.room_id
+      lastParticipantCountRef.current = 0
+      console.log('룸 변경 감지, 참가자 추적 상태 리셋')
+    }
+    
+    if (room?.room_id && !initialLoadDoneRef.current) {
+      // 룸 입장 시 한 번만 참가자 목록 로드 (초기 로딩)
+      loadParticipants(true)
+      initialLoadDoneRef.current = true
       
       // 호스트 여부 확인 (room.host_id와 user.id 비교)
       if (room.host_id && user?.id) {
         setIsHost(room.host_id === user.id)
-        console.log('호스트 확인:', { roomHostId: room.host_id, userId: user.id, isHost: room.host_id === user.id })
       }
+      
+      // 챌린지 목록 로드
+      challenge.fetchChallenges()
     }
   }, [room?.room_id, room?.host_id, user?.id, loadParticipants])
 
   // handleLeaveRoom을 useSocialRealtime 훅 호출 후에 다시 정의
   const handleLeaveRoomWithRealtime = useCallback(async () => {
     try {
-      setLoading(true)
-      
       // Realtime으로 퇴장 알림 전송
       leaveRoom()
       
@@ -397,8 +437,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     } catch (error) {
       console.error('스터디룸 나가기 실패:', error)
       alert('스터디룸 나가기에 실패했습니다.')
-    } finally {
-      setLoading(false)
     }
   }, [room?.room_id, onClose, leaveRoom, leaveRoomMutation])
 
@@ -459,16 +497,9 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
     // 집중도 업데이트 전송 (API + Realtime)
   const sendFocusUpdate = useCallback(async (focusScore: number) => {
-    const now = Date.now()
-    
-    console.log('sendFocusUpdate 함수 호출됨:', { focusScore, room: !!room, user: !!user })
-    
     if (!room || !user) {
-      console.log('sendFocusUpdate - room 또는 user가 없음:', { room: !!room, user: !!user })
       return
     }
-    
-    console.log('sendFocusUpdate API 호출 시작:', { focusScore, roomId: room.room_id, userId: user.id })
     
     try {
       // API를 통해 집중도 업데이트
@@ -478,18 +509,11 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
         body: JSON.stringify({ focus_score: focusScore })
       })
       
-      console.log('API 응답 상태:', response.status)
-      
-             if (response.ok) {
-        console.log('API 집중도 업데이트 성공')
-        console.log('Realtime 이벤트 대기 중...')
-        
+      if (response.ok) {
         // 로컬 상태도 업데이트
         setCurrentFocusScore(focusScore)
       } else {
         console.error('API 집중도 업데이트 실패:', response.status)
-        const errorText = await response.text()
-        console.error('API 에러 내용:', errorText)
       }
     } catch (error) {
       console.error('집중도 업데이트 실패:', error)
@@ -498,50 +522,22 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
   // 격려 메시지 전송 (Realtime) - 기능 제거됨
   const sendEncouragement = useCallback((toUserId: string) => {
-    console.log('격려 메시지 전송 (기능 비활성화):', toUserId)
+    // 기능 비활성화
   }, [])
 
   // 집중도 시뮬레이션 (실제로는 ML 모델에서 받아올 값)
   useEffect(() => {
-    const now = Date.now()
-    if (now - lastLogTimeRef.current > 10000) {
-      console.log('집중도 시뮬레이션 useEffect 실행:', { room: !!room, isConnected })
-      lastLogTimeRef.current = now
-    }
-    
     if (room && isConnected) {
-      const startNow = Date.now()
-      if (startNow - lastLogTimeRef.current > 10000) {
-        console.log('집중도 시뮬레이션 시작:', { roomId: room.room_id, isConnected })
-        lastLogTimeRef.current = startNow
-      }
-      
       const interval = setInterval(() => {
         const newFocusScore = Math.floor(Math.random() * 100)
-        const intervalNow = Date.now()
-        if (intervalNow - lastLogTimeRef.current > 10000) {
-          console.log('집중도 시뮬레이션 - 새로운 점수 생성:', newFocusScore)
-          console.log('sendFocusUpdate 함수 호출 예정...')
-          lastLogTimeRef.current = intervalNow
-        }
         sendFocusUpdate(newFocusScore)
-      }, 2000) // 2초마다 업데이트 (실제 시뮬레이션은 빠르게)
+      }, 10000) // 10초마다 업데이트
 
       setFocusUpdateInterval(interval)
-      const setupNow = Date.now()
-      if (setupNow - lastLogTimeRef.current > 10000) {
-        console.log('집중도 시뮬레이션 인터벌 설정 완료')
-        lastLogTimeRef.current = setupNow
-      }
     }
 
     return () => {
       if (focusUpdateInterval) {
-        const cleanupNow = Date.now()
-        if (cleanupNow - lastLogTimeRef.current > 10000) {
-          console.log('집중도 시뮬레이션 정리')
-          lastLogTimeRef.current = cleanupNow
-        }
         clearInterval(focusUpdateInterval)
       }
     }
@@ -565,82 +561,55 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
 
     try {
-    
-
       // 뽀모도로 모드일 때는 공부 시간만 사용, 커스텀 모드일 때는 총 시간 사용
       const config = activeTab === 'pomodoro' 
         ? { work: competitionDuration, break: breakDuration }
         : { durationMin: duration }
       
+      // 챌린지 훅을 사용하여 챌린지 생성
+      const newChallenge = await challenge.createChallenge({
+        mode: activeTab,
+        config
+      })
       
+      // 참가자 정보 설정
+      const challengeParticipants = participants.map(p => ({
+        participant_id: `${newChallenge.challenge_id}-${p.user_id}`,
+        challenge_id: newChallenge.challenge_id,
+        user_id: p.user_id,
+        joined_at: new Date().toISOString(),
+        current_progress: 0
+      }))
+      challenge.setParticipants(challengeParticipants)
       
-             // API를 통해 챌린지 생성
-       const response = await fetch('/api/social/challenge', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           room_id: room?.room_id,
-           mode: activeTab,
-           config,
-           start_at: new Date().toISOString() // 현재 시간으로 시작 시간 설정
-         })
-       })
-
-             if (response.ok) {
-                   const responseData = await response.json()
-          
-          // API 응답에서 challenge 객체 추출
-          const challenge = responseData.challenge
-          setCurrentChallenge(challenge)
-        
-                 // 참가자 정보 설정
-         const challengeParticipants = participants.map(p => ({
-           participant_id: `${challenge.challenge_id}-${p.user_id}`,
-           challenge_id: challenge.challenge_id,
-           user_id: p.user_id,
-           joined_at: new Date().toISOString(),
-           current_progress: 0
-         }))
-         setChallengeParticipants(challengeParticipants)
-        
-        // HUD 오버레이 표시
-        setShowChallengeHUD(true)
-        setShowCompetitionSettings(false)
-        
-        // 기존 대결 상태도 업데이트 (하위 호환성)
-        setIsCompetitionActive(true)
-        setIsBreakTime(false)
-        setCompetitionRound(prev => prev + 1)
-        
-        // 뽀모도로 모드일 때는 공부 시간만, 커스텀 모드일 때는 총 시간
-        const timeLeft = activeTab === 'pomodoro' 
-          ? competitionDuration * 60  // 공부 시간만
-          : duration * 60  // 총 시간
-        setCompetitionTimeLeft(timeLeft)
-        
-                 // 모든 참가자의 점수를 0으로 초기화
-         const initialScores: {[key: string]: number} = {}
-         participants.forEach(p => {
-           initialScores[p.user_id] = 0
-         })
-         setCompetitionScores(initialScores)
-         
-         console.log('대결 시작 - 초기 점수:', initialScores)
-         console.log('대결 시작 - 상태 설정:', {
-           isCompetitionActive: true,
-           isBreakTime: false,
-           participants: participants.map(p => p.user_id)
-         })
-      }
+      // HUD 오버레이 표시
+      setShowChallengeHUD(true)
+      setShowCompetitionSettings(false)
+      
+      // 뽀모도로 모드일 때는 공부 시간만, 커스텀 모드일 때는 총 시간
+      const timeLeft = activeTab === 'pomodoro' 
+        ? competitionDuration * 60  // 공부 시간만
+        : duration * 60  // 총 시간
+      setCompetitionTimeLeft(timeLeft)
+      
+      // 모든 참가자의 점수를 0으로 초기화
+      const initialScores: {[key: string]: number} = {}
+      participants.forEach(p => {
+        initialScores[p.user_id] = 0
+      })
+      setCompetitionScores(initialScores)
+      
+      // 대결 시작 완료
     } catch (error) {
       console.error('챌린지 생성 실패:', error)
       alert('챌린지 생성에 실패했습니다.')
     }
-  }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, room?.room_id])
+  }, [participants, competitionDuration, activeTab, customHours, customMinutes, breakDuration, challenge])
 
   // 집중도 대결 종료
   const endCompetition = useCallback(async () => {
-    if (!isCompetitionActive) return
+    const isCompetitionActive = challenge.currentChallenge?.state === 'active'
+    if (!isCompetitionActive || !challenge.currentChallenge) return
 
     // 최종 점수 계산 및 순위 결정
     const finalScores = Object.entries(competitionScores)
@@ -652,7 +621,7 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
 
     // 대결 기록에 추가
     setCompetitionHistory(prev => [...prev, {
-      round: competitionRound,
+      round: prev.length + 1,
       duration: competitionDuration,
       scores: { ...competitionScores },
       winner
@@ -687,30 +656,20 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     setShowResultPanel(true)
 
     // 기존 상태 정리
-    setIsCompetitionActive(false)
-    setIsBreakTime(false)
     setCompetitionTimeLeft(0)
     setCompetitionScores({})
     
-    // API를 통해 챌린지 종료
-    if (currentChallenge) {
-      try {
-        await fetch(`/api/social/challenge/${currentChallenge.challenge_id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            state: 'ended',
-            end_at: new Date().toISOString()
-          })
-        })
-      } catch (error) {
-        console.error('챌린지 종료 API 호출 실패:', error)
-      }
+    // 챌린지 훅을 사용하여 챌린지 종료
+    try {
+      await challenge.endChallenge(challenge.currentChallenge.challenge_id)
+    } catch (error) {
+      console.error('챌린지 종료 실패:', error)
     }
-  }, [isCompetitionActive, competitionScores, competitionRound, competitionDuration, participants, activeTab, breakDuration, currentChallenge])
+  }, [challenge.currentChallenge, competitionScores, competitionDuration, participants, activeTab, breakDuration, challenge])
 
   // 대결 타이머 (뽀모도로 사이클 포함)
   useEffect(() => {
+    const isCompetitionActive = challenge.currentChallenge?.state === 'active'
     let timer: NodeJS.Timeout
     if (isCompetitionActive && competitionTimeLeft > 0) {
       timer = setTimeout(() => {
@@ -731,154 +690,54 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       }, 1000)
     }
     return () => clearTimeout(timer)
-  }, [isCompetitionActive, competitionTimeLeft, endCompetition, activeTab, isBreakTime, breakDuration])
+  }, [challenge.currentChallenge?.state, competitionTimeLeft, endCompetition, activeTab, isBreakTime, breakDuration])
 
 
 
   // 스터디룸 생성 폼
   if (showCreateRoom) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              새로운 스터디룸 만들기
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">룸 이름</label>
-              <input
-                type="text"
-                value={roomForm.name}
-                onChange={(e) => setRoomForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="예: 오늘 밤 공부방"
-                className="w-full p-2 border rounded-md"
-              />
-            </div>
-            
-            <div>
-              <label className="text-sm font-medium">설명</label>
-              <textarea
-                value={roomForm.description}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRoomForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="룸에 대한 설명을 입력하세요"
-                rows={3}
-                className="w-full p-2 border rounded-md"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium">최대 참가자 수</label>
-                <input
-                  type="number"
-                  min="2"
-                  max="4"
-                  value={roomForm.max_participants}
-                  onChange={(e) => setRoomForm(prev => ({ ...prev, max_participants: parseInt(e.target.value) }))}
-                  className="w-full p-2 border rounded-md"
-                />
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium">목표 시간 (분)</label>
-                <input
-                  type="number"
-                  min="15"
-                  value={roomForm.goal_minutes}
-                  onChange={(e) => setRoomForm(prev => ({ ...prev, goal_minutes: parseInt(e.target.value) }))}
-                  className="w-full p-2 border rounded-md"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">세션 타입</label>
-              <select
-                value={roomForm.session_type}
-                onChange={(e) => setRoomForm(prev => ({ ...prev, session_type: e.target.value as any }))}
-                className="w-full p-2 border rounded-md"
-              >
-                <option value="study">공부</option>
-                <option value="work">업무</option>
-                <option value="reading">독서</option>
-                <option value="other">기타</option>
-              </select>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleCreateRoom} className="flex-1">
-                스터디룸 생성
-              </Button>
-              <Button variant="outline" onClick={() => setShowCreateRoom(false)}>
-                취소
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <StudyRoomCreateForm
+        roomForm={roomForm}
+        onRoomFormChange={setRoomForm}
+        onCreateRoom={handleCreateRoom}
+        onCancel={() => setShowCreateRoom(false)}
+      />
     )
   }
 
   // 스터디룸 메인 화면
   if (!room) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle>스터디룸</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => setShowCreateRoom(true)} className="w-full">
-              <Plus className="h-4 w-4 mr-2" />
-              새 스터디룸 만들기
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <StudyRoomEmpty onCreateRoom={() => setShowCreateRoom(true)} />
     )
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
       {/* 실시간 알림 */}
-      {notifications.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
-          {notifications.slice(-3).map((notification) => (
-            <div
-              key={notification.id}
-              className={`p-3 rounded-lg shadow-lg text-sm text-white max-w-xs ${
-                notification.type === 'join' ? 'bg-green-500' : 'bg-gray-500'
-              }`}
-            >
-              {notification.message}
-            </div>
-          ))}
-        </div>
+      <StudyRoomNotifications notifications={notifications} />
+
+      {/* 챌린지 HUD 오버레이 */}
+      {showChallengeHUD && challenge.currentChallenge && (
+        <ChallengeHUD
+          challenge={challenge.currentChallenge}
+          participants={challenge.participants}
+          currentUserId={user?.id || ''}
+          currentFocusScore={currentFocusScore}
+          currentScores={competitionScores}
+          onClose={() => {
+            setShowChallengeHUD(false)
+            endCompetition()
+          }}
+        />
       )}
 
-             {/* 챌린지 HUD 오버레이 */}
-       {showChallengeHUD && currentChallenge && (
-         <ChallengeHUD
-           challenge={currentChallenge}
-           participants={challengeParticipants}
-           currentUserId={user?.id || ''}
-           currentFocusScore={currentFocusScore}
-           currentScores={competitionScores}
-           onClose={() => {
-             setShowChallengeHUD(false)
-             endCompetition()
-           }}
-         />
-       )}
-
       {/* 챌린지 결과 패널 */}
-      {showResultPanel && currentChallenge && (
+      {showResultPanel && challenge.currentChallenge && (
         <ChallengeResultPanel
-          challenge={currentChallenge}
-          participants={challengeParticipants}
+          challenge={challenge.currentChallenge}
+          participants={challenge.participants}
           finalScores={finalScores}
           badges={challengeBadges}
           onClose={() => setShowResultPanel(false)}
@@ -896,168 +755,17 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* 룸 헤더 */}
-          <Card className="bg-white/80 backdrop-blur-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-2xl">
-                      <Hash className="h-6 w-6 text-blue-500" />
-                      {room.name}
-                    </CardTitle>
-                    <p className="text-gray-600 mt-1">{room.description}</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      {room.current_participants}/{room.max_participants}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      {room.goal_minutes}분
-                    </div>
-                    <Badge variant="secondary">{room.session_type}</Badge>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {/* Realtime 연결 상태 */}
-                  <div className={`flex items-center gap-1 text-xs ${
-                    isConnected ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    <div className={`w-2 h-2 rounded-full ${
-                      isConnected ? 'bg-green-500' : 'bg-red-500'
-                    }`} />
-                    {isConnected ? '실시간 연결됨' : '연결 중...'}
-                  </div>
-                 
-                  {isHost && (
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                      onClick={handleEndRoom}
-                      disabled={loading}
-                    >
-                      <LogOut className="h-4 w-4 mr-1" />
-                      스터디룸 종료
-                    </Button>
-                  )}
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleLeaveRoomWithRealtime}
-                    disabled={loading}
-                  >
-                    <LogOut className="h-4 w-4 mr-1" />
-                    나가기
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            
-            {/* 헤더 하단에 참가자 목록과 컨트롤을 한 줄로 통합 */}
-            <CardContent className="pt-0">
-              <div className="flex items-center justify-between pt-4 border-t">
-                {/* 참가자 목록 */}
-                <div className="flex-1">
-                  <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
-                    <Users className="h-4 w-4 text-blue-500" />
-                    참가자 목록
-                  </h3>
-                  <div className="flex items-center gap-4">
-                    {loading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-                        <span className="text-sm text-gray-500">로딩 중...</span>
-                      </div>
-                    ) : participants.length === 0 ? (
-                      <span className="text-sm text-gray-500">아직 참가자가 없습니다</span>
-                    ) : (
-                      participants.slice(0, 5).map((participant) => {
-                        // 현재 사용자의 실제 비디오/마이크 상태 확인
-                        const isCurrentUser = participant.user_id === user?.id
-                        const actualVideoState = isCurrentUser ? videoRoom.isVideoEnabled : participant.is_video_on
-                        const actualMicState = isCurrentUser ? videoRoom.isAudioEnabled : participant.is_mic_on
-                        
-                        return (
-                          <div key={participant.participant_id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={participant.user.avatar_url} />
-                              <AvatarFallback className="bg-blue-100 text-blue-600 text-sm font-medium">
-                                {participant.user.name?.charAt(0) || 'U'}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-gray-900">{participant.user.name}</span>
-                              {participant.is_host && <Crown className="h-4 w-4 text-yellow-500" />}
-                            </div>
-                            
-                            {/* 비디오/오디오 상태 표시 */}
-                            <div className="flex items-center gap-1 ml-auto">
-                              <Badge 
-                                variant={actualVideoState ? "default" : "secondary"}
-                                className="h-5 px-1"
-                              >
-                                {actualVideoState ? (
-                                  <Video className="h-3 w-3" />
-                                ) : (
-                                  <VideoOff className="h-3 w-3" />
-                                )}
-                              </Badge>
-                              
-                              <Badge 
-                                variant={actualMicState ? "default" : "secondary"}
-                                className="h-5 px-1"
-                              >
-                                {actualMicState ? (
-                                  <Mic className="h-3 w-3" />
-                                ) : (
-                                  <MicOff className="h-3 w-3" />
-                                )}
-                              </Badge>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                    {participants.length > 5 && (
-                      <div className="flex items-center justify-center w-20 h-20 rounded-lg bg-gray-100 border border-gray-200">
-                        <span className="text-sm font-medium text-gray-600">+{participants.length - 5}명</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 컨트롤 */}
-                <div className="flex items-center gap-3 ml-8">
-                  <Button
-                    variant={videoRoom.isVideoEnabled ? "default" : "outline"}
-                    size="sm"
-                    onClick={videoRoom.toggleVideo}
-                    className="h-10 px-4"
-                    disabled={videoRoom.isConnecting}
-                  >
-                    {videoRoom.isVideoEnabled ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
-                  </Button>
-                  
-                  <Button
-                    variant={videoRoom.isAudioEnabled ? "default" : "outline"}
-                    size="sm"
-                    onClick={videoRoom.toggleAudio}
-                    className="h-10 px-4"
-                    disabled={!videoRoom.isVideoEnabled}
-                  >
-                    {videoRoom.isAudioEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  </Button>
-                  
-                  <Button variant="outline" size="sm" className="h-10 px-4">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StudyRoomHeader
+            room={room}
+            participants={participants}
+            isHost={isHost}
+            isConnected={isConnected}
+            loading={loading}
+            currentUserId={user?.id}
+            videoRoom={videoRoom}
+            onLeaveRoom={handleLeaveRoomWithRealtime}
+            onEndRoom={handleEndRoom}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* 메인 화면 */}
@@ -1097,305 +805,30 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 </Card>
               )}
 
-               {/* 집중도 대결 모드 */}
-                <Card className="bg-white border-blue-200">
-                 <CardHeader>
-                   <div className="flex items-center justify-between">
-                     <CardTitle className="flex items-center gap-2 text-xl text-blue-800">
-                       <Sword className="h-5 w-5 text-blue-600" />
-                       ⚔️ 집중도 대결
-                     </CardTitle>
-                     <div className="flex items-center gap-2">
-                                               {isCompetitionActive ? (
-                          <div className="flex items-center gap-2">
-                            <Badge variant={isBreakTime ? "secondary" : "destructive"} className="flex items-center gap-1">
-                              <Timer className="h-3 w-3" />
-                              {Math.floor(competitionTimeLeft / 60)}:{(competitionTimeLeft % 60).toString().padStart(2, '0')}
-                            </Badge>
-                            {isBreakTime && (
-                              <Badge variant="outline" className="text-xs">
-                                ☕ 휴식
-                              </Badge>
-                            )}
-                          </div>
-                        ) : (
-                          <Badge variant="secondary" className="flex items-center gap-1">
-                            <Target className="h-3 w-3" />
-                            대기 중
-                          </Badge>
-                        )}
-                       {isHost && (
-                         <Button
-                           variant={isCompetitionActive ? "destructive" : "default"}
-                           size="sm"
-                           onClick={isCompetitionActive ? endCompetition : () => setShowCompetitionSettings(true)}
-                           className="bg-blue-600 hover:bg-blue-700"
-                         >
-                           {isCompetitionActive ? (
-                             <>
-                               <Square className="h-4 w-4 mr-1" />
-                               대결 종료
-                             </>
-                           ) : (
-                             <>
-                               <Play className="h-4 w-4 mr-1" />
-                               대결 시작
-                             </>
-                           )}
-                         </Button>
-                       )}
-                     </div>
-                   </div>
-                 </CardHeader>
-
-                <CardContent className="space-y-4">
-                                                                                                 {/* 대결 설정 모달 */}
-                      {showCompetitionSettings && (
-                        <Card className="bg-white border border-gray-200 shadow-lg">
-                          <CardContent className="p-6">
-                            <div className="space-y-6">
-                              <div className="text-center">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2">⚔️ 집중도 대결 설정</h3>
-                                <p className="text-sm text-gray-600">라운드 시간을 설정하고 대결을 시작하세요</p>
-                              </div>
-                              
-                              {/* 탭 네비게이션 */}
-                              <div className="flex border-b border-gray-200">
-                                <button
-                                  onClick={() => setActiveTab('pomodoro')}
-                                  className={`flex-1 py-3 px-4 text-sm font-medium transition-colors ${
-                                    activeTab === 'pomodoro'
-                                      ? 'text-blue-600 border-b-2 border-blue-600'
-                                      : 'text-gray-500 hover:text-gray-700'
-                                  }`}
-                                >
-                                  🍅 뽀모도로
-                                </button>
-                                <button
-                                  onClick={() => setActiveTab('custom')}
-                                  className={`flex-1 py-3 px-4 text-sm font-medium transition-colors ${
-                                    activeTab === 'custom'
-                                      ? 'text-blue-600 border-b-2 border-blue-600'
-                                      : 'text-gray-500 hover:text-gray-700'
-                                  }`}
-                                >
-                                  ⚙️ 커스텀
-                                </button>
-                              </div>
-                              
-                                                             {/* 뽀모도로 탭 */}
-                               {activeTab === 'pomodoro' && (
-                                 <div className="space-y-4">
-                                   <div className="text-center">
-                                     <p className="text-sm text-gray-600 mb-4">뽀모도로 기법에 맞춘 집중 세션을 시작하세요</p>
-                                   </div>
-                                   <div className="grid grid-cols-2 gap-4">
-                                     {[
-                                       { 
-                                         label: '25분 공부', 
-                                         value: 25, 
-                                         breakValue: 5,
-                                         color: 'bg-orange-50 border-orange-200 text-orange-700', 
-                                         desc: '25분 공부 + 5분 휴식',
-                                         subDesc: '표준 뽀모도로'
-                                       },
-                                       { 
-                                         label: '50분 공부', 
-                                         value: 50, 
-                                         breakValue: 10,
-                                         color: 'bg-blue-50 border-blue-200 text-blue-700', 
-                                         desc: '50분 공부 + 10분 휴식',
-                                         subDesc: '긴 뽀모도로'
-                                       }
-                                     ].map((option) => (
-                                       <button
-                                         key={option.value}
-                                         onClick={() => {
-                                           setCompetitionDuration(option.value)
-                                           setBreakDuration(option.breakValue)
-                                         }}
-                                         className={`p-6 rounded-lg border-2 transition-all hover:scale-105 ${
-                                           competitionDuration === option.value 
-                                             ? `${option.color} ring-2 ring-offset-2 ring-blue-500` 
-                                             : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-                                         }`}
-                                       >
-                                         <div className="text-xl font-semibold mb-2">{option.label}</div>
-                                         <div className="text-sm opacity-75 mb-1">{option.desc}</div>
-                                         <div className="text-xs opacity-60">{option.subDesc}</div>
-                                       </button>
-                                     ))}
-                                   </div>
-                                   <div className="text-center text-xs text-gray-500">
-                                     * 휴식 시간에는 점수 계산이 일시 중단됩니다
-                                   </div>
-                                 </div>
-                               )}
-                              
-                              {/* 커스텀 탭 */}
-                              {activeTab === 'custom' && (
-                                <div className="space-y-4">
-                                  <div className="text-center">
-                                    <p className="text-sm text-gray-600 mb-4">원하는 시간을 직접 설정하여 대결을 시작하세요</p>
-                                  </div>
-                                  <div className="flex items-center justify-center gap-4">
-                                    <div className="text-center">
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">시간</label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="23"
-                                        value={customHours}
-                                        onChange={(e) => setCustomHours(parseInt(e.target.value) || 0)}
-                                        className="w-20 p-3 text-center border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                      />
-                                      <div className="text-xs text-gray-500 mt-1">시간</div>
-                                    </div>
-                                    <div className="text-2xl font-bold text-gray-400">:</div>
-                                    <div className="text-center">
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">분</label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="59"
-                                        value={customMinutes}
-                                        onChange={(e) => setCustomMinutes(parseInt(e.target.value) || 0)}
-                                        className="w-20 p-3 text-center border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                      />
-                                      <div className="text-xs text-gray-500 mt-1">분</div>
-                                    </div>
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="text-lg font-semibold text-blue-600">
-                                      총 {customHours}시간 {customMinutes}분
-                                    </div>
-                                    <div className="text-xs text-gray-500">설정된 시간</div>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              <div className="flex gap-3 pt-4">
-                                <Button 
-                                  onClick={startCompetition}
-                                  className="flex-1 bg-blue-600 hover:bg-blue-700 h-12 text-base font-medium"
-                                  disabled={activeTab === 'custom' && customHours === 0 && customMinutes === 0}
-                                >
-                                  <Play className="h-5 w-5 mr-2" />
-                                  대결 시작
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  onClick={() => setShowCompetitionSettings(false)}
-                                  className="flex-1 h-12 text-base font-medium"
-                                >
-                                  취소
-                                </Button>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                                     {/* 실시간 순위 */}
-                   {isCompetitionActive && (
-                     <div className="space-y-3">
-                       <h4 className="font-medium text-blue-700 flex items-center gap-2">
-                         <TrendingUp className="h-4 w-4" />
-                         실시간 순위
-                       </h4>
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                         {participants
-                           .map(participant => {
-                             const score = competitionScores[participant.user_id] || 0
-                             return { participant, score, userId: participant.user_id }
-                           })
-                           .sort((a, b) => b.score - a.score)
-                           .map(({ participant, score, userId }, index) => {
-                             
-                             return (
-                               <div 
-                                 key={userId} 
-                                 className={`p-3 rounded-lg border-2 transition-all ${
-                                   index === 0 ? 'border-yellow-400 bg-yellow-50' :
-                                   index === 1 ? 'border-gray-300 bg-gray-50' :
-                                   index === 2 ? 'border-amber-600 bg-amber-50' :
-                                   'border-gray-200 bg-white'
-                                 }`}
-                               >
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-2">
-                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                                       index === 0 ? 'bg-yellow-400 text-white' :
-                                       index === 1 ? 'bg-gray-400 text-white' :
-                                       index === 2 ? 'bg-amber-600 text-white' :
-                                       'bg-gray-300 text-gray-700'
-                                     }`}>
-                                       {index + 1}
-                                     </div>
-                                     <Avatar className="h-6 w-6">
-                                       <AvatarImage src={participant.user.avatar_url} />
-                                       <AvatarFallback className="text-xs">
-                                         {participant.user.name?.charAt(0) || 'U'}
-                                       </AvatarFallback>
-                                     </Avatar>
-                                     <span className="text-sm font-medium">{participant.user.name}</span>
-                                   </div>
-                                   <div className="text-right">
-                                     <div className="text-lg font-bold text-blue-700">
-                                       {Math.round(score)}
-                                     </div>
-                                     <div className="text-xs text-gray-500">점수</div>
-                                   </div>
-                                 </div>
-                               </div>
-                             )
-                           })}
-                       </div>
-                     </div>
-                   )}
-
-                                     {/* 대결 기록 */}
-                   {competitionHistory.length > 0 && (
-                     <div className="space-y-3">
-                       <h4 className="font-medium text-blue-700 flex items-center gap-2">
-                         <Award className="h-4 w-4" />
-                         대결 기록
-                       </h4>
-                       <div className="space-y-2">
-                         {competitionHistory.slice(-3).reverse().map((record, index) => {
-                           const winner = participants.find(p => p.user_id === record.winner)
-                           return (
-                             <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
-                               <div className="flex items-center gap-2">
-                                 <Trophy className="h-4 w-4 text-yellow-500" />
-                                                                     <span className="text-sm">
-                                      {Math.floor(record.duration / 60)}시간 {record.duration % 60}분 라운드 - {winner?.user.name || 'Unknown'} 우승
-                                    </span>
-                               </div>
-                               <Badge variant="outline" className="text-xs">
-                                 {record.round}라운드
-                               </Badge>
-                             </div>
-                           )
-                         })}
-                       </div>
-                     </div>
-                   )}
-
-                                       {/* 대결 안내 */}
-                    {!isCompetitionActive && competitionHistory.length === 0 && (
-                      <div className="text-center py-6 text-gray-600">
-                        <Sword className="h-12 w-12 mx-auto text-blue-500 mb-3" />
-                        <p className="text-sm">
-                          {isHost ? '대결 시작 버튼을 눌러 집중도 대결을 시작하세요!' : '방장이 대결을 시작할 때까지 기다려주세요.'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          각 라운드 동안의 집중도 × 지속시간으로 점수가 계산됩니다
-                        </p>
-                      </div>
-                    )}
-                </CardContent>
-              </Card>
+              {/* 집중도 대결 모드 */}
+              <CompetitionPanel
+                isHost={isHost}
+                isCompetitionActive={challenge.currentChallenge?.state === 'active'}
+                isBreakTime={isBreakTime}
+                competitionTimeLeft={competitionTimeLeft}
+                competitionDuration={competitionDuration}
+                breakDuration={breakDuration}
+                competitionScores={competitionScores}
+                competitionHistory={competitionHistory}
+                participants={participants}
+                showCompetitionSettings={showCompetitionSettings}
+                activeTab={activeTab}
+                customHours={customHours}
+                customMinutes={customMinutes}
+                onShowCompetitionSettings={setShowCompetitionSettings}
+                onActiveTabChange={setActiveTab}
+                onCompetitionDurationChange={setCompetitionDuration}
+                onBreakDurationChange={setBreakDuration}
+                onCustomHoursChange={setCustomHours}
+                onCustomMinutesChange={setCustomMinutes}
+                onStartCompetition={startCompetition}
+                onEndCompetition={endCompetition}
+              />
 
               {/* 집중도 차트 */}
               <FocusScoreChart 

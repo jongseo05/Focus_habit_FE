@@ -19,10 +19,22 @@ export async function GET(
       )
     }
 
-    // 스터디룸 정보 조회
+    // 스터디룸 정보 조회 (연동된 챌린지 정보 포함)
     const { data: room, error } = await supabase
       .from('study_rooms')
-      .select('*')
+      .select(`
+        *,
+        linked_challenge:linked_challenge_id (
+          challenge_id,
+          name,
+          description,
+          goal_type,
+          goal_value,
+          duration_days,
+          ends_at,
+          is_active
+        )
+      `)
       .eq('room_id', roomId)
       .single()
 
@@ -96,16 +108,39 @@ export async function PUT(
     const body = await request.json()
 
     // 스터디룸 업데이트 (호스트만 가능)
+    const updateData: any = {
+      name: body.name,
+      description: body.description,
+      max_participants: body.max_participants,
+      session_type: body.session_type,
+      goal_minutes: body.goal_minutes,
+      updated_at: new Date().toISOString()
+    }
+
+    // 챌린지 연동 처리
+    if (body.linked_challenge_id !== undefined) {
+      if (body.linked_challenge_id) {
+        // 챌린지 존재 확인
+        const { data: challenge, error: challengeError } = await supabase
+          .from('group_challenges')
+          .select('challenge_id')
+          .eq('challenge_id', body.linked_challenge_id)
+          .eq('is_active', true)
+          .single()
+
+        if (challengeError || !challenge) {
+          return NextResponse.json(
+            { error: '유효하지 않은 챌린지입니다.' },
+            { status: 400 }
+          )
+        }
+      }
+      updateData.linked_challenge_id = body.linked_challenge_id
+    }
+
     const { data: room, error } = await supabase
       .from('study_rooms')
-      .update({
-        name: body.name,
-        description: body.description,
-        max_participants: body.max_participants,
-        session_type: body.session_type,
-        goal_minutes: body.goal_minutes,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('room_id', roomId)
       .eq('host_id', user.id)
       .select()
