@@ -272,34 +272,35 @@ export class FocusScoreEngine {
 
     let score = 50
 
-    // 눈 상태 기반 점수 (0-40점)
-    switch (visual.eyeStatus) {
-      case 'OPEN':
-        score += 40
-        break
-      case 'PARTIAL':
-        score += 20
-        break
-      case 'CLOSED':
-        score += 0
-        break
+    // 눈 상태 기반 점수 (최대 +30점)
+    if (visual.eyeStatus === 'OPEN') {
+      score += 30 // 눈이 완전히 열림
+    } else if (visual.eyeStatus === 'PARTIAL') {
+      score += 15 // 눈이 부분적으로 열림
+    } else if (visual.eyeStatus === 'CLOSED') {
+      score -= 20 // 눈이 닫힘
     }
 
-    // EAR 값 기반 점수 (0-20점)
-    if (visual.earValue >= 0.3) {
-      score += 20 // 눈이 잘 열려있음
+    // EAR 값 기반 점수 (최대 +20점)
+    if (visual.earValue >= 0.4) {
+      score += 20 // 매우 좋은 눈 상태
+    } else if (visual.earValue >= 0.3) {
+      score += 15 // 좋은 눈 상태
     } else if (visual.earValue >= 0.2) {
-      score += 10 // 눈이 부분적으로 열려있음
+      score += 10 // 보통 눈 상태
+    } else if (visual.earValue >= 0.1) {
+      score += 5 // 낮은 눈 상태
     }
 
-    // 머리 자세 기반 점수 (0-20점)
+    // 머리 자세 점수 (최대 +20점)
     const headPoseScore = this.calculateHeadPoseScore(visual.headPose)
     score += headPoseScore
 
-    // 시선 방향 기반 점수 (0-20점)
+    // 시선 방향 점수 (최대 +10점)
     const gazeScore = this.calculateGazeScore(visual.gazeDirection)
     score += gazeScore
 
+    // 최종 점수가 100을 넘지 않도록 보장
     return Math.max(0, Math.min(100, score))
   }
 
@@ -347,28 +348,33 @@ export class FocusScoreEngine {
 
     let score = 50
 
-    // 발화 여부 기반 점수
+    // 발화 여부 기반 점수 (최대 +25점)
     if (audio.isSpeaking) {
       if (audio.isStudyRelated) {
-        score += 30 // 학습 관련 발화
+        score += 25 // 학습 관련 발화
       } else {
-        score -= 20 // 학습과 무관한 발화
+        score -= 15 // 학습과 무관한 발화
       }
     } else {
       score += 10 // 조용함 (집중 상태일 가능성)
     }
 
-    // 신뢰도 기반 점수 조정
+    // 신뢰도 기반 점수 조정 (최대 +10점)
     const confidenceAdjustment = (audio.confidence - 0.5) * 20
-    score += confidenceAdjustment
+    score += Math.max(-10, Math.min(10, confidenceAdjustment))
 
-    // 오디오 레벨 기반 점수 (너무 크거나 작으면 감점)
+    // 오디오 레벨 기반 점수 (최대 +10점)
     if (audio.audioLevel > 80) {
-      score -= 15 // 너무 시끄러움
+      score -= 10 // 너무 시끄러움
+    } else if (audio.audioLevel > 60) {
+      score -= 5 // 약간 시끄러움
     } else if (audio.audioLevel < 10) {
-      score += 5 // 적당한 조용함
+      score += 10 // 적당한 조용함
+    } else if (audio.audioLevel < 30) {
+      score += 5 // 조용함
     }
 
+    // 최종 점수가 100을 넘지 않도록 보장
     return Math.max(0, Math.min(100, score))
   }
 
@@ -380,65 +386,89 @@ export class FocusScoreEngine {
 
     let score = 50
 
-    // 마우스/키보드 활동 기반 점수
+    // 마우스/키보드 활동 기반 점수 (최대 +20점)
     if (behavior.mouseActivity || behavior.keyboardActivity) {
-      score += 25 // 활동적 (집중 상태일 가능성)
+      score += 20 // 활동적 (집중 상태일 가능성)
     } else {
-      score -= 15 // 비활동적 (집중하지 않을 가능성)
+      score -= 10 // 비활동적 (집중하지 않을 가능성)
     }
 
-    // 탭 전환 기반 점수
+    // 탭 전환 기반 점수 (최대 +20점)
     if (behavior.tabSwitches === 0) {
       score += 20 // 탭 전환 없음 (집중 상태)
     } else if (behavior.tabSwitches <= 2) {
       score += 10 // 적은 탭 전환
+    } else if (behavior.tabSwitches <= 5) {
+      score += 0 // 보통 탭 전환
     } else {
-      score -= 20 // 과도한 탭 전환
+      score -= 15 // 과도한 탭 전환
     }
 
-    // 유휴 시간 기반 점수
+    // 유휴 시간 기반 점수 (최대 +20점)
     if (behavior.idleTime < 30) {
       score += 20 // 30초 미만 유휴
     } else if (behavior.idleTime < 120) {
       score += 10 // 2분 미만 유휴
+    } else if (behavior.idleTime < 300) {
+      score += 0 // 5분 미만 유휴
     } else {
-      score -= 20 // 2분 이상 유휴
+      score -= 15 // 5분 이상 유휴
     }
 
+    // 최종 점수가 100을 넘지 않도록 보장
     return Math.max(0, Math.min(100, score))
   }
 
   /**
    * 시간 기반 집중도 점수 계산 (0-100)
+   * 시간이 길어져도 최대 100점을 넘지 않도록 개선
+   * 일정 시간 이상 지나면 점수가 더 이상 증가하지 않음
    */
   private static calculateTimeScore(time?: FocusFeatures['time']): number {
     if (!time) return 50 // 기본값
 
     let score = 50
 
-    // 세션 지속시간 기반 점수
+    // 세션 지속시간 기반 점수 (최대 +20점, 1시간 이후로는 증가하지 않음)
     if (time.sessionDuration >= 60) {
-      score += 20 // 1시간 이상 지속
+      score += 20 // 1시간 이상 지속 (최대 점수)
+    } else if (time.sessionDuration >= 45) {
+      score += 18 // 45분 이상 지속
     } else if (time.sessionDuration >= 30) {
       score += 15 // 30분 이상 지속
+    } else if (time.sessionDuration >= 20) {
+      score += 12 // 20분 이상 지속
     } else if (time.sessionDuration >= 15) {
-      score += 10 // 15분 이상 지속
+      score += 8 // 15분 이상 지속
+    } else if (time.sessionDuration >= 10) {
+      score += 5 // 10분 이상 지속
     }
 
-    // 마지막 휴식 시간 기반 점수
-    if (time.lastBreakTime >= 60) {
-      score += 15 // 1시간 이상 휴식 없음
+    // 마지막 휴식 시간 기반 점수 (최대 +15점, 45분 이후로는 증가하지 않음)
+    if (time.lastBreakTime >= 45) {
+      score += 15 // 45분 이상 휴식 없음 (최대 점수)
     } else if (time.lastBreakTime >= 30) {
-      score += 10 // 30분 이상 휴식 없음
+      score += 12 // 30분 이상 휴식 없음
+    } else if (time.lastBreakTime >= 20) {
+      score += 8 // 20분 이상 휴식 없음
+    } else if (time.lastBreakTime >= 15) {
+      score += 5 // 15분 이상 휴식 없음
     }
 
-    // 연속 집중 시간 기반 점수
-    if (time.consecutiveFocusTime >= 45) {
-      score += 15 // 45분 이상 연속 집중
+    // 연속 집중 시간 기반 점수 (최대 +10점, 30분 이후로는 증가하지 않음)
+    if (time.consecutiveFocusTime >= 30) {
+      score += 10 // 30분 이상 연속 집중 (최대 점수)
     } else if (time.consecutiveFocusTime >= 25) {
-      score += 10 // 25분 이상 연속 집중
+      score += 8 // 25분 이상 연속 집중
+    } else if (time.consecutiveFocusTime >= 20) {
+      score += 6 // 20분 이상 연속 집중
+    } else if (time.consecutiveFocusTime >= 15) {
+      score += 4 // 15분 이상 연속 집중
+    } else if (time.consecutiveFocusTime >= 10) {
+      score += 2 // 10분 이상 연속 집중
     }
 
+    // 최종 점수가 100을 넘지 않도록 보장
     return Math.max(0, Math.min(100, score))
   }
 
