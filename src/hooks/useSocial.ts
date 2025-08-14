@@ -348,6 +348,8 @@ export function useFriendRanking(period: 'daily' | 'weekly' | 'monthly' = 'weekl
       return response.json()
     },
     enabled: !!user,
+    staleTime: 10000, // 10초
+    refetchInterval: 30000, // 30초마다 자동 새로고침
   })
 }
 

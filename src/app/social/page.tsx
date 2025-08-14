@@ -253,7 +253,7 @@ export default function SocialPage() {
               소셜 스터디
             </h1>
             <p className="text-gray-600">
-              친구들과 함께 실시간으로 집중도를 공유하고 동기부여를 받아보세요
+              친구들과 함께 실시간으로 집중도를 공유하고 대결해보세요!
             </p>
           </div>
 

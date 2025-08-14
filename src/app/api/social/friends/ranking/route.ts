@@ -61,19 +61,66 @@ export async function GET(request: NextRequest) {
         periodEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
     }
 
-    console.log('기간 설정:', { periodStart, periodEnd })
+    console.log('기간 설정:', { 
+      period, 
+      periodStart: periodStart.toISOString(), 
+      periodEnd: periodEnd.toISOString(),
+      currentTime: now.toISOString()
+    })
+
+    // 친구 목록 조회 (양방향 친구 관계 모두 포함)
+    const { data: friends1, error: friends1Error } = await supabase
+      .from('user_friends')
+      .select('friend_id')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+
+    const { data: friends2, error: friends2Error } = await supabase
+      .from('user_friends')
+      .select('user_id')
+      .eq('friend_id', user.id)
+      .eq('status', 'active')
+
+    console.log('친구 목록 조회 결과:', { 
+      friends1: friends1?.length, 
+      friends2: friends2?.length, 
+      error1: friends1Error, 
+      error2: friends2Error 
+    })
+
+    if (friends1Error || friends2Error) {
+      console.error('친구 목록 조회 실패:', { friends1Error, friends2Error })
+      return NextResponse.json(
+        { error: '친구 목록을 불러오는데 실패했습니다.' },
+        { status: 500 }
+      )
+    }
+
+    // 친구 ID 목록 생성 (중복 제거)
+    const friendIds1 = friends1?.map(f => f.friend_id) || []
+    const friendIds2 = friends2?.map(f => f.user_id) || []
+    const allFriendIds = [...new Set([...friendIds1, ...friendIds2])]
+    const allUserIds = [user.id, ...allFriendIds]
+
+    console.log('사용자 ID 목록:', { 
+      currentUser: user.id, 
+      friends: allFriendIds, 
+      total: allUserIds.length 
+    })
 
     // 현재 사용자와 친구들의 집중도 통계 조회
     const { data: focusStats, error: statsError } = await supabase
       .from('focus_session')
       .select(`
         user_id,
-        duration_minutes,
-        average_focus_score
+        started_at,
+        ended_at,
+        focus_score
       `)
       .gte('started_at', periodStart.toISOString())
       .lt('started_at', periodEnd.toISOString())
       .not('user_id', 'is', null)
+      .in('user_id', allUserIds)  // 친구 목록에 있는 사용자만 조회
 
     console.log('집중도 통계 조회 결과:', { stats: focusStats?.length, error: statsError })
 
@@ -85,25 +132,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // 친구 목록 조회
-    const { data: friends, error: friendsError } = await supabase
-      .from('user_friends')
-      .select('friend_id')
-      .eq('user_id', user.id)
-
-    console.log('친구 목록 조회 결과:', { friends: friends?.length, error: friendsError })
-
-    if (friendsError) {
-      console.error('친구 목록 조회 실패:', friendsError)
-      return NextResponse.json(
-        { error: '친구 목록을 불러오는데 실패했습니다.' },
-        { status: 500 }
-      )
-    }
-
-    // 친구 ID 목록 생성 (현재 사용자 포함)
-    const friendIds = friends?.map(f => f.friend_id) || []
-    const allUserIds = [user.id, ...friendIds]
+    // 실제 조회된 데이터 로그 출력
+    console.log('조회된 세션 데이터:', focusStats?.map(stat => ({
+      user_id: stat.user_id,
+      started_at: stat.started_at,
+      ended_at: stat.ended_at,
+      focus_score: stat.focus_score,
+      duration_minutes: stat.started_at && stat.ended_at ? 
+        Math.floor((new Date(stat.ended_at).getTime() - new Date(stat.started_at).getTime()) / (1000 * 60)) : 0
+    })))
 
     // 사용자 프로필 정보 조회
     const { data: profiles, error: profilesError } = await supabase
@@ -139,9 +176,18 @@ export async function GET(request: NextRequest) {
     focusStats?.forEach(stat => {
       if (stat.user_id && userStats.has(stat.user_id)) {
         const current = userStats.get(stat.user_id)!
+        
+        // 세션 시간 계산 (분 단위)
+        let sessionDuration = 0
+        if (stat.started_at && stat.ended_at) {
+          const startTime = new Date(stat.started_at).getTime()
+          const endTime = new Date(stat.ended_at).getTime()
+          sessionDuration = Math.floor((endTime - startTime) / (1000 * 60)) // 분 단위
+        }
+        
         userStats.set(stat.user_id, {
-          total_focus_time: current.total_focus_time + (stat.duration_minutes || 0),
-          average_focus_score: current.average_focus_score + (stat.average_focus_score || 0),
+          total_focus_time: current.total_focus_time + sessionDuration,
+          average_focus_score: current.average_focus_score + (stat.focus_score || 0),
           total_sessions: current.total_sessions + 1
         })
       }

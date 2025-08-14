@@ -124,7 +124,7 @@ BEGIN
           friendship_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
           friend_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'blocked')),
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'blocked')),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(user_id, friend_id),
@@ -637,6 +637,41 @@ BEGIN
     END IF;
 END $$;
 
+-- 친구 요청 RLS
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE tablename = 'friend_requests' AND policyname = 'Users can view their own friend requests') THEN
+        ALTER TABLE friend_requests ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can view their own friend requests" ON friend_requests
+          FOR SELECT USING (auth.uid() = from_user_id OR auth.uid() = to_user_id);
+        RAISE NOTICE 'friend_requests 조회 정책이 생성되었습니다.';
+    ELSE
+        RAISE NOTICE 'friend_requests 조회 정책이 이미 존재합니다.';
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE tablename = 'friend_requests' AND policyname = 'Users can create friend requests') THEN
+        CREATE POLICY "Users can create friend requests" ON friend_requests
+          FOR INSERT WITH CHECK (auth.uid() = from_user_id);
+        RAISE NOTICE 'friend_requests 생성 정책이 생성되었습니다.';
+    ELSE
+        RAISE NOTICE 'friend_requests 생성 정책이 이미 존재합니다.';
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE tablename = 'friend_requests' AND policyname = 'Users can update friend requests sent to them') THEN
+        CREATE POLICY "Users can update friend requests sent to them" ON friend_requests
+          FOR UPDATE USING (auth.uid() = to_user_id);
+        RAISE NOTICE 'friend_requests 업데이트 정책이 생성되었습니다.';
+    ELSE
+        RAISE NOTICE 'friend_requests 업데이트 정책이 이미 존재합니다.';
+    END IF;
+END $$;
+
 -- 격려 메시지 RLS
 DO $$ 
 BEGIN
@@ -675,6 +710,102 @@ END $$;
 -- =====================================================
 -- 4. 함수 및 트리거
 -- =====================================================
+
+-- 친구 요청 뷰 생성
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM information_schema.views WHERE table_name = 'friend_requests_view') THEN
+        CREATE VIEW friend_requests_view AS
+        SELECT 
+            fr.request_id,
+            fr.from_user_id,
+            fr.to_user_id,
+            fr.message,
+            fr.status,
+            fr.created_at,
+            fr.updated_at,
+            from_user.display_name as from_user_name,
+            from_user.avatar_url as from_user_avatar,
+            from_user.handle as from_user_handle,
+            to_user.display_name as to_user_name,
+            to_user.avatar_url as to_user_avatar,
+            to_user.handle as to_user_handle
+        FROM friend_requests fr
+        LEFT JOIN profiles from_user ON fr.from_user_id = from_user.user_id
+        LEFT JOIN profiles to_user ON fr.to_user_id = to_user.user_id;
+        RAISE NOTICE 'friend_requests_view 뷰가 생성되었습니다.';
+    ELSE
+        RAISE NOTICE 'friend_requests_view 뷰가 이미 존재합니다.';
+    END IF;
+END $$;
+
+-- 친구 목록 뷰 생성
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM information_schema.views WHERE table_name = 'friends_list_view') THEN
+        CREATE VIEW friends_list_view AS
+        SELECT 
+            uf.friendship_id,
+            uf.user_id,
+            uf.friend_id,
+            uf.status,
+            uf.created_at,
+            uf.updated_at,
+            friend_profile.display_name as friend_name,
+            friend_profile.avatar_url as friend_avatar,
+            friend_profile.handle as friend_handle,
+            friend_profile.bio as friend_bio,
+            friend_profile.school as friend_school,
+            friend_profile.major as friend_major,
+            ss.current_focus_score,
+            ss.activity_status,
+            ss.last_activity
+        FROM user_friends uf
+        LEFT JOIN profiles friend_profile ON uf.friend_id = friend_profile.user_id
+        LEFT JOIN social_stats ss ON uf.friend_id = ss.user_id
+        WHERE uf.status = 'active';
+        RAISE NOTICE 'friends_list_view 뷰가 생성되었습니다.';
+    ELSE
+        RAISE NOTICE 'friends_list_view 뷰가 이미 존재합니다.';
+    END IF;
+END $$;
+
+-- 친구 요청 수락 시 자동으로 친구 관계 생성하는 함수
+CREATE OR REPLACE FUNCTION handle_friend_request_accepted()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- 친구 요청이 수락된 경우에만 처리
+  IF NEW.status = 'accepted' AND OLD.status = 'pending' THEN
+    RAISE NOTICE '친구 요청 수락 처리 시작: from_user_id=%, to_user_id=%', NEW.from_user_id, NEW.to_user_id;
+    
+    -- 양방향 친구 관계 생성
+    INSERT INTO user_friends (user_id, friend_id, status)
+    VALUES (NEW.from_user_id, NEW.to_user_id, 'active')
+    ON CONFLICT (user_id, friend_id) DO NOTHING;
+    
+    INSERT INTO user_friends (user_id, friend_id, status)
+    VALUES (NEW.to_user_id, NEW.from_user_id, 'active')
+    ON CONFLICT (user_id, friend_id) DO NOTHING;
+    
+    RAISE NOTICE '친구 관계 생성 완료';
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 친구 요청 상태 변경 트리거
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_trigger WHERE tgname = 'trigger_handle_friend_request_accepted') THEN
+        CREATE TRIGGER trigger_handle_friend_request_accepted
+          AFTER UPDATE ON friend_requests
+          FOR EACH ROW EXECUTE FUNCTION handle_friend_request_accepted();
+        RAISE NOTICE '친구 요청 수락 트리거가 생성되었습니다.';
+    ELSE
+        RAISE NOTICE '친구 요청 수락 트리거가 이미 존재합니다.';
+    END IF;
+END $$;
 
 -- 룸 참가자 수 자동 업데이트 함수
 CREATE OR REPLACE FUNCTION update_room_participant_count()

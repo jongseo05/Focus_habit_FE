@@ -28,13 +28,13 @@ export async function GET(request: NextRequest) {
 
     console.log('조회 파라미터:', { limit, offset })
 
-    // 받은 친구 요청 목록 조회
+    // 받은 친구 요청 목록 조회 (display_name으로 정렬)
     const { data: requests, error: requestsError } = await supabase
       .from('friend_requests_view')
       .select('*')
       .eq('to_user_id', user.id)
       .eq('status', 'pending')
-      .order('created_at', { ascending: false })
+      .order('from_user_name', { ascending: true }) // display_name으로 정렬
       .range(offset, offset + limit - 1)
 
     console.log('받은 요청 목록 조회 결과:', { requests: requests?.length, error: requestsError })

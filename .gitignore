@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 .github/instructions/Global_conventions.instructions.md
 COMMIT_GUIDELINES.md
+scripts/apply-social-schema.sql
+scripts/create-profiles-table.sql
+scripts/create-storage-buckets.sql

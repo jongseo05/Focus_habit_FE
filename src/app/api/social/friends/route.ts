@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     // 페이징 적용
     query = query.range(offset, offset + limit - 1)
-    query = query.order('last_activity', { ascending: false })
+    query = query.order('friend_name', { ascending: true }) // display_name으로 정렬
 
     const { data: friends, error: friendsError } = await query
 
@@ -264,7 +264,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // 사용자 검색 (자기 자신 제외)
+    // 사용자 검색 (자기 자신 제외) - display_name 우선 검색
     const { data: users, error: usersError } = await supabase
       .from('profiles')
       .select(`
@@ -276,6 +276,7 @@ export async function PUT(request: NextRequest) {
       `)
       .or(`display_name.ilike.%${search}%,handle.ilike.%${search}%`)
       .neq('user_id', user.id)
+      .order('display_name', { ascending: true }) // display_name으로 정렬
       .limit(limit)
 
     console.log('사용자 검색 결과:', { users: users?.length, error: usersError })
@@ -331,7 +332,7 @@ export async function PUT(request: NextRequest) {
       console.error('활동 상태 확인 실패:', activityError)
     }
 
-    // 결과 조합
+    // 결과 조합 및 display_name으로 정렬
     const results: FriendSearchResult[] = users.map(user => {
       const isFriend = friendships?.some(f => f.friend_id === user.user_id) || false
       const hasPendingRequest = requests?.some(r => r.to_user_id === user.user_id) || false
@@ -348,6 +349,9 @@ export async function PUT(request: NextRequest) {
         current_focus_score: activityStatus?.current_focus_score,
         last_activity: activityStatus?.last_activity
       }
+    }).sort((a, b) => {
+      // display_name으로 정렬 (한글 우선)
+      return a.display_name.localeCompare(b.display_name, 'ko-KR')
     })
 
     const response: FriendSearchResponse = {

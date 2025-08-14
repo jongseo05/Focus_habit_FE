@@ -15,6 +15,103 @@ interface FriendsListProps {
   onFriendAdded?: () => void
 }
 
+// 검색 결과 영역을 별도 컴포넌트로 분리
+function AddFriendResults({ 
+  searchTerm, 
+  searchMutation, 
+  sendRequestMutation, 
+  handleSendRequest 
+}: {
+  searchTerm: string
+  searchMutation: any
+  sendRequestMutation: any
+  handleSendRequest: (userId: string, userName: string) => void
+}) {
+  if (searchTerm.trim().length >= 2 && searchMutation.isPending) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="space-y-4 w-full max-w-sm">
+          <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+          <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+          <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (searchMutation.data?.results && searchMutation.data.results.length > 0) {
+    return (
+      <div className="space-y-3">
+        {searchMutation.data.results.map((user: any) => (
+          <div
+            key={user.user_id}
+            className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={user.avatar_url} alt={user.display_name} />
+                <AvatarFallback>
+                  {user.display_name.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              
+              <div>
+                <h4 className="font-medium">{user.display_name}</h4>
+                <p className="text-sm text-gray-500">
+                  @{user.handle}
+                </p>
+                {user.bio && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    {user.bio}
+                  </p>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              {user.is_friend ? (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Check className="h-3 w-3 mr-1" />
+                  친구
+                </Badge>
+              ) : user.has_pending_request ? (
+                <Badge variant="outline" className="text-orange-600 border-orange-600">
+                  요청 대기 중
+                </Badge>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => handleSendRequest(user.user_id, user.display_name)}
+                  disabled={sendRequestMutation.isPending}
+                >
+                  <UserPlus className="h-4 w-4 mr-1" />
+                  친구 요청
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (searchTerm.trim().length >= 2 && searchMutation.data?.results && searchMutation.data.results.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <p className="text-gray-500">검색 결과가 없습니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="text-center py-8">
+      <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+      <p className="text-gray-500">추가할 친구를 검색해보세요.</p>
+    </div>
+  )
+}
+
 export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -40,23 +137,37 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
     setSearchTerm('')
   }
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim() || searchTerm.length < 2) {
-      toast.error('검색어는 최소 2자 이상이어야 합니다.')
-      return
-    }
-
-    try {
+  // 실시간 검색을 위한 처리
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    
+    // 2자 이상일 때만 검색 실행
+    if (value.trim().length >= 2) {
       setIsSearching(true)
-      const result = await searchMutation.mutateAsync(searchTerm)
-      if (result.results.length === 0) {
-        toast.info('검색 결과가 없습니다.')
-      }
-    } catch (error) {
-      toast.error('검색에 실패했습니다.')
-    } finally {
+      searchMutation.mutate(value.trim(), {
+        onSuccess: () => {
+          setIsSearching(false)
+        },
+        onError: () => {
+          setIsSearching(false)
+          toast.error('검색에 실패했습니다.')
+        }
+      })
+    } else {
       setIsSearching(false)
+      // 2자 미만일 때는 검색 결과 초기화
+      searchMutation.reset()
     }
+  }
+
+  // 검색창 렌더링을 위한 독립적인 상태
+  const [inputValue, setInputValue] = useState('')
+  
+  // 검색창 입력 처리
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setInputValue(value)
+    handleSearchChange(value)
   }
 
   const handleSendRequest = async (userId: string, userName: string) => {
@@ -129,10 +240,12 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
-            <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
-            <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+          <div className="min-h-[200px] flex items-center justify-center">
+            <div className="space-y-4 w-full max-w-sm">
+              <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -149,7 +262,9 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-red-500">친구 목록을 불러오는데 실패했습니다.</p>
+          <div className="min-h-[200px] flex items-center justify-center">
+            <p className="text-red-500">친구 목록을 불러오는데 실패했습니다.</p>
+          </div>
         </CardContent>
       </Card>
     )
@@ -158,128 +273,55 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   return (
     <Card>
       <CardHeader>
-                 <div className="flex items-center justify-between">
-           <CardTitle className="flex items-center gap-2">
-             <Users className="h-5 w-5" />
-             친구 목록 ({friendsData?.total_count || 0})
-           </CardTitle>
-           {/* 친구가 있을 때만 오른쪽 위에 버튼 표시 */}
-           {friendsData?.friends && friendsData.friends.length > 0 && !showAddFriendMode && onAddFriend && (
-             <Button onClick={handleAddFriendMode} size="sm" variant="outline">
-               <UserPlus className="h-4 w-4 mr-2" />
-               친구 추가
-             </Button>
-           )}
-           {showAddFriendMode && (
-             <Button onClick={() => setShowAddFriendMode(false)} size="sm" variant="outline">
-               <X className="h-4 w-4 mr-2" />
-               취소
-             </Button>
-           )}
-         </div>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            친구 목록 ({friendsData?.total_count || 0})
+          </CardTitle>
+          {/* 친구가 있을 때만 오른쪽 위에 버튼 표시 */}
+          {friendsData?.friends && friendsData.friends.length > 0 && !showAddFriendMode && onAddFriend && (
+            <Button onClick={handleAddFriendMode} size="sm" variant="outline">
+              <UserPlus className="h-4 w-4 mr-2" />
+              친구 추가
+            </Button>
+          )}
+          {showAddFriendMode && (
+            <Button onClick={() => setShowAddFriendMode(false)} size="sm" variant="outline">
+              <X className="h-4 w-4 mr-2" />
+              취소
+            </Button>
+          )}
+        </div>
         
-                 <div className="flex gap-2">
-           <div className="relative flex-1">
-             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-             <Input
-               placeholder={showAddFriendMode ? "추가할 친구를 검색하세요..." : "친구 검색..."}
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               onKeyPress={(e) => {
-                 if (e.key === 'Enter' && showAddFriendMode) {
-                   handleSearch()
-                 }
-               }}
-               className="pl-10"
-             />
-           </div>
-           {showAddFriendMode && (
-             <Button 
-               onClick={handleSearch}
-               disabled={searchMutation.isPending || !searchTerm.trim()}
-               size="sm"
-             >
-               검색
-             </Button>
-           )}
-         </div>
+        <div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder={showAddFriendMode ? "추가할 친구를 검색하세요..." : "친구 검색..."}
+              value={inputValue}
+              onChange={handleInputChange}
+              className="pl-10"
+              disabled={false}
+            />
+          </div>
+          {inputValue.trim().length > 0 && inputValue.trim().length < 2 && showAddFriendMode && (
+            <p className="text-sm text-gray-500 mt-1">최소 2자 이상 입력해주세요</p>
+          )}
+        </div>
       </CardHeader>
       
-             <CardContent>
-         {showAddFriendMode ? (
-           // 친구 추가 모드
-           <div>
-             {searchMutation.isPending ? (
-               <div className="space-y-4">
-                 <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
-                 <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
-                 <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
-               </div>
-             ) : searchMutation.data?.results && searchMutation.data.results.length > 0 ? (
-               <div className="space-y-3">
-                 {searchMutation.data.results.map((user: any) => (
-                   <div
-                     key={user.user_id}
-                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-                   >
-                     <div className="flex items-center gap-3">
-                       <Avatar className="h-10 w-10">
-                         <AvatarImage src={user.avatar_url} alt={user.display_name} />
-                         <AvatarFallback>
-                           {user.display_name.charAt(0).toUpperCase()}
-                         </AvatarFallback>
-                       </Avatar>
-                       
-                       <div>
-                         <h4 className="font-medium">{user.display_name}</h4>
-                         <p className="text-sm text-gray-500">
-                           @{user.handle}
-                         </p>
-                         {user.bio && (
-                           <p className="text-sm text-gray-600 mt-1">
-                             {user.bio}
-                           </p>
-                         )}
-                       </div>
-                     </div>
-                     
-                     <div className="flex flex-col gap-2">
-                       {user.is_friend ? (
-                         <Badge variant="outline" className="text-green-600 border-green-600">
-                           <Check className="h-3 w-3 mr-1" />
-                           친구
-                         </Badge>
-                       ) : user.has_pending_request ? (
-                         <Badge variant="outline" className="text-orange-600 border-orange-600">
-                           요청 대기 중
-                         </Badge>
-                       ) : (
-                         <Button
-                           size="sm"
-                           onClick={() => handleSendRequest(user.user_id, user.display_name)}
-                           disabled={sendRequestMutation.isPending}
-                         >
-                           <UserPlus className="h-4 w-4 mr-1" />
-                           친구 요청
-                         </Button>
-                       )}
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             ) : searchMutation.data?.results && searchMutation.data.results.length === 0 ? (
-               <div className="text-center py-8">
-                 <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                 <p className="text-gray-500">검색 결과가 없습니다.</p>
-               </div>
-             ) : (
-               <div className="text-center py-8">
-                 <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                 <p className="text-gray-500">추가할 친구를 검색해보세요.</p>
-               </div>
-             )}
-           </div>
-         ) : friendsData?.friends && friendsData.friends.length > 0 ? (
+      <CardContent>
+        {showAddFriendMode ? (
+          // 친구 추가 모드
+          <div className="min-h-[200px]">
+            <AddFriendResults
+              searchTerm={searchTerm}
+              searchMutation={searchMutation}
+              sendRequestMutation={sendRequestMutation}
+              handleSendRequest={handleSendRequest}
+            />
+          </div>
+        ) : friendsData?.friends && friendsData.friends.length > 0 ? (
           <div className="space-y-3">
             {friendsData.friends.map((friend) => (
               <div
@@ -331,17 +373,19 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
             ))}
           </div>
                  ) : (
-           <div className="text-center py-8">
-             <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-             <p className="text-gray-500 mb-2">
-               {searchTerm ? '검색 결과가 없습니다.' : '아직 친구가 없습니다.'}
-             </p>
-                           {!searchTerm && onAddFriend && (
-                <Button onClick={handleAddFriendMode} variant="outline">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  친구 추가하기
-                </Button>
-              )}
+           <div className="min-h-[200px] flex items-center justify-center">
+             <div className="text-center">
+               <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+               <p className="text-gray-500 mb-2">
+                 {searchTerm ? '검색 결과가 없습니다.' : '아직 친구가 없습니다.'}
+               </p>
+               {!searchTerm && onAddFriend && (
+                 <Button onClick={handleAddFriendMode} variant="outline">
+                   <UserPlus className="h-4 w-4 mr-2" />
+                   친구 추가하기
+                 </Button>
+               )}
+             </div>
            </div>
          )}
       </CardContent>

@@ -4,46 +4,31 @@ import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import {
   User,
-  Clock,
   Target,
-  Trophy,
-  Users,
-  Settings,
-  Brain,
   TrendingUp,
   TrendingDown,
   Shield,
   Eye,
-  EyeOff,
-  RefreshCw,
-  Calendar,
   School,
   BookOpen,
   Activity,
-  Zap,
-  Star,
-  Award,
-  CheckCircle,
   PlayCircle,
-  PauseCircle,
   Bell,
   BellOff,
   Palette,
-  Globe,
-  Smartphone,
   Moon,
   Sun,
-  Volume2,
-  VolumeX,
-  Smartphone as Mobile,
   Monitor,
   Database,
   Download,
   Upload,
   Trash2,
   Edit3,
-  Lock,
   Key,
+  Trophy,
+  Brain,
+  RefreshCw,
+  Smartphone,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -57,7 +42,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/useAuth"
+import { useProfile, useUpdateProfile, useFocusSummary, useWeeklyStats } from "@/hooks/useProfile"
+import { useUploadProfileImage, useDeleteProfileImage } from "@/hooks/useProfileImage"
 import { UserStatus, UserProfile, FocusSummary, Badge as BadgeType, Challenge, ReportSharingSettings } from "@/types/profile"
+import { Textarea } from "@/components/ui/textarea"
 
 // Mock data for development
 const mockProfile: UserProfile = {
@@ -132,13 +120,63 @@ const mockChallenges: Challenge[] = [
   }
 ]
 
-
-
 const mockSharingSettings: ReportSharingSettings = {
   allow_friends_view: true,
   sharing_period: "week",
   sharing_scope: "summary",
   real_time_score_sharing: false
+}
+
+// Personalization Model Interface
+interface PersonalizationModelInfo {
+  focus_samples_collected: number
+  non_focus_samples_collected: number
+  total_samples_needed: number
+  completion_percentage: number
+  model_version: string
+  last_updated: string
+  model_accuracy: number
+  training_status: 'idle' | 'collecting' | 'training' | 'completed' | 'error'
+  next_training_date: string
+}
+
+// Mock personalization model data
+const mockPersonalizationModel: PersonalizationModelInfo = {
+  focus_samples_collected: 45,
+  non_focus_samples_collected: 38,
+  total_samples_needed: 100,
+  completion_percentage: 83,
+  model_version: "1.2.0",
+  last_updated: "2024-12-01T00:00:00Z",
+  model_accuracy: 87.5,
+  training_status: 'completed',
+  next_training_date: "2024-12-08T00:00:00Z"
+}
+
+// Mock personalization settings
+const mockPersonalizationSettings: PersonalizationSettings = {
+  theme: 'system',
+  language: 'ko',
+  fontSize: 'medium',
+  colorScheme: 'default',
+  notifications: {
+    focusSession: true,
+    achievement: true,
+    weeklyReport: true,
+    challenge: false,
+    sound: true,
+    vibration: false,
+  },
+  privacy: {
+    profileVisibility: 'friends',
+    dataSharing: true,
+    analytics: true,
+  },
+  sync: {
+    autoSync: true,
+    syncInterval: 'realtime',
+    cloudBackup: true,
+  }
 }
 
 // Status Badge Component
@@ -227,77 +265,7 @@ const FocusSummaryCard = ({ summary }: { summary: FocusSummary }) => {
   )
 }
 
-// Badge Component
-const BadgeCard = ({ badge }: { badge: BadgeType }) => {
-  return (
-    <Card className="hover:shadow-md transition-shadow cursor-pointer">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-            <Trophy className="w-6 h-6 text-white" />
-          </div>
-          <div className="flex-1">
-            <h4 className="font-semibold text-gray-900">{badge.name}</h4>
-            <p className="text-sm text-gray-600">{badge.description}</p>
-            <p className="text-xs text-gray-500 mt-1">
-              {new Date(badge.earned_at).toLocaleDateString('ko-KR')}
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
-// Challenge Component
-const ChallengeCard = ({ challenge }: { challenge: Challenge }) => {
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'personal': return 'bg-blue-100 text-blue-800'
-      case 'one_on_one': return 'bg-green-100 text-green-800'
-      case 'group': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getTypeText = (type: string) => {
-    switch (type) {
-      case 'personal': return '개인'
-      case 'one_on_one': return '1:1'
-      case 'group': return '그룹'
-      default: return '기타'
-    }
-  }
-
-  return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-3">
-                  <BadgeUI className={getTypeColor(challenge.type)} variant="secondary">
-          {getTypeText(challenge.type)}
-        </BadgeUI>
-          <span className="text-sm text-gray-500">
-            {new Date(challenge.end_date).toLocaleDateString('ko-KR')}
-          </span>
-        </div>
-        
-        <h4 className="font-semibold text-gray-900 mb-2">{challenge.name}</h4>
-        <p className="text-sm text-gray-600 mb-3">{challenge.description}</p>
-        
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span>진행률</span>
-            <span className="font-medium">{challenge.progress}%</span>
-          </div>
-          <Progress value={challenge.progress} className="h-2" />
-          <div className="text-xs text-gray-500 text-center">
-            {challenge.current} / {challenge.target}분
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 
 
@@ -325,58 +293,6 @@ interface PersonalizationSettings {
     syncInterval: 'realtime' | 'hourly' | 'daily'
     cloudBackup: boolean
   }
-}
-
-// Mock personalization settings
-const mockPersonalizationSettings: PersonalizationSettings = {
-  theme: 'system',
-  language: 'ko',
-  fontSize: 'medium',
-  colorScheme: 'default',
-  notifications: {
-    focusSession: true,
-    achievement: true,
-    weeklyReport: true,
-    challenge: false,
-    sound: true,
-    vibration: false,
-  },
-  privacy: {
-    profileVisibility: 'friends',
-    dataSharing: true,
-    analytics: true,
-  },
-  sync: {
-    autoSync: true,
-    syncInterval: 'realtime',
-    cloudBackup: true,
-  }
-}
-
-// Personalization Model Interface
-interface PersonalizationModelInfo {
-  focus_samples_collected: number
-  non_focus_samples_collected: number
-  total_samples_needed: number
-  completion_percentage: number
-  model_version: string
-  last_updated: string
-  model_accuracy: number
-  training_status: 'idle' | 'collecting' | 'training' | 'completed' | 'error'
-  next_training_date: string
-}
-
-// Mock personalization model data
-const mockPersonalizationModel: PersonalizationModelInfo = {
-  focus_samples_collected: 45,
-  non_focus_samples_collected: 38,
-  total_samples_needed: 100,
-  completion_percentage: 83,
-  model_version: "1.2.0",
-  last_updated: "2024-12-01T00:00:00Z",
-  model_accuracy: 87.5,
-  training_status: 'completed',
-  next_training_date: "2024-12-08T00:00:00Z"
 }
 
 // Theme Toggle Component
@@ -550,6 +466,230 @@ const PrivacySettings = ({ settings, onSettingsChange }: {
   )
 }
 
+// Badge Component
+const BadgeCard = ({ badge }: { badge: BadgeType }) => {
+  return (
+    <Card className="hover:shadow-md transition-shadow cursor-pointer">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
+            <Trophy className="w-6 h-6 text-white" />
+          </div>
+          <div className="flex-1">
+            <h4 className="font-semibold text-gray-900">{badge.name}</h4>
+            <p className="text-sm text-gray-600">{badge.description}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {new Date(badge.earned_at).toLocaleDateString('ko-KR')}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Challenge Component
+const ChallengeCard = ({ challenge }: { challenge: Challenge }) => {
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'personal': return 'bg-blue-100 text-blue-800'
+      case 'one_on_one': return 'bg-green-100 text-green-800'
+      case 'group': return 'bg-purple-100 text-purple-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getTypeText = (type: string) => {
+    switch (type) {
+      case 'personal': return '개인'
+      case 'one_on_one': return '1:1'
+      case 'group': return '그룹'
+      default: return '기타'
+    }
+  }
+
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3">
+          <BadgeUI className={getTypeColor(challenge.type)} variant="secondary">
+            {getTypeText(challenge.type)}
+          </BadgeUI>
+          <span className="text-sm text-gray-500">
+            {new Date(challenge.end_date).toLocaleDateString('ko-KR')}
+          </span>
+        </div>
+        
+        <h4 className="font-semibold text-gray-900 mb-2">{challenge.name}</h4>
+        <p className="text-sm text-gray-600 mb-3">{challenge.description}</p>
+        
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>진행률</span>
+            <span className="font-medium">{challenge.progress}%</span>
+          </div>
+          <Progress value={challenge.progress} className="h-2" />
+          <div className="text-xs text-gray-500 text-center">
+            {challenge.current} / {challenge.target}분
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Inline Profile Edit Component
+const InlineProfileEdit = ({ 
+  profile, 
+  onSave, 
+  onCancel,
+  onImageUpload,
+  onImageDelete
+}: { 
+  profile: UserProfile | null
+  onSave: (data: Partial<UserProfile>) => void
+  onCancel: () => void
+  onImageUpload: (file: File) => void
+  onImageDelete: () => void
+}) => {
+  const [formData, setFormData] = useState({
+    display_name: '',
+    handle: '',
+    bio: '',
+    school: '',
+    major: ''
+  })
+
+  // profile이 변경될 때 formData 업데이트
+  useEffect(() => {
+    if (profile) {
+      setFormData({
+        display_name: profile.display_name || '',
+        handle: profile.handle || '',
+        bio: profile.bio || '',
+        school: profile.school || '',
+        major: profile.major || ''
+      })
+    }
+  }, [profile])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave(formData)
+  }
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      onImageUpload(file)
+    }
+  }
+
+  return (
+    <Card className="bg-white shadow-sm">
+      <CardContent className="p-6">
+        <form onSubmit={handleSubmit}>
+          <div className="flex items-start gap-6">
+            <div className="relative group">
+              <Avatar className="w-24 h-24 cursor-pointer">
+                <AvatarImage src={profile?.avatar_url} alt={profile?.display_name} />
+                <AvatarFallback className="text-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                  {profile?.display_name?.charAt(0) || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <Upload className="w-6 h-6 text-white" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              {profile?.avatar_url && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={onImageDelete}
+                  className="absolute -top-2 -right-2 w-6 h-6 p-0 rounded-full"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+            
+            <div className="flex-1 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-2">
+                  <Input
+                    value={formData.display_name}
+                    onChange={(e) => handleInputChange('display_name', e.target.value)}
+                    placeholder="이름을 입력하세요"
+                    className="text-2xl font-bold"
+                    required
+                  />
+                  <Input
+                    value={formData.handle}
+                    onChange={(e) => handleInputChange('handle', e.target.value)}
+                    placeholder="핸들을 입력하세요"
+                    className="text-gray-500"
+                    required
+                  />
+                </div>
+                <StatusBadge status={profile?.status as UserStatus || UserStatus.ONLINE} />
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm">
+                    저장
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+                    취소
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Textarea
+                  value={formData.bio}
+                  onChange={(e) => handleInputChange('bio', e.target.value)}
+                  placeholder="자신에 대해 소개해주세요"
+                  rows={2}
+                  className="text-gray-600 text-lg"
+                />
+              </div>
+              
+              <div className="flex items-center gap-6 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <School className="w-4 h-4" />
+                  <Input
+                    value={formData.school}
+                    onChange={(e) => handleInputChange('school', e.target.value)}
+                    placeholder="학교명"
+                    className="w-32"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" />
+                  <Input
+                    value={formData.major}
+                    onChange={(e) => handleInputChange('major', e.target.value)}
+                    placeholder="전공명"
+                    className="w-32"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 // Sync Settings Component
 const SyncSettings = ({ settings, onSettingsChange }: { 
   settings: PersonalizationSettings['sync'], 
@@ -623,11 +763,74 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState("overview")
   const [sharingSettings, setSharingSettings] = useState(mockSharingSettings)
   const [personalizationSettings, setPersonalizationSettings] = useState(mockPersonalizationSettings)
+  const [isEditing, setIsEditing] = useState(false)
+
+  // 프로필 데이터 조회
+  const { data: profile, isLoading: profileLoading, error: profileError } = useProfile(user?.id)
+  const { data: focusSummary, isLoading: summaryLoading, error: summaryError } = useFocusSummary(user?.id)
+  const { data: weeklyStats, isLoading: statsLoading, error: statsError } = useWeeklyStats(user?.id)
+  
+  // 프로필 업데이트
+  const updateProfileMutation = useUpdateProfile()
+  
+  // 프로필 이미지 업로드/삭제
+  const uploadImageMutation = useUploadProfileImage()
+  const deleteImageMutation = useDeleteProfileImage()
+
+  // 로딩 상태
+  const isLoading = profileLoading || summaryLoading || statsLoading
+
+  // 이미지 업로드 핸들러
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      console.log('이미지 업로드 시작:', file.name, file.size)
+      uploadImageMutation.mutate(file, {
+        onSuccess: (data) => {
+          console.log('이미지 업로드 성공:', data)
+        },
+        onError: (error) => {
+          console.error('이미지 업로드 실패:', error)
+        }
+      })
+    }
+  }
+
+  // 이미지 삭제 핸들러
+  const handleImageDelete = () => {
+    if (profile?.avatar_url) {
+      deleteImageMutation.mutate()
+    }
+  }
 
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+      </div>
+    )
+  }
+
+  if (profileError || summaryError || statsError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">데이터를 불러오는데 실패했습니다.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            다시 시도
+          </button>
+        </div>
       </div>
     )
   }
@@ -648,45 +851,82 @@ export default function ProfilePage() {
           transition={{ duration: 0.5 }}
           className="mb-8"
         >
+          {isEditing ? (
+            <InlineProfileEdit
+              profile={profile || null}
+              onSave={(data) => {
+                updateProfileMutation.mutate(data)
+                setIsEditing(false)
+              }}
+              onCancel={() => setIsEditing(false)}
+              onImageUpload={(file) => {
+                uploadImageMutation.mutate(file)
+              }}
+              onImageDelete={() => {
+                if (profile?.avatar_url) {
+                  deleteImageMutation.mutate()
+                }
+              }}
+            />
+          ) : (
           <Card className="bg-white shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start gap-6">
-                <Avatar className="w-24 h-24">
-                  <AvatarImage src={mockProfile.avatar_url} alt={mockProfile.display_name} />
+                  <div className="relative group">
+                    <Avatar className="w-24 h-24 cursor-pointer">
+                      <AvatarImage src={profile?.avatar_url} alt={profile?.display_name} />
                   <AvatarFallback className="text-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                    {mockProfile.display_name.charAt(0)}
+                        {profile?.display_name?.charAt(0) || 'U'}
                   </AvatarFallback>
                 </Avatar>
+                    <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      <Upload className="w-6 h-6 text-white" />
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
                 
                 <div className="flex-1 space-y-4">
                   <div className="flex items-center gap-3">
-                    <h2 className="text-2xl font-bold text-gray-900">{mockProfile.display_name}</h2>
-                    <span className="text-gray-500">@{mockProfile.handle}</span>
-                    <StatusBadge status={mockProfile.status} />
+                      <h2 className="text-2xl font-bold text-gray-900">{profile?.display_name || '사용자'}</h2>
+                      <span className="text-gray-500">@{profile?.handle || 'user'}</span>
+                      <StatusBadge status={profile?.status as UserStatus || UserStatus.ONLINE} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditing(true)}
+                        className="ml-auto"
+                      >
+                        <Edit3 className="w-4 h-4 mr-2" />
+                        편집
+                      </Button>
                   </div>
                   
-                  {mockProfile.bio && (
-                    <p className="text-gray-600 text-lg">{mockProfile.bio}</p>
-                  )}
+                    <div className="space-y-3">
+                      <p className="text-gray-600 text-lg">
+                        {profile?.bio || '소개를 입력해주세요'}
+                      </p>
                   
                   <div className="flex items-center gap-6 text-sm text-gray-600">
-                    {mockProfile.school && (
                       <div className="flex items-center gap-2">
                         <School className="w-4 h-4" />
-                        {mockProfile.school}
+                          <span>{profile?.school || '학교 미입력'}</span>
                       </div>
-                    )}
-                    {mockProfile.major && (
                       <div className="flex items-center gap-2">
                         <BookOpen className="w-4 h-4" />
-                        {mockProfile.major}
+                          <span>{profile?.major || '전공 미입력'}</span>
                       </div>
-                    )}
+                      </div>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
+          )}
         </motion.div>
 
         {/* Tabs */}
@@ -701,7 +941,7 @@ export default function ProfilePage() {
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 gap-6">
-              <FocusSummaryCard summary={mockFocusSummary} />
+              {focusSummary && <FocusSummaryCard summary={focusSummary} />}
               
               {/* Weekly Activity Summary */}
               <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
@@ -716,21 +956,21 @@ export default function ProfilePage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="text-center p-4 bg-white/60 rounded-lg">
                       <div className="text-3xl font-bold text-green-900 mb-2">
-                        {Math.floor(mockFocusSummary.weekly_total_time / 60)}시간 {mockFocusSummary.weekly_total_time % 60}분
+                        {focusSummary ? `${Math.floor(focusSummary.weekly_total_time / 60)}시간 ${focusSummary.weekly_total_time % 60}분` : '0시간 0분'}
                       </div>
                       <div className="text-sm text-green-700 font-medium">총 집중시간</div>
                     </div>
                     
                     <div className="text-center p-4 bg-white/60 rounded-lg">
                       <div className="text-3xl font-bold text-green-900 mb-2">
-                        {mockFocusSummary.average_focus_score}점
+                        {focusSummary?.average_focus_score || 0}점
                       </div>
                       <div className="text-sm text-green-700 font-medium">평균 집중점수</div>
                     </div>
                     
                     <div className="text-center p-4 bg-white/60 rounded-lg">
                       <div className="text-3xl font-bold text-green-900 mb-2">
-                        {mockFocusSummary.session_count}회
+                        {focusSummary?.session_count || 0}회
                       </div>
                       <div className="text-sm text-green-700 font-medium">세션 수</div>
                     </div>
@@ -743,19 +983,19 @@ export default function ProfilePage() {
                     <h4 className="text-base font-semibold text-green-900 mb-4 text-center">전주 대비 증감</h4>
                     <div className="flex items-center justify-center gap-4 mb-6">
                       <div className="flex items-center gap-2">
-                        {mockFocusSummary.weekly_change > 0 ? (
+                        {focusSummary && focusSummary.weekly_change > 0 ? (
                           <TrendingUp className="w-6 h-6 text-green-500" />
                         ) : (
                           <TrendingDown className="w-6 h-6 text-red-500" />
                         )}
                         <span className={`text-lg font-bold ${
-                          mockFocusSummary.weekly_change > 0 ? "text-green-600" : "text-red-600"
+                          focusSummary && focusSummary.weekly_change > 0 ? "text-green-600" : "text-red-600"
                         }`}>
-                          {Math.abs(mockFocusSummary.weekly_change)}%
+                          {focusSummary ? Math.abs(focusSummary.weekly_change) : 0}%
                         </span>
                       </div>
                       <span className="text-green-700">
-                        {mockFocusSummary.weekly_change > 0 ? "증가" : "감소"}
+                        {focusSummary && focusSummary.weekly_change > 0 ? "증가" : "감소"}
                       </span>
                     </div>
                   </div>
@@ -765,138 +1005,49 @@ export default function ProfilePage() {
                     <h4 className="text-base font-semibold text-green-900 mb-4 text-center">요일별 집중도</h4>
                     <div className="bg-white/60 rounded-lg p-6">
                       <div className="flex items-end justify-between h-60 gap-3">
-                        {/* Monday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
+                        {weeklyStats?.daily_stats?.map((dayStat: any, index: number) => {
+                          const goalHeight = 120 // 목표 시간 기준 높이
+                          const actualHeight = Math.min((dayStat.total_time / dayStat.goal_time) * goalHeight, 180) // 최대 180px
+                          const timeText = dayStat.total_time >= 60 
+                            ? `${Math.floor(dayStat.total_time / 60)}h ${dayStat.total_time % 60}m`
+                            : `${dayStat.total_time}m`
+                          const goalDiff = dayStat.total_time - dayStat.goal_time
+                          const diffText = goalDiff >= 0 
+                            ? `+${goalDiff >= 60 ? `${Math.floor(goalDiff / 60)}h ${goalDiff % 60}m` : `${goalDiff}m`}`
+                            : `${goalDiff >= -60 ? `${goalDiff}m` : `${Math.floor(Math.abs(goalDiff) / 60)}h ${Math.abs(goalDiff) % 60}m`}`
+
+                          return (
+                            <div key={index} className="flex flex-col items-center gap-3 flex-1">
                           <div className="w-full relative group cursor-pointer">
                             {/* 목표 시간 바 (반투명 연한 초록색) */}
                             <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
+                                     style={{ height: `${goalHeight}px` }}></div>
                             {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
                             <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '120px' }}>
+                                     style={{ height: `${actualHeight}px` }}>
                               <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                월요일: 2시간 15분 (목표: 2시간)
+                                    {dayStat.day_name}요일: {timeText} (목표: {dayStat.goal_time >= 60 ? `${Math.floor(dayStat.goal_time / 60)}시간` : `${dayStat.goal_time}분`})
                               </div>
                             </div>
                           </div>
-                          <span className="text-xs text-green-700 font-medium">월</span>
-                          <span className="text-xs text-green-600">2h 15m</span>
-                          <span className="text-xs text-orange-600 font-medium">+15m</span>
+                              <span className="text-xs text-green-700 font-medium">{dayStat.day_name}</span>
+                              <span className="text-xs text-green-600">{timeText}</span>
+                              <span className={`text-xs font-medium ${goalDiff >= 0 ? 'text-orange-600' : 'text-red-600'}`}>
+                                {diffText}
+                              </span>
                         </div>
-                        
-                        {/* Tuesday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
+                          )
+                        }) || Array.from({ length: 7 }, (_, i) => (
+                          <div key={i} className="flex flex-col items-center gap-3 flex-1">
                           <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '90px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                화요일: 1시간 30분 (목표: 2시간)
+                              <div className="w-full bg-green-200/60 rounded-t-sm" style={{ height: '120px' }}></div>
+                              <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" style={{ height: '0px' }}></div>
                               </div>
+                            <span className="text-xs text-green-700 font-medium">{['일', '월', '화', '수', '목', '금', '토'][i]}</span>
+                            <span className="text-xs text-green-600">0m</span>
+                            <span className="text-xs text-red-600 font-medium">-2h</span>
                             </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">화</span>
-                          <span className="text-xs text-green-600">1h 30m</span>
-                          <span className="text-xs text-red-600 font-medium">-30m</span>
-                        </div>
-                        
-                        {/* Wednesday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
-                          <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '150px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                수요일: 2시간 30분 (목표: 2시간)
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">수</span>
-                          <span className="text-xs text-green-600">2h 30m</span>
-                          <span className="text-xs text-orange-600 font-medium">+30m</span>
-                        </div>
-                        
-                        {/* Thursday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
-                          <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '75px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                목요일: 1시간 15분 (목표: 2시간)
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">목</span>
-                          <span className="text-xs text-green-600">1h 15m</span>
-                          <span className="text-xs text-red-600 font-medium">-45m</span>
-                        </div>
-                        
-                        {/* Friday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
-                          <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '180px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                금요일: 3시간 0분 (목표: 2시간)
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">금</span>
-                          <span className="text-xs text-green-600">3h 0m</span>
-                          <span className="text-xs text-orange-600 font-medium">+1h</span>
-                        </div>
-                        
-                        {/* Saturday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
-                          <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '60px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                토요일: 1시간 0분 (목표: 2시간)
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">토</span>
-                          <span className="text-xs text-green-600">1h 0m</span>
-                          <span className="text-xs text-red-600 font-medium">-1h</span>
-                        </div>
-                        
-                        {/* Sunday */}
-                        <div className="flex flex-col items-center gap-3 flex-1">
-                          <div className="w-full relative group cursor-pointer">
-                            {/* 목표 시간 바 (반투명 연한 초록색) */}
-                            <div className="w-full bg-green-200/60 rounded-t-sm" 
-                                 style={{ height: '120px' }}></div>
-                            {/* 실제 집중 시간 바 (진한 색, 겹쳐서 표시) */}
-                            <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-400 to-green-500 rounded-t-sm" 
-                                 style={{ height: '45px' }}>
-                              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                                일요일: 45분 (목표: 2시간)
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-xs text-green-700 font-medium">일</span>
-                          <span className="text-xs text-green-600">45m</span>
-                          <span className="text-xs text-red-600 font-medium">-1h 15m</span>
-                        </div>
+                        ))}
                       </div>
                       
                       {/* Chart Legend */}
