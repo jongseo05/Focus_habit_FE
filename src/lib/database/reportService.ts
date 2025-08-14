@@ -923,13 +923,13 @@ export class ReportService {
     const timeSeriesData = this.generateWeeklyTimeSeriesData(sessions, samples, mlFeatures, startDate)
     
     // 활동 데이터 생성 
-    const activityData = this.generateActivityData(events, sessions)
+    const activityData = this.generateActivityData(events, sessions, mlFeatures)
     
     // 성취도 계산
     const achievements = this.calculateWeeklyAchievements(sessions, samples, events, totalFocusTime, avgScore)
     
     // 피드백 생성
-    const feedback = this.generateWeeklyFeedback(sessions, samples, events, avgScore, totalFocusTime)
+    const feedback = this.generateWeeklyFeedback(sessions, samples, events, avgScore, totalFocusTime, mlFeatures)
 
     // 세부 분석
     const breakdown = this.calculateWeeklyBreakdown(samples, mlFeatures, events)
@@ -1034,11 +1034,14 @@ export class ReportService {
       const sessionIds = daySessions.map(s => s.session_id)
       const daySamples = samples.filter(s => sessionIds.includes(s.session_id))
       const dayMLFeatures = mlFeatures.filter(f => sessionIds.includes(f.session_id))
-      const dayEvents = [] // events.filter(e => sessionIds.includes(e.session_id))
       
       const avgScore = this.calculateWeeklyAverageScore(daySamples, dayMLFeatures)
       const sessionDuration = this.calculateTotalFocusMinutes(daySessions)
-      const distractions = dayEvents.filter(e => e.event_type === 'distraction').length
+      
+      // 집중력 저하 횟수 계산 (ML 피쳐 기반)
+      const distractions = dayMLFeatures.filter(f => 
+        f.focus_status === 'distracted' || f.focus_status === 'normal'
+      ).length
       
       data.push({
         timestamp: dateStr,
@@ -1053,9 +1056,9 @@ export class ReportService {
   }
 
   /**
-   * 활동 데이터 생성
+   * 활동 데이터 생성 (실제 ML 피쳐 기반)
    */
-  private static generateActivityData(events: any[], sessions: any[]) {
+  private static generateActivityData(events: any[], sessions: any[], mlFeatures: any[] = []) {
     const activities = []
     
     // 세션 시작 이벤트
@@ -1069,18 +1072,59 @@ export class ReportService {
       })
     })
     
-    // 방해 요소 이벤트
-    events.filter(e => e.event_type === 'phone' || e.event_type === 'distraction').forEach(event => {
-      activities.push({
-        timestamp: event.ts,
-        action: event.event_type === 'phone' ? '휴대폰 사용' : '집중력 저하',
-        type: "negative" as const,
-        impact: -30,
-        description: `${event.event_type === 'phone' ? '휴대폰 사용으로' : '외부 요인으로'} 집중이 방해되었습니다`
-      })
+    // 높은 집중도 구간 감지
+    mlFeatures.forEach(feature => {
+      if (feature.focus_status === 'focused' && feature.focus_confidence > 0.9) {
+        activities.push({
+          timestamp: feature.ts,
+          action: "고집중 구간",
+          type: "positive" as const,
+          impact: 30,
+          description: `높은 집중도(${Math.round(feature.focus_confidence * 100)}%)를 달성했습니다`
+        })
+      }
     })
     
-    return activities.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    // 집중력 저하 구간 감지 
+    mlFeatures.forEach(feature => {
+      if (feature.focus_status === 'distracted' && feature.focus_confidence > 0.7) {
+        activities.push({
+          timestamp: feature.ts,
+          action: "집중력 저하",
+          type: "negative" as const,
+          impact: -20,
+          description: "집중도가 낮아졌습니다. 잠시 휴식을 취해보세요"
+        })
+      }
+    })
+    
+    // 자세 불량 감지
+    mlFeatures.forEach(feature => {
+      const pitch = feature.head_pose_pitch
+      const yaw = feature.head_pose_yaw
+      if (pitch && yaw && (Math.abs(pitch) > 40 || Math.abs(yaw) > 35)) {
+        activities.push({
+          timestamp: feature.ts,
+          action: "자세 불량",
+          type: "neutral" as const,
+          impact: -10,
+          description: "바른 자세로 앉아보세요"
+        })
+      }
+    })
+    
+    // 중복 제거 및 정렬 (같은 시간대의 비슷한 이벤트 제거)
+    const uniqueActivities = activities
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .filter((activity, index, arr) => {
+        if (index === 0) return true
+        const prev = arr[index - 1]
+        const timeDiff = new Date(activity.timestamp).getTime() - new Date(prev.timestamp).getTime()
+        return timeDiff > 60000 || activity.action !== prev.action // 1분 이상 차이나거나 다른 액션
+      })
+      .slice(0, 20) // 최대 20개만 표시
+    
+    return uniqueActivities
   }
 
   /**
@@ -1132,11 +1176,12 @@ export class ReportService {
   }
 
   /**
-   * 주간 피드백 생성
+   * 주간 피드백 생성 (실제 ML 피쳐 기반)
    */
-  private static generateWeeklyFeedback(sessions: any[], samples: any[], events: any[], avgScore: number, totalFocusTime: number) {
+  private static generateWeeklyFeedback(sessions: any[], samples: any[], events: any[], avgScore: number, totalFocusTime: number, mlFeatures: any[] = []) {
     const feedback = []
     
+    // 1. 전체 집중도 평가
     if (avgScore >= 80) {
       feedback.push({
         type: "success" as const,
@@ -1155,24 +1200,55 @@ export class ReportService {
       })
     }
     
-    const phoneEvents = events.filter(e => e.event_type === 'phone')
-    if (phoneEvents.length > 10) {
-      feedback.push({
-        type: "tip" as const,
-        title: "휴대폰 사용 제한",
-        message: "휴대폰 사용이 잦았습니다. 집중 시간 동안 알림을 끄거나 다른 방에 두는 것을 추천합니다.",
-        actionable: true,
-        priority: "medium" as const
-      })
+    // 2. 자세 분석 기반 피드백
+    if (mlFeatures.length > 0) {
+      const badPostureCount = mlFeatures.filter(f => {
+        const pitch = f.head_pose_pitch
+        const yaw = f.head_pose_yaw
+        return pitch && yaw && (Math.abs(pitch) > 30 || Math.abs(yaw) > 25)
+      }).length
+      
+      const badPostureRatio = badPostureCount / mlFeatures.length
+      
+      if (badPostureRatio > 0.3) { // 30% 이상이 나쁜 자세
+        feedback.push({
+          type: "tip" as const,
+          title: "자세 개선 필요",
+          message: "머리를 너무 많이 돌리거나 기울이는 패턴이 감지되었습니다. 모니터 높이와 거리를 조절해보세요.",
+          actionable: true,
+          priority: "medium" as const
+        })
+      }
     }
     
+    // 3. 눈 건강 분석 기반 피드백
+    if (mlFeatures.length > 0) {
+      const poorEyeHealthCount = mlFeatures.filter(f => {
+        const ear = f.ear_value
+        return ear && (ear < 0.2 || ear > 0.4) // 정상 범위 벗어남
+      }).length
+      
+      const poorEyeHealthRatio = poorEyeHealthCount / mlFeatures.length
+      
+      if (poorEyeHealthRatio > 0.4) { // 40% 이상이 비정상
+        feedback.push({
+          type: "info" as const,
+          title: "눈 휴식 권장",
+          message: "눈의 깜빡임 패턴이 불규칙합니다. 20-20-20 규칙(20분마다 20피트 거리 20초간 바라보기)을 시도해보세요.",
+          actionable: true,
+          priority: "medium" as const
+        })
+      }
+    }
+    
+    // 4. 학습 시간 피드백
     if (totalFocusTime < 600) { // 10시간 미만
       feedback.push({
         type: "info" as const,
         title: "학습 시간 증가",
         message: "이번 주 총 학습 시간이 목표보다 적습니다. 점진적으로 학습 시간을 늘려보세요.",
         actionable: true,
-        priority: "medium" as const
+        priority: "low" as const
       })
     }
     
@@ -1180,36 +1256,56 @@ export class ReportService {
   }
 
   /**
-   * 주간 세부 분석
+   * 주간 세부 분석 (실제 ML 피쳐 기반)
    */
   private static calculateWeeklyBreakdown(samples: any[], mlFeatures: any[], events: any[]) {
-    // ML 피쳐 기반 분석
-    const focusedCount = mlFeatures.filter(f => f.focus_status === 'focused').length
-    const normalCount = mlFeatures.filter(f => f.focus_status === 'normal').length
-    const distractedCount = mlFeatures.filter(f => f.focus_status === 'distracted').length
     const totalCount = mlFeatures.length
     
-    const attention = totalCount > 0 ? Math.round((focusedCount / totalCount) * 100) : 75
+    if (totalCount === 0) {
+      return {
+        attention: 75,
+        eyeHealth: 80,
+        posture: 80,
+        consistency: 50
+      }
+    }
     
-    // 자세 분석 (head_pose 기반)
-    const goodPostureCount = mlFeatures.filter(f => 
-      f.head_pose_pitch && Math.abs(f.head_pose_pitch) < 15 &&
-      f.head_pose_yaw && Math.abs(f.head_pose_yaw) < 15
+    // 1. 집중도 분석 (prediction_result 기반)
+    const focusedCount = mlFeatures.filter(f => 
+      f.focus_status === 'focused' || f.focus_status === 'focus'
     ).length
-    const posture = totalCount > 0 ? Math.round((goodPostureCount / totalCount) * 100) : 80
+    const attention = Math.round((focusedCount / totalCount) * 100)
     
-    // 휴대폰 사용 분석
-    const phoneUsageEvents = events.filter(e => e.event_type === 'phone').length
-    const phoneUsage = Math.max(0, 100 - phoneUsageEvents * 5) // 이벤트당 -5점
+    // 2. 눈 건강 분석 (eye_status, EAR 값 기반)
+    const goodEyeCount = mlFeatures.filter(f => {
+      // EAR 값이 0.2-0.4 범위에 있으면 좋은 상태
+      const earValue = f.ear_value
+      return earValue && earValue >= 0.2 && earValue <= 0.4 && f.eye_status === 'OPEN'
+    }).length
+    const eyeHealth = Math.round((goodEyeCount / totalCount) * 100)
     
-    // 일관성 분석 (매일 세션이 있는지)
-    const uniqueDays = new Set(samples.map(s => new Date(s.ts).toISOString().split('T')[0])).size
+    // 3. 자세 분석 (head_pose 기반) - 더 현실적인 기준
+    const goodPostureCount = mlFeatures.filter(f => {
+      const pitch = f.head_pose_pitch
+      const yaw = f.head_pose_yaw
+      const roll = f.head_pose_roll
+      
+      // 정면을 바라보고 있는 상태 (각도가 너무 크지 않은 경우)
+      return pitch && yaw && roll &&
+             Math.abs(pitch) < 30 &&   // 고개를 너무 위아래로 하지 않음
+             Math.abs(yaw) < 25 &&     // 좌우로 많이 돌리지 않음
+             Math.abs(roll) < 20       // 머리를 기울이지 않음
+    }).length
+    const posture = Math.round((goodPostureCount / totalCount) * 100)
+    
+    // 4. 일관성 분석 (매일 세션이 있는지)
+    const uniqueDays = new Set(mlFeatures.map(f => new Date(f.ts).toISOString().split('T')[0])).size
     const consistency = Math.round((uniqueDays / 7) * 100)
     
     return {
       attention: Math.min(100, Math.max(0, attention)),
+      eyeHealth: Math.min(100, Math.max(0, eyeHealth)),
       posture: Math.min(100, Math.max(0, posture)),
-      phoneUsage: Math.min(100, Math.max(0, phoneUsage)),
       consistency: Math.min(100, Math.max(0, consistency))
     }
   }

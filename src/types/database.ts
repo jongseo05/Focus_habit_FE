@@ -464,8 +464,8 @@ export interface WeeklyReportData {
   }
   breakdown: {
     attention: number
+    eyeHealth: number
     posture: number
-    phoneUsage: number
     consistency: number
   }
   timeSeriesData: Array<{
