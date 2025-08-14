@@ -1,0 +1,113 @@
+* [33mb510f0a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdevelop-clean[m[33m, [m[1;32mdevelop[m[33m)[m 보안: .env.local 파일 제거 및 .gitignore 업데이트
+* [33mc31660f[m 환경 설정 및 API 개선
+* [33m646e7de[m[33m ([m[1;31morigin/develop[m[33m)[m 스터디룸-챌린지 연동 기능 추가 및 UI 개선
+* [33m2f6e1d7[m 친구 요청 및 친구 목록 관련 기능 개선
+* [33m26bea04[m UI 개선: 로딩 컴포넌트 통일 및 불필요한 요소 제거
+* [33mbe74330[m feat: 친구 시스템 및 UI 개선
+* [33mc7e1f55[m feat: 집중도 대결 및 챌린지 기능 개선
+* [33mf4a28a5[m feat: 집중도 대결 기능 추가 및 UI 개선
+* [33md011ffe[m feat: 스터디룸 비디오 기능 추가 및 UI 개선
+* [33ma96f79e[m feat: 스터디룸 UI 및 기능 개선
+* [33m2bf642d[m feat: 스터디룸 API 및 UI 개선
+* [33m6159984[m feat: 스터디룸 참가자 관리 및 API 개선
+* [33m9512591[m feat: 대시보드에 소셜 기능 링크 추가
+* [33m825d640[m[33m ([m[1;32mfeature/social[m[33m)[m feat: 세션 종료 알림 기능 추가
+[31m|[m * [33m46af74c[m[33m ([m[1;31morigin/cursor/db-5110[m[33m)[m Add data sufficiency checks and improved insufficient data handling
+[31m|[m * [33mbff2762[m Refactor weekly insights to focus on learning patterns and optimization
+[31m|[m * [33m23a85a9[m Enhance weekly insights with ML-based focus, posture, and eye health analysis
+[31m|[m * [33m6a048a4[m Add GPT-powered weekly insights with dynamic loading and fallback
+[31m|[m * [33m0f71e29[m Implement dynamic weekly report generation with real database data
+[31m|[m [32m|[m * [33mef5eb34[m[33m ([m[1;31morigin/cursor/prevent-inattentive-misclassification-during-speech-b435[m[33m)[m Implement speech-based focus score correction and tracking mechanism
+[31m|[m [32m|[m[32m/[m  
+[31m|[m [32m|[m * [33m8e15b07[m[33m ([m[1;31morigin/cursor/integrate-gpt-classification-into-nextjs-d6ea[m[33m)[m Add GPT-based speech classification API and update ML pipeline
+[31m|[m [32m|[m[32m/[m  
+[31m|[m *   [33mf91651b[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #10 from jongseo05/develop
+[31m|[m [35m|[m[31m\[m  
+[31m|[m [35m|[m[31m/[m  
+[31m|[m[31m/[m[35m|[m   
+* [35m|[m [33mae96ba1[m feat: 메타데이터에 아이콘 추가
+* [35m|[m [33m7f49579[m feat: API 및 컴포넌트 개선
+* [35m|[m   [33m6cd82b3[m Merge pull request #9 from jongseo05/feature/watch
+[1;31m|[m[1;32m\[m [35m\[m  
+[1;31m|[m * [35m|[m [33md10a6d6[m[33m ([m[1;31morigin/feature/watch[m[33m, [m[1;32mfeature/watch[m[33m)[m feat: 리포트 페이지 및 대시보드 UI 개선
+[1;31m|[m * [35m|[m [33mf3c20ba[m feat: 리포트 및 대시보드 UI 개선
+[1;31m|[m * [35m|[m [33m56306c7[m feat: ML 피쳐 및 집중 상태 관련 기능 개선
+[1;31m|[m * [35m|[m [33m0a3e2d4[m feat: ML 피쳐값 테이블 및 API 개선
+[1;31m|[m * [35m|[m [33me32a94d[m feat: 워치연결 상태 관리 및 코드 생성 기능 개선
+[1;31m|[m * [35m|[m [33m7891b15[m 문서 및 스키마 파일 삭제
+[1;31m|[m[1;31m/[m [35m/[m  
+* [35m|[m   [33mdd1a9c4[m Merge pull request #8 from jongseo05/feature/audio
+[1;33m|[m[1;34m\[m [35m\[m  
+[1;33m|[m * [35m\[m   [33mdda1587[m[33m ([m[1;31morigin/feature/audio[m[33m, [m[1;32mfeature/audio[m[33m)[m Merge branch 'feature/audio' of https://github.com/jongseo05/Focus_habit_FE into feature/audio
+[1;33m|[m [1;35m|[m[1;36m\[m [35m\[m  
+[1;33m|[m [1;35m|[m * [35m|[m [33m1f61579[m Update README.md
+[1;33m|[m * [1;36m|[m [35m|[m [33m1c208f9[m feat: 리포트 시스템 및 대시보드 기능 개선
+[1;33m|[m [1;36m|[m[1;36m/[m [35m/[m  
+[1;33m|[m * [35m|[m [33m07db143[m feat: 리포트 시스템 개요 및 UI 개선
+[1;33m|[m * [35m|[m [33m168d19f[m feat: 대시보드 및 리포트 페이지 기능 개선
+[1;33m|[m * [35m|[m [33m36f626c[m feat: 일일 리포트 API 및 대시보드 기능 개선
+[1;33m|[m * [35m|[m [33md0e7ce6[m feat: 일일 리포트 페이지에 AI 코칭 섹션 추가
+* [1;36m|[m [35m|[m [33mb67e7fb[m Merge pull request #7 from jongseo05/feature/audio
+[31m|[m[1;36m\[m[1;36m|[m [35m|[m 
+[31m|[m * [35m|[m [33m8f8836c[m feat: KoELECTRA 모델 및 집중 상태 분석 기능 추가
+[31m|[m * [35m|[m [33m2b08c53[m feat: HybridAudioPipeline 오디오 레벨 급격한 하락 감지 기능 추가
+[31m|[m * [35m|[m [33mfef16c6[m feat: HybridAudioPipeline 음성 인식 로직 개선 및 오디오 레벨 기반 발화 감지 추가
+[31m|[m * [35m|[m [33mdf11f09[m feat: HybridAudioPipeline 음성 인식 로직 및 상태 체크 강화
+[31m|[m * [35m|[m [33m657e04e[m feat: HybridAudioPipeline 음성 인식 상태 로깅 및 재시작 로직 개선
+[31m|[m * [35m|[m [33me94d82f[m feat: HybridAudioPipeline 및 useFocusSessionWithGesture 개선
+[31m|[m * [35m|[m [33mb690e37[m feat: 집중 세션 및 오디오 파이프라인 개선
+[31m|[m * [35m|[m [33m73a3bbc[m feat: ONNX Runtime CORS 및 MIME 타입 설정 추가
+[31m|[m * [35m|[m [33m72ac3b9[m feat: 오디오 파이프라인 및 ML 추론 기능 개선
+[31m|[m * [35m|[m [33me0ee1b1[m feat: KOElectra ONNX 모델 및 음성 인식 기반 하이브리드 오디오 파이프라인 구현
+[31m|[m * [35m|[m [33m2a94d28[m feat: 마이크 권한 요청 및 상태 관리를 위한 훅 및 컴포넌트 추가
+[31m|[m[31m/[m [35m/[m  
+* [35m|[m   [33mdd66323[m Merge pull request #6 from jongseo05/feature/focus-mode
+[33m|[m[34m\[m [35m\[m  
+[33m|[m * [35m|[m [33m1ed7124[m[33m ([m[1;31morigin/feature/focus-mode[m[33m, [m[1;32mfeature/focus-mode[m[33m)[m feat: 로그인 및 회원가입 페이지에 Suspense 추가하여 로딩 상태 처리
+[33m|[m * [35m|[m   [33m1da5eb1[m Merge pull request #4 from jongseo05/feature/Websocket
+[33m|[m [35m|[m[36m\[m [35m\[m  
+[33m|[m [35m|[m * [35m|[m [33m90dece3[m[33m ([m[1;31morigin/feature/Websocket[m[33m, [m[1;32mfeature/Websocket[m[33m)[m feat: 로딩 페이지 추가
+[33m|[m [35m|[m * [35m|[m [33m8a84b7e[m chore : auth 관련 디버깅 코드 제거
+[33m|[m [35m|[m * [35m|[m [33m84b6f03[m feat: 보호된 라우트 구현 및 로그인 리디렉션 기능 추가
+[33m|[m [35m|[m * [35m|[m   [33m9b766af[m Merge pull request #3 from jongseo05/feature/websocket-optimization
+[33m|[m [35m|[m [1;31m|[m[1;32m\[m [35m\[m  
+[33m|[m [35m|[m [1;31m|[m * [35m|[m [33mc4598ea[m[33m ([m[1;31morigin/feature/websocket-optimization[m[33m, [m[1;32mfeature/websocket-optimization[m[33m)[m feat: 대시보드 성능 최적화 및 상태 관리 스토어 구현
+[33m|[m [35m|[m [1;31m|[m * [35m|[m [33m000669b[m feat: 대시보드 성능 및 상태 관리 스토어 추가 - 집중 세션 및 UI 상태 관리
+[33m|[m [35m|[m [1;31m|[m * [35m|[m [33ma9e3b11[m feat: 고급 WebSocket 최적화 - 적응형 재연결, 압축 최적화, 배치 전송
+[33m|[m [35m|[m [1;31m|[m * [35m|[m [33m8e1e0eb[m feat: WebSocket 메모리 관리 및 동적 프레임레이트 최적화
+[33m|[m [35m|[m [1;31m|[m[1;31m/[m [35m/[m  
+[33m|[m [35m|[m * [35m|[m [33m152af8b[m feat(focus-session): 집중 세션 오류 처리 및 복구 기능 추가
+[33m|[m [35m|[m * [35m|[m [33mc54f7df[m feat: 웹캠 제스처 인식 시스템 구축
+[33m|[m [35m|[m * [35m|[m [33m39aab0d[m chore: websocket-test 페이지 파일 삭제
+[33m|[m [35m|[m * [35m|[m [33m292e427[m feat: 비디오 프레임 좌우반전 기능 추가
+[33m|[m [35m|[m * [35m|[m [33mc0a5d88[m feat: 실시간 제스처 인식 기능 및 WebSocket 통신 구현
+[33m|[m [35m|[m[35m/[m [35m/[m  
+[33m|[m * [35m|[m [33mc22bdf3[m fix: SSR 환경에서 navigator 객체 직접 접근 오류
+[33m|[m * [35m|[m   [33m2c6371d[m Merge pull request #2 from jongseo05/feature/camera-permissions
+[33m|[m [1;33m|[m[1;34m\[m [35m\[m  
+[33m|[m [1;33m|[m * [35m|[m [33m4a01f34[m[33m ([m[1;31morigin/feature/camera-permissions[m[33m, [m[1;32mfeature/camera-permissions[m[33m)[m chore : 디버깅 로그 제거 후 재 테스트
+[33m|[m [1;33m|[m * [35m|[m [33m1a11ed9[m chore: 디버깅 코드 삭제
+[33m|[m [1;33m|[m * [35m|[m [33mfc75272[m fix: 카메라 권한 부여 후 웹캠이 자동으로 꺼지는 문제 해결
+[33m|[m [1;33m|[m * [35m|[m [33m66933ed[m feat: 카메라 권한 레이어 및 웹캠 미리보기 컴포넌트와 미디어 스트림 처리 기능 추가
+[33m|[m [1;33m|[m[1;33m/[m [35m/[m  
+[33m|[m * [35m|[m [33md3898c6[m[33m ([m[1;31morigin/feature/Landing-page[m[33m, [m[1;32mfeature/Landing-page[m[33m)[m feat: 컨테이너 최대 너비를 100rem으로 설정하여 반응형 디자인 개선
+[33m|[m * [35m|[m [33m8f1b9df[m feat: 대시보드 UI 컴포넌트 및 집중 추적 시스템 구현
+[33m|[m[33m/[m [35m/[m  
+* [35m|[m   [33m966cd9e[m Merge pull request #1 from jongseo05/feature/Sign_up
+[35m|[m[1;36m\[m [35m\[m  
+[35m|[m [1;36m|[m[35m/[m  
+[35m|[m[35m/[m[1;36m|[m   
+[35m|[m * [33mb2beb67[m[33m ([m[1;31morigin/feature/Sign_up[m[33m, [m[1;32mfeature/Sign_up[m[33m)[m feat: 습관 관리 UI 상태를 위한 habitUIStore 구현
+[35m|[m * [33m6f33016[m feat: Supabase 인증 시스템 기본 구조 구현 (WIP)
+[35m|[m * [33m6caa8ba[m feat: 실제 Supabase 인증을 사용한 로그인 기능 구현
+[35m|[m * [33m4799e2e[m feat: 회원가입 페이지 실제 동작 구현
+[35m|[m * [33mfd2a7a4[m feat: Supabase 인증 시스템 구현
+[35m|[m * [33m7f4cb7b[m feat: Supabase 인증 설정 및 Next.js 15 호환성 추가
+[35m|[m * [33m77b25ff[m feat: 로그인/회원가입 페이지 디자인 완성
+[35m|[m * [33m70a0478[m feat: AI 기반 집중력 관리 랜딩 페이지 구현
+[35m|[m[35m/[m  
+* [33m4c9a418[m[33m ([m[1;32mmain[m[33m)[m feat: CI/CD 파이프라인 구성 및 PNPM 환경 설정
+* [33mc84d574[m refactor : ci pnpm 관련 리팩토링
+* [33m081de06[m chore : 패키지 관리자 pnpm 으로 변경
+* [33m7a33e15[m chore : next.js 기본 세팅 및 Github actions CI 설정
+* [33mdfaaec0[m Initial commit
