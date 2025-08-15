@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabaseServer } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
+    const supabase = await supabaseServer()
     const { searchParams } = new URL(request.url)
     const format = searchParams.get('format') || 'json'
     const uid = searchParams.get('uid') // URL 파라미터로 uid 받기 (선택사항)
@@ -101,7 +97,7 @@ export async function GET(
       if (!usersError && usersData) {
         // 중복 제거하고 사용자별 첫 번째 기록 시간
         const userMap = new Map()
-        usersData.forEach(record => {
+        usersData.forEach((record: any) => {
           if (!userMap.has(record.user_id)) {
             userMap.set(record.user_id, record.ts)
           }
