@@ -1,8 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
-import { koelectraPreprocess, testTokenizer, initializeTokenizer } from "@/lib/tokenizer/koelectra"
-import { useKoELECTRA } from "@/hooks/useKoELECTRA"
 import { useDashboardStore } from "@/stores/dashboardStore"
 
 // 공부 관련 텍스트 분석 함수 (키워드 기반) - 메모이제이션 적용
@@ -62,30 +60,7 @@ export default function HybridAudioPipeline() {
     updateFocusScore
   } = useDashboardStore()
   
-  // KoELECTRA 모델 훅
-  const { 
-    isLoaded: isModelLoaded, 
-    isLoading: isModelLoading, 
-    error: modelError, 
-    inference: koelectraInference,
-    loadModel: loadKoELECTRAModel
-  } = useKoELECTRA({ 
-    autoLoad: true
-  })
 
-  // KoELECTRA 모델 상태 모니터링 (5초마다 한 번씩만 로그 출력)
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      // 모델이 로드되지 않고 로딩 중도 아니며 오류가 없는 경우 수동 로드 시도
-      if (!isModelLoaded && !isModelLoading && !modelError) {
-        loadKoELECTRAModel().catch(err => {
-          // 에러 처리만 유지
-        });
-      }
-    }, 5000);
-
-    return () => clearTimeout(timeoutId);
-  }, [isModelLoaded, isModelLoading, modelError, loadKoELECTRAModel]);
 
   // 오디오 파이프라인 Ref
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -250,10 +225,7 @@ export default function HybridAudioPipeline() {
     }
   }, [isFocusSessionRunning, isFocusSessionPaused, isInitialized, restartSpeechRecognition])
 
-  // 모델 상태 요약
-  const modelStatus = useMemo(() => ({
-    status: isModelLoaded ? '✅ 로드됨' : isModelLoading ? '🔄 로딩 중' : '❌ 로드 안됨'
-  }), [isModelLoaded, isModelLoading])
+
 
   // 오디오 파이프라인 초기화 함수 - 메모이제이션 적용
   const initializeAudioPipeline = useCallback(async () => {
@@ -843,10 +815,7 @@ export default function HybridAudioPipeline() {
     console.log('🎤 processSpeechSegment 호출됨 - 현재 상태:', {
       isAnalyzing,
       bufferText: speechBufferRef.current,
-      bufferLength: speechBufferRef.current.length,
-      isModelLoaded,
-      isModelLoading,
-      modelError
+      bufferLength: speechBufferRef.current.length
     });
     
     if (isAnalyzing) {
@@ -956,7 +925,7 @@ export default function HybridAudioPipeline() {
         }, 500);
       }
     }
-  }, [isModelLoaded, isAnalyzing, restartSpeechRecognition]);
+  }, [isAnalyzing, restartSpeechRecognition]);
 
   // GPT 발화분석 API 호출 함수
   const analyzeSpeechWithGPT = async (transcript: string): Promise<{ isStudyRelated: boolean; confidence: number; reasoning: string }> => {
@@ -1207,57 +1176,23 @@ export default function HybridAudioPipeline() {
     }
   }, [setupSpeechRecognition])
 
-  // 컴포넌트 마운트 시 토크나이저 및 오디오 파이프라인 초기화
+  // 컴포넌트 마운트 시 오디오 파이프라인 초기화
   useEffect(() => {
     const initializeComponents = async () => {
-      // 1. 토크나이저 초기화 (우선순위)
-      try {
-        await initializeTokenizer();
-      } catch (error) {
-        console.error('❌ 토크나이저 초기화 실패:', error);
+      // 오디오 파이프라인 초기화
+      if (!isInitialized && !isInitializing) {
+        initializeAudioPipeline()
       }
-      
-      // 2. 오디오 파이프라인 초기화 (토크나이저 로드 후)
-      setTimeout(() => {
-        if (!isInitialized && !isInitializing) {
-          initializeAudioPipeline()
-        }
-      }, 500); // 토크나이저 로드 완료 후 500ms 대기
     };
     
     initializeComponents();
   }, [isInitialized, isInitializing, initializeAudioPipeline])
 
-  // 토크나이저 테스트 함수
-  const handleTokenizerTest = async () => {
-    const testTexts = [
-      "안녕하세요",
-      "공부를 하고 있어요",
-      "수학 문제를 풀고 있습니다",
-      "이론을 공부하고 있어요",
-      "토론을 하고 있어요",
-      "선생님이 설명해주세요",
-      "어떻게 풀어야 할까요?",
-      "짜증나요 이 문제가 안 풀려요"
-    ];
-    
-    await testTokenizer(testTexts);
-  };
+
 
   return (
     <div className="p-4 bg-slate-100 rounded-lg">
       <h3 className="font-bold">하이브리드 오디오 파이프라인</h3>
-      
-      {/* 토크나이저 테스트 버튼 */}
-      <div className="mb-4">
-        <button 
-          onClick={handleTokenizerTest}
-          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 mr-2"
-        >
-          토크나이저 테스트
-        </button>
-        <span className="text-sm text-gray-600">새로운 WordPiece 토크나이저를 테스트합니다</span>
-      </div>
       
       {isInitializing && (
         <p className="text-blue-600 mb-4">🎤 오디오 파이프라인 초기화 중...</p>
@@ -1267,19 +1202,7 @@ export default function HybridAudioPipeline() {
         <p className="text-red-600 mb-4">오류: {error}</p>
       )}
       
-      {/* KoELECTRA 모델 상태 */}
-      <div className="mb-4 p-3 bg-gray-50 rounded">
-        <h4 className="font-semibold mb-2">🤖 KoELECTRA 모델 상태</h4>
-        <div className="space-y-1 text-sm">
-          <p><b>모델 로드:</b> 
-            {isModelLoading ? "🔄 로딩 중..." : 
-             isModelLoaded ? "✅ 로드됨" : "❌ 미로드"}
-          </p>
-          {modelError && (
-            <p className="text-red-600"><b>모델 에러:</b> {modelError}</p>
-          )}
-        </div>
-      </div>
+
 
 
       

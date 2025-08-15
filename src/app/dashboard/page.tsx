@@ -50,7 +50,7 @@ import ProtectedRoute from "@/components/ProtectedRoute"
 import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream, useMediaStream } from "@/hooks/useMediaStream"
 import HybridAudioPipeline from "@/components/HybridAudioPipeline"
-import { useKoELECTRA } from "@/hooks/useKoELECTRA"
+
 import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
 import { useSignOut, useAuth } from "@/hooks/useAuth"
@@ -720,40 +720,7 @@ function DashboardContent() {
   // 현재 사용자 정보 가져오기
   const { user } = useAuth()
   
-  // KoELECTRA 모델 초기화
-  const { isLoaded: isModelLoaded, isLoading: isModelLoading, error: modelError, inference, loadModel } = useKoELECTRA({
-    autoLoad: false, // 자동 로드 비활성화하고 수동으로 제어
-    config: {
-      modelPath: '/models/koelectra/koelectra.onnx',
-      maxLength: 512,
-      batchSize: 1,
-      enableCache: true,
-      cacheSize: 100,
-      enableBatching: false
-    }
-  })
-  
-  // 컴포넌트 마운트 시 즉시 모델 로드
-  useEffect(() => {
-    if (!isModelLoaded && !isModelLoading && !modelError && loadModel) {
-      loadModel().catch(() => {
-        // 모델 로드 실패 시 조용히 처리
-      });
-    }
-  }, [isModelLoaded, isModelLoading, modelError, loadModel]);
-  
-  // 모델 로딩 실패 시 재시도 (5초 후)
-  useEffect(() => {
-    if (modelError && loadModel) {
-      const retryTimeout = setTimeout(() => {
-        loadModel().catch(() => {
-          // 모델 로드 재시도 실패 시 조용히 처리
-        });
-      }, 5000);
-      
-      return () => clearTimeout(retryTimeout);
-    }
-  }, [modelError, loadModel]);
+
 
   // 로그아웃 성공 시 홈페이지로 리다이렉트
   useEffect(() => {
@@ -819,73 +786,7 @@ function DashboardContent() {
     return () => clearInterval(interval)
   }, [session.isRunning, session.isPaused, updateElapsed])
   
-  // 실시간 집중 상태 분석 (30초마다)
-  useEffect(() => {
-    if (!session.isRunning || session.isPaused || !isModelLoaded || !inference) {
-      return
-    }
-    
-    const analyzeFocusStatus = async () => {
-      try {
-        // 실제 사용자 활동을 시뮬레이션하는 텍스트들
-        const focusTexts = [
-          "공부를 열심히 하고 있습니다.",
-          "코딩을 하고 있습니다.",
-          "문서를 작성하고 있습니다.",
-          "학습에 집중하고 있습니다.",
-          "과제를 해결하고 있습니다."
-        ]
-        
-        const distractedTexts = [
-          "게임을 하고 있습니다.",
-          "유튜브를 보고 있습니다.",
-          "SNS를 확인하고 있습니다.",
-          "음악을 듣고 있습니다.",
-          "휴대폰을 만지고 있습니다."
-        ]
-        
-        // 랜덤하게 텍스트 선택 (실제로는 사용자 활동 데이터를 사용)
-        const isFocused = Math.random() > 0.3 // 70% 확률로 집중 상태
-        const texts = isFocused ? focusTexts : distractedTexts
-        const randomText = texts[Math.floor(Math.random() * texts.length)]
-        
-        const result = await inference(randomText)
-        
-        if (result) {
-          const { confidence, logits } = result
-          const prediction = logits[1] > logits[0] ? 1 : 0
-          const status: 'focused' | 'distracted' = prediction === 1 ? 'focused' : 'distracted'
-          
-          setCurrentFocusStatus(status)
-          setFocusConfidence(confidence)
-          setLastAnalysisTime(new Date())
-          
-          // 분석 히스토리에 추가
-          setAnalysisHistory(prev => {
-            const newHistory = [...prev, {
-              timestamp: new Date(),
-              status,
-              confidence,
-              text: randomText
-            }]
-            // 최근 10개만 유지
-            return newHistory.slice(-10)
-          })
-        }
-      } catch (error) {
-        setCurrentFocusStatus('unknown')
-        setFocusConfidence(0)
-      }
-    }
-    
-    // 첫 번째 분석은 즉시 실행
-    analyzeFocusStatus()
-    
-    // 이후 30초마다 분석
-    const interval = setInterval(analyzeFocusStatus, 30000)
-    
-    return () => clearInterval(interval)
-  }, [session.isRunning, session.isPaused, isModelLoaded, inference])
+
   
   // 미디어 스트림과 제스처 인식을 통합 관리
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
@@ -922,20 +823,7 @@ function DashboardContent() {
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
   ])
   
-  // KoELECTRA 모델 로딩 알림 추가
-  useEffect(() => {
-    if (isModelLoaded) {
-      setNotifications(prev => [
-        { id: Date.now(), message: "KoELECTRA AI 모델이 성공적으로 로드되었습니다", type: "success" },
-        ...prev.slice(0, 4) // 최대 5개 알림 유지
-      ])
-    } else if (modelError) {
-      setNotifications(prev => [
-        { id: Date.now(), message: `AI 모델 로딩 실패: ${modelError}`, type: "error" },
-        ...prev.slice(0, 4)
-      ])
-    }
-  }, [isModelLoaded, modelError])
+
 
   // 에러 상태 모니터링
   useEffect(() => {
@@ -2239,36 +2127,7 @@ const calculateAndSaveFocusScore = async () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {!isModelLoaded ? (
-                      <div className="text-center py-6 text-slate-500">
-                        {isModelLoading ? (
-                          <>
-                            <div className="w-8 h-8 mx-auto mb-2 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                            <div className="text-sm">KoELECTRA 모델 로딩 중...</div>
-                            <div className="text-xs">잠시만 기다려주세요</div>
-                          </>
-                        ) : modelError ? (
-                          <>
-                            <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" />
-                            <div className="text-sm text-red-600">모델 로딩 실패</div>
-                            <div className="text-xs text-red-500">{modelError}</div>
-                            <Button 
-                              size="sm" 
-                              className="mt-2"
-                              onClick={() => loadModel()}
-                            >
-                              다시 시도
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Activity className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                            <div className="text-sm">모델 초기화 중...</div>
-                            <div className="text-xs">잠시만 기다려주세요</div>
-                          </>
-                        )}
-                      </div>
-                    ) : analysisHistory.length > 0 ? (
+                    {analysisHistory.length > 0 ? (
                       <div className="space-y-3">
                         {analysisHistory.slice(-5).reverse().map((analysis, index) => (
                           <div key={index} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100">
@@ -2302,23 +2161,7 @@ const calculateAndSaveFocusScore = async () => {
                       </div>
                     )}
                     
-                    {/* 모델 상태 표시 */}
-                    <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-                      <span>KoELECTRA 모델 상태:</span>
-                      <div className="flex items-center gap-1">
-                        <div className={`w-2 h-2 rounded-full ${
-                          isModelLoaded ? 'bg-green-500' : isModelLoading ? 'bg-yellow-500' : 'bg-red-500'
-                        }`} />
-                        <span>
-                          {isModelLoaded ? '준비됨' : isModelLoading ? '로딩 중' : modelError ? '오류' : '대기 중'}
-                        </span>
-                        {modelError && (
-                          <span className="text-red-500 ml-1" title={modelError}>
-                            ⚠️
-                          </span>
-                        )}
-                      </div>
-                    </div>
+
                   </CardContent>
                 </Card>
               )}
