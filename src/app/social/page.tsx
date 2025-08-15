@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -53,7 +53,7 @@ import { CreateGroupChallengeForm } from '@/components/social/CreateGroupChallen
 import { GroupChallengeCard } from '@/components/social/GroupChallengeCard'
 import { useGroupChallenge } from '@/hooks/useGroupChallenge'
 
-export default function SocialPage() {
+function SocialPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [currentTab, setCurrentTab] = useState('rooms')
@@ -656,5 +656,20 @@ export default function SocialPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SocialPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">소셜 페이지를 불러오는 중...</p>
+        </div>
+      </div>
+    }>
+      <SocialPageContent />
+    </Suspense>
   )
 }

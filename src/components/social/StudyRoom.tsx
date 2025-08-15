@@ -2221,25 +2221,6 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     return () => clearTimeout(timer)
   }, [challenge.currentChallenge?.state, competitionTimeLeft, endCompetition, activeTab, isBreakTime, breakDuration])
 
-  // 스터디룸 생성 폼
-  if (showCreateRoom) {
-    return (
-      <StudyRoomCreateForm
-        roomForm={roomForm}
-        onRoomFormChange={setRoomForm}
-        onCreateRoom={handleCreateRoom}
-        onCancel={() => setShowCreateRoom(false)}
-      />
-    )
-  }
-
-  // 스터디룸 메인 화면
-  if (!room) {
-    return (
-      <StudyRoomEmpty onCreateRoom={() => setShowCreateRoom(true)} />
-    )
-  }
-
   const handleLeaveChallenge = useCallback(async (challengeId: string) => {
     try {
       const response = await fetch(`/api/social/group-challenge/participate?challenge_id=${challengeId}`, {
@@ -2289,6 +2270,25 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       alert(error instanceof Error ? error.message : '챌린지 삭제에 실패했습니다.')
     }
   }, [])
+
+  // 스터디룸 생성 폼
+  if (showCreateRoom) {
+    return (
+      <StudyRoomCreateForm
+        roomForm={roomForm}
+        onRoomFormChange={setRoomForm}
+        onCreateRoom={handleCreateRoom}
+        onCancel={() => setShowCreateRoom(false)}
+      />
+    )
+  }
+
+  // 스터디룸 메인 화면
+  if (!room) {
+    return (
+      <StudyRoomEmpty onCreateRoom={() => setShowCreateRoom(true)} />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
