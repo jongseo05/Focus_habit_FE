@@ -1,9 +1,12 @@
 import OpenAI from "openai"
 import { NextResponse } from "next/server"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// OpenAI API 키가 있을 때만 클라이언트 초기화
+const openai = process.env.OPENAI_API_KEY 
+  ? new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  : null
 
 export async function POST(req: Request) {
   try {
@@ -13,6 +16,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ 
         error: "발화 텍스트가 필요합니다." 
       }, { status: 400 })
+    }
+
+    // OpenAI API 키가 없으면 키워드 기반 분석만 사용
+    if (!openai) {
+      const isStudyRelated = analyzeStudyRelatedByKeywords(transcript)
+      return NextResponse.json({
+        isStudyRelated: isStudyRelated,
+        confidence: 0.5,
+        reasoning: '키워드 기반 분석 (OpenAI API 키 없음)',
+        method: 'keyword_only',
+        transcript: transcript
+      })
     }
 
     const prompt = `
