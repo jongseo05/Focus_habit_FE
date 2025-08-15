@@ -50,6 +50,7 @@ import ProtectedRoute from "@/components/ProtectedRoute"
 import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream, useMediaStream } from "@/hooks/useMediaStream"
 import HybridAudioPipeline from "@/components/HybridAudioPipeline"
+import WebcamAnalysisDisplay from "@/components/WebcamAnalysisDisplay"
 
 import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
@@ -855,13 +856,6 @@ function DashboardContent() {
   // 집중모드 시작 함수
   const startFocusSession = async () => {
     if (!session.isRunning) {
-      // 데이터베이스 연결 상태 확인
-      const isConnected = await checkDatabaseConnection()
-      if (!isConnected) {
-        alert('데이터베이스 연결에 문제가 있습니다. 페이지를 새로고침하거나 다시 시도해주세요.')
-        return
-      }
-      
       try {
         console.log('🚀 데이터베이스 세션 생성 시작')
         
@@ -919,63 +913,7 @@ function DashboardContent() {
     }
   }
 
-  // 데이터베이스 연결 상태 확인 함수
-  const checkDatabaseConnection = async () => {
-    try {
-      const supabase = supabaseBrowser()
-      console.log('🔍 데이터베이스 연결 상태 확인 중...')
-      
-      // 1. 인증 상태 확인
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError) {
-        return false
-      }
-      
-      if (!user) {
-        return false
-      }
-      
-      // 2. 데이터베이스 연결 테스트
-      const { data: testData, error: testError } = await supabase
-        .from('focus_session')
-        .select('count')
-        .limit(1)
-      
-      if (testError) {
-        return false
-      }
-      
-      // 3. 활성 세션 조회 테스트
-      const { data: activeSession, error: sessionError } = await supabase
-        .from('focus_session')
-        .select('*')
-        .eq('user_id', user.id)
-        .is('ended_at', null)
-        .limit(1)
-      
-      if (sessionError && sessionError.code !== 'PGRST116') {
-        return false
-      }
-      
-      return true
-      
-    } catch (error) {
-      return false
-    }
-  }
-
-  // 데이터베이스 연결 상태를 저장할 state
-  const [dbConnectionStatus, setDbConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking')
-  
-  // 컴포넌트 마운트 시 데이터베이스 연결 상태 확인
-  useEffect(() => {
-    const checkConnection = async () => {
-      const isConnected = await checkDatabaseConnection()
-      setDbConnectionStatus(isConnected ? 'connected' : 'disconnected')
-    }
-    
-    checkConnection()
-  }, [])
+  // DB 상태 확인 기능 제거됨
 
   const handleStopSession = async () => {
     try {
@@ -1466,8 +1404,8 @@ const calculateAndSaveFocusScore = async () => {
   useEffect(() => {
     if (!session.isRunning || !activeSession?.session_id) return
     
-    // 1초마다 AI 집중도 점수 계산 및 저장
-    const interval = setInterval(calculateAndSaveFocusScore, 1000)
+    // 5초마다 AI 집중도 점수 계산 및 저장 (UI 업데이트용)
+    const interval = setInterval(calculateAndSaveFocusScore, 5000)
     
     return () => clearInterval(interval)
      }, [session.isRunning, activeSession?.session_id, mlFeatures, session])
@@ -1529,6 +1467,12 @@ const calculateAndSaveFocusScore = async () => {
                   <span className="text-xs text-slate-400">
                     (실시간)
                   </span>
+                  {/* 웹캠 분석 상태 표시 */}
+                  {mediaStream.webcamAnalysisResult && (
+                    <div className="flex items-center gap-1 text-xs text-slate-400">
+                      <span>🎥 분석 중</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1818,16 +1762,6 @@ const calculateAndSaveFocusScore = async () => {
                         집중 시작!
                       </Button>
                       
-                      {/* 디버깅 버튼 */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={checkDatabaseConnection}
-                        className="border-gray-400 text-gray-600 hover:bg-gray-50 px-3 py-2"
-                        title="데이터베이스 연결 상태 확인"
-                      >
-                        🔍 DB 상태
-                      </Button>
                     </div>
                   ) : (
                     <div className="flex gap-3">
@@ -1851,16 +1785,6 @@ const calculateAndSaveFocusScore = async () => {
                         세션 종료
                       </Button>
                       
-                      {/* 디버깅 버튼 */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={checkDatabaseConnection}
-                        className="border-gray-400 text-gray-600 hover:bg-gray-50 px-3 py-2"
-                        title="데이터베이스 연결 상태 확인"
-                      >
-                        🔍 DB 상태
-                      </Button>
                     </div>
                   )}
                 </div>
@@ -2127,41 +2051,20 @@ const calculateAndSaveFocusScore = async () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {analysisHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        {analysisHistory.slice(-5).reverse().map((analysis, index) => (
-                          <div key={index} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100">
-                            <div className={`w-3 h-3 rounded-full ${
-                              analysis.status === 'focused' ? 'bg-green-500' : 'bg-red-500'
-                            }`} />
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-slate-900">
-                                {analysis.status === 'focused' ? '집중 상태' : '방해 상태'}
-                              </div>
-                              <div className="text-xs text-slate-500 truncate">
-                                &quot;{analysis.text}&quot;
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-slate-900">
-                                {Math.round(analysis.confidence * 100)}%
-                              </div>
-                              <div className="text-xs text-slate-400">
-                                {analysis.timestamp.toLocaleTimeString()}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-slate-500">
-                        <Activity className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                        <div className="text-sm">분석 데이터가 없습니다</div>
-                        <div className="text-xs">집중 세션을 시작하면 AI가 실시간으로 분석합니다</div>
-                      </div>
-                    )}
+                    {/* 웹캠 분석 결과 - 집중도만 표시 */}
+                    <WebcamAnalysisDisplay
+                      analysisResult={mediaStream.webcamAnalysisResult}
+                      focusFeatures={mediaStream.focusFeatures}
+                      lastFocusScore={mediaStream.lastFocusScore}
+                      isConnected={mediaStream.gestureWebSocketConnected}
+                    />
                     
-
+                    {/* 간단한 상태 표시 */}
+                    <div className="text-center py-4 text-slate-500">
+                      <Activity className="w-6 h-6 mx-auto mb-2 text-slate-400" />
+                      <div className="text-sm">웹캠을 통한 집중도 분석</div>
+                      <div className="text-xs">실시간으로 집중 상태를 모니터링합니다</div>
+                    </div>
                   </CardContent>
                 </Card>
               )}

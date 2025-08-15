@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 // AI 모델이 판단한 집중도 점수 저장
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, focusScore, timestamp, confidence, analysisMethod, features } = await request.json()
+    const { sessionId, focusScore, timestamp, confidence, analysisMethod } = await request.json()
     
     console.log('📊 집중도 점수 저장 요청:', { 
       sessionId, 
@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
           focus_score: focusScore,
           confidence: confidence || 0.8,
           analysis_method: analysisMethod || 'ai_analysis',
-          features: features || {},
           timestamp: timestamp
         }
       })
@@ -130,7 +129,6 @@ export async function POST(request: NextRequest) {
           focus_score: focusScore,
           confidence: confidence || 0.8,
           analysis_method: analysisMethod || 'ai_analysis',
-          features: features || {},
           timestamp: timestamp
         }
       })

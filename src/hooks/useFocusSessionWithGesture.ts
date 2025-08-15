@@ -1,7 +1,9 @@
-import { useCallback, useRef, useEffect, useState } from 'react'
-import useMediaStream from '@/hooks/useMediaStream'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useWebSocket } from './useWebSocket'
+import { useMediaStream } from './useMediaStream'
 import { FrameStreamer } from '@/lib/websocket/utils'
+import { useDashboardStore } from '@/stores/dashboardStore'
+import type { WebcamFrameAnalysisResult, FocusAnalysisFeatures } from '@/types/websocket'
 import { useFocusSessionErrorHandler } from '@/hooks/useFocusSessionErrorHandler'
 import { FocusSessionErrorType, FocusSessionStatus } from '@/types/focusSession'
 import { determineFocusStatus, type FocusStatus } from '@/lib/focusScoreEngine'
@@ -153,47 +155,24 @@ export function useFocusSessionWithGesture(
     try {
       const supabase = supabaseBrowser()
       
-      // 1. ML 피쳐 데이터 저장 (집중 상태 포함)
-      const { error: mlError } = await supabase
-        .from('ml_features')
-        .insert({
-          session_id: currentSessionId,
-          ts: new Date().toISOString(),
-          head_pose_pitch: features.headPose?.pitch,
-          head_pose_yaw: features.headPose?.yaw,
-          head_pose_roll: features.headPose?.roll,
-          eye_status: features.eyeStatus ? features.eyeStatus.substring(0, 10) : 'UNKNOWN', // 10자로 제한
-          ear_value: features.earValue,
-          frame_number: features.frameNumber,
-          focus_status: features.focusStatus,
-          focus_confidence: features.focusConfidence,
-          focus_score: features.focusScore
-        })
-      
-      if (mlError) {
-        console.error('ML features save failed:', mlError)
-        console.error('Eye status value:', features.eyeStatus)
-      }
+      // ML 피쳐 데이터 저장 제거 (피쳐 저장 불필요)
 
-      // 2. 기존 focus_sample 테이블에도 저장 (호환성을 위해)
+      // 2. focus_sample 테이블에 기본 집중도 점수만 저장
       const { error: sampleError } = await supabase
         .from('focus_sample')
         .insert({
           session_id: currentSessionId,
           ts: new Date().toISOString(),
           score: features.focusScore,
-          ear_value: features.earValue,
-          eye_status: features.eyeStatus ? features.eyeStatus.substring(0, 10) : 'UNKNOWN', // 10자로 제한
-          head_pose_pitch: features.headPose?.pitch,
-          head_pose_yaw: features.headPose?.yaw,
-          head_pose_roll: features.headPose?.roll
+          score_conf: features.focusConfidence,
+          topic_tag: 'webcam_analysis'
         })
       
       if (sampleError) {
         console.error('Focus sample save failed:', sampleError)
       }
 
-      // 3. 집중 상태 변화를 focus_event 테이블에 저장
+      // 3. 집중 상태 변화를 focus_event 테이블에 저장 (피쳐 제거)
       const { error: eventError } = await supabase
         .from('focus_event')
         .insert({
@@ -201,11 +180,9 @@ export function useFocusSessionWithGesture(
           ts: new Date().toISOString(),
           event_type: 'focus',
           payload: {
-            focus_status: features.focusStatus,
             focus_score: features.focusScore,
             focus_confidence: features.focusConfidence,
-            eye_status: features.eyeStatus,
-            head_pose: features.headPose
+            analysis_method: 'webcam_analysis'
           }
         })
       
@@ -218,14 +195,159 @@ export function useFocusSessionWithGesture(
     }
   }, [sessionId])
 
+  // 새로운 웹캠 프레임 분석 결과 상태
+  const [webcamAnalysisResult, setWebcamAnalysisResult] = useState<WebcamFrameAnalysisResult | null>(null)
+  const [focusFeatures, setFocusFeatures] = useState<FocusAnalysisFeatures | null>(null)
+  const [lastFocusScore, setLastFocusScore] = useState<number>(85)
+  
+  // 제스처 인식 상태 추가
+  const [currentGesture, setCurrentGesture] = useState<string>('neutral')
+  const [lastGestureTime, setLastGestureTime] = useState<string>('')
+  const [gestureHistory, setGestureHistory] = useState<Array<{ gesture: string; timestamp: string }>>([])
+  
+  // 대시보드 스토어에서 집중도 업데이트 함수 가져오기
+  const { updateFocusScore } = useDashboardStore()
+
+  // 헤드 포즈를 기반으로 제스처 판단하는 함수
+  const determineGestureFromHeadPose = (headPose: { pitch: number; yaw: number; roll: number }): string => {
+    const { pitch, yaw, roll } = headPose
+    
+    // 고개 숙임 (pitch가 양수)
+    if (pitch > 15) return 'head_down'
+    // 고개 들기 (pitch가 음수)
+    if (pitch < -15) return 'head_up'
+    // 고개 좌우 회전 (yaw 절댓값이 큼)
+    if (Math.abs(yaw) > 30) return 'head_turn'
+    // 고개 기울기 (roll 절댓값이 큼)
+    if (Math.abs(roll) > 20) return 'head_tilt'
+    
+    return 'neutral'
+  }
+
+  // 데이터베이스 저장 디바운싱을 위한 ref
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSavedScoreRef = useRef<number | null>(null)
+
+  // 집중도 점수를 데이터베이스에 저장하는 함수 (2초 디바운싱)
+  const saveFocusScoreToDatabase = useCallback(async (
+    sessionId: string, 
+    focusScore: number, 
+    confidence: number, 
+    timestamp: number
+  ) => {
+    // 이전 타이머가 있으면 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    // 마지막 저장된 점수와 같으면 저장하지 않음
+    if (lastSavedScoreRef.current === focusScore) {
+      return
+    }
+
+    // 2초 후에 저장
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch('/api/focus-score', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+                      body: JSON.stringify({
+              sessionId,
+              focusScore,
+              timestamp: new Date(timestamp).toISOString(),
+              confidence,
+              analysisMethod: 'webcam_analysis'
+            })
+        })
+
+        if (response.ok) {
+          console.log('✅ 웹캠 집중도 점수 저장 성공:', focusScore)
+          lastSavedScoreRef.current = focusScore
+        } else {
+          console.warn('⚠️ 웹캠 집중도 점수 저장 실패:', response.status)
+        }
+      } catch (error) {
+        console.error('❌ 웹캠 집중도 점수 저장 오류:', error)
+      }
+    }, 2000) // 2초 디바운싱
+  }, [])
+
   // 제스처 인식을 위한 WebSocket
   const { sendRawText, isConnected } = useWebSocket({}, {
     onMessage: useCallback((rawData: any) => {
       try {
-        // 실제 응답 구조에 맞게 파싱
-        const data = rawData as any
-        
-        if (data && typeof data === 'object') {
+        // 새로운 웹캠 프레임 분석 결과 처리
+        if (rawData && typeof rawData === 'object' && 'timestamp' in rawData && 'prediction_result' in rawData) {
+          const analysisResult = rawData as WebcamFrameAnalysisResult
+          console.log('🎥 웹캠 프레임 분석 결과 수신:', analysisResult)
+          
+          // 분석 결과 저장
+          setWebcamAnalysisResult(analysisResult)
+          
+          // 집중도 점수 추출 및 변환
+          const focusScore = analysisResult.prediction_result.prediction
+          const confidence = analysisResult.prediction_result.confidence
+          
+          // 기존 형식으로 변환
+          const features: FocusAnalysisFeatures = {
+            eyeStatus: {
+              isOpen: analysisResult.eye_status.status === 'OPEN',
+              confidence: confidence,
+              earValue: analysisResult.eye_status.ear_value
+            },
+            headPose: {
+              pitch: analysisResult.head_pose.pitch,
+              yaw: analysisResult.head_pose.yaw,
+              roll: analysisResult.head_pose.roll
+            },
+            focusScore: {
+              score: focusScore,
+              confidence: confidence
+            },
+            timestamp: analysisResult.timestamp
+          }
+          
+          setFocusFeatures(features)
+          setLastFocusScore(focusScore)
+          
+          // 집중도 점수 업데이트 (대시보드 스토어)
+          updateFocusScore(focusScore)
+          
+          // 집중도 점수를 데이터베이스에 저장
+          if (sessionId && isRunning) {
+            saveFocusScoreToDatabase(sessionId, focusScore, confidence, features.timestamp)
+          }
+          
+          // 제스처 인식 결과도 처리 (기존 로직 유지)
+          if (analysisResult.head_pose) {
+            const gestureData = {
+              gesture: determineGestureFromHeadPose(analysisResult.head_pose),
+              timestamp: new Date(analysisResult.timestamp).toISOString()
+            }
+            setCurrentGesture(gestureData.gesture)
+            setLastGestureTime(gestureData.timestamp)
+            setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
+              gestureData,
+              ...prev.slice(0, 49)
+            ])
+          }
+        }
+        // 기존 제스처 인식 응답 처리 (하위 호환성)
+        else if (rawData && typeof rawData === 'object' && 'gesture' in rawData && 'timestamp' in rawData) {
+          const gestureData = rawData as { gesture: string; timestamp: string }
+          setCurrentGesture(gestureData.gesture)
+          setLastGestureTime(gestureData.timestamp)
+          setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
+            gestureData,
+            ...prev.slice(0, 49)
+          ])
+        }
+        // 기존 응답 구조 처리 (하위 호환성)
+        else if (rawData && typeof rawData === 'object') {
+          const data = rawData as any
+          
           // 현재 받고 있는 응답 구조 분석
           const analysis = {
             timestamp: data.timestamp || 'N/A',
@@ -452,6 +574,10 @@ export function useFocusSessionWithGesture(
   useEffect(() => {
     return () => {
       stopGestureRecognition()
+      // 저장 타이머 정리
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
     }
   }, []) // 의존성 배열을 비워서 언마운트 시에만 실행
   
@@ -478,7 +604,12 @@ export function useFocusSessionWithGesture(
     sessionErrors: errorHandlerState.errors,
     lastSessionError: errorHandlerState.lastError,
     canRecoverFromError: errorHandlerState.lastError?.recoverable || false,
-    retrySessionRecovery: retryRecovery
+    retrySessionRecovery: retryRecovery,
+    
+    // 새로운 웹캠 분석 결과
+    webcamAnalysisResult,
+    focusFeatures,
+    lastFocusScore,
   }
 }
 

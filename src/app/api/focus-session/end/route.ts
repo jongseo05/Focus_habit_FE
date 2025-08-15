@@ -113,32 +113,7 @@ export async function POST(request: NextRequest) {
       console.log('📊 이벤트 데이터 수:', events?.length || 0)
     }
 
-    // 4.1. ML 피쳐 데이터 수 확인 (집중 상태 포함)
-    const { data: mlFeatures, error: mlFeaturesError } = await supabase
-      .from('ml_features')
-      .select('ts, focus_status, focus_score, focus_confidence')
-      .eq('session_id', sessionId)
-
-    if (mlFeaturesError) {
-      console.error('❌ ML 피쳐 데이터 조회 실패:', mlFeaturesError)
-    } else {
-      console.log('📊 ML 피쳐 데이터 수:', mlFeatures?.length || 0)
-      
-      // 집중 상태별 통계
-      if (mlFeatures && mlFeatures.length > 0) {
-        const focusStats = mlFeatures.reduce((acc, feature) => {
-          const status = feature.focus_status || 'unknown'
-          acc[status] = (acc[status] || 0) + 1
-          return acc
-        }, {} as Record<string, number>)
-        
-        console.log('📈 집중 상태 통계:', focusStats)
-        
-        // 평균 집중 점수
-        const avgFocusScore = mlFeatures.reduce((sum, feature) => sum + (feature.focus_score || 0), 0) / mlFeatures.length
-        console.log('📊 평균 집중 점수:', Math.round(avgFocusScore))
-      }
-    }
+    // ML 피쳐 데이터 조회 제거 (테이블 삭제됨)
 
     // 5. 일일 요약 데이터 생성/업데이트
     try {
@@ -159,16 +134,14 @@ export async function POST(request: NextRequest) {
       session: updatedSession,
       samples: samples || [],
       events: events || [],
-      mlFeatures: mlFeatures || [],
       summary: {
         sampleCount: samples?.length || 0,
         eventCount: events?.length || 0,
-        mlFeatureCount: mlFeatures?.length || 0,
         duration: updatedSession.ended_at && updatedSession.started_at 
           ? Math.floor((new Date(updatedSession.ended_at).getTime() - new Date(updatedSession.started_at).getTime()) / (1000 * 60))
           : 0,
-        averageFocusScore: mlFeatures && mlFeatures.length > 0
-          ? Math.round(mlFeatures.reduce((sum, feature) => sum + (feature.focus_score || 0), 0) / mlFeatures.length)
+        averageFocusScore: samples && samples.length > 0
+          ? Math.round(samples.reduce((sum, sample) => sum + (sample.score || 0), 0) / samples.length)
           : 0
       }
     }

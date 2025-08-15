@@ -68,6 +68,44 @@ export interface FrameAnalysisResult extends WebSocketMessage {
   }
 }
 
+// 새로운 웹캠 프레임 분석 결과 타입 (실제 서버 응답 형식)
+export interface WebcamFrameAnalysisResult {
+  timestamp: number
+  eye_status: {
+    status: 'OPEN' | 'CLOSED' | 'PARTIALLY_OPEN'
+    ear_value: number
+  }
+  head_pose: {
+    pitch: number
+    yaw: number
+    roll: number
+  }
+  prediction_result: {
+    timestamp: number
+    prediction: number // 집중도 백분율 (0-100)
+    confidence: number
+  }
+}
+
+// 집중도 분석 결과를 기존 형식으로 변환하는 헬퍼 타입
+export interface FocusAnalysisFeatures {
+  eyeStatus: {
+    isOpen: boolean
+    confidence: number
+    earValue: number
+  }
+  headPose: {
+    pitch: number
+    yaw: number
+    roll: number
+  }
+  focusScore: {
+    score: number // 0-100
+    confidence: number
+  }
+  timestamp: number
+}
+
 // 에러 메시지
 export interface ErrorMessage extends WebSocketMessage {
   type: 'error'

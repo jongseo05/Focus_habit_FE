@@ -20,7 +20,7 @@ interface DashboardUIState {
   // 차트/UI 상태
   hoveredChartPoint: number | null
   chartType: 'area' | 'line'
-  snapshotCollapsed: boolean
+  // snapshotCollapsed 제거 (스냅샷 기능 삭제됨)
   
   // 애니메이션 상태
   hoveredBarIndex: number | null
@@ -48,7 +48,7 @@ interface DashboardState extends FocusSessionState, DashboardUIState {
   setShowErrorDisplay: (show: boolean) => void
   setHoveredChartPoint: (index: number | null) => void
   setChartType: (type: 'area' | 'line') => void
-  toggleSnapshotCollapsed: () => void
+  // toggleSnapshotCollapsed 제거 (스냅샷 기능 삭제됨)
   setHoveredBarIndex: (index: number | null) => void
   addNotification: (notification: Omit<DashboardUIState['notifications'][0], 'id'>) => void
   removeNotification: (id: number) => void
@@ -72,7 +72,7 @@ const initialState = {
   showErrorDisplay: false,
   hoveredChartPoint: null,
   chartType: 'area' as const,
-  snapshotCollapsed: false,
+      // snapshotCollapsed: false, // 스냅샷 기능 삭제됨
   hoveredBarIndex: null,
   notifications: [
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" as const },
@@ -130,7 +130,7 @@ export const useDashboardStore = create<DashboardState>()(
       setShowErrorDisplay: (show: boolean) => set({ showErrorDisplay: show }),
       setHoveredChartPoint: (index: number | null) => set({ hoveredChartPoint: index }),
       setChartType: (type: 'area' | 'line') => set({ chartType: type }),
-      toggleSnapshotCollapsed: () => set((state) => ({ snapshotCollapsed: !state.snapshotCollapsed })),
+      // toggleSnapshotCollapsed 제거 (스냅샷 기능 삭제됨)
       setHoveredBarIndex: (index: number | null) => set({ hoveredBarIndex: index }),
       
       addNotification: (notification) => {
@@ -163,7 +163,7 @@ export const useDashboardStore = create<DashboardState>()(
       // 민감하지 않은 UI 상태만 저장
       partialize: (state) => ({
         chartType: state.chartType,
-        snapshotCollapsed: state.snapshotCollapsed,
+        // snapshotCollapsed: state.snapshotCollapsed, // 스냅샷 기능 삭제됨
         showWebcam: state.showWebcam
       })
     }
@@ -192,7 +192,7 @@ export const useDashboardUI = () => useDashboardStore((state) => ({
   setShowWebcam: state.setShowWebcam,
   setShowPermissionLayer: state.setShowPermissionLayer,
   setShowErrorDisplay: state.setShowErrorDisplay,
-  toggleSnapshotCollapsed: state.toggleSnapshotCollapsed,
+      // toggleSnapshotCollapsed: state.toggleSnapshotCollapsed, // 스냅샷 기능 삭제됨
   addNotification: state.addNotification,
   removeNotification: state.removeNotification
 }))

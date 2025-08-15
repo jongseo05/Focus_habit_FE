@@ -369,82 +369,7 @@ function getEventDescription(eventType: string, payload?: any): string {
   return descriptionMap[eventType] || '활동 감지됨'
 }
 
-// =====================================================
-// 10. 일일 스냅샷 훅
-// =====================================================
-
-export function useDailySnapshots(date: string) {
-  return useQuery({
-    queryKey: [...reportKeys.all, 'snapshots', date],
-    queryFn: async () => {
-      const { supabaseBrowser } = await import('@/lib/supabase/client')
-      const supabase = supabaseBrowser()
-      
-      // 사용자 인증 확인
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError || !user) {
-        throw new Error('인증이 필요합니다')
-      }
-      
-      // 해당 날짜의 세션 ID들 조회
-      const { data: sessions, error: sessionsError } = await supabase
-        .from('focus_session')
-        .select('session_id')
-        .eq('user_id', user.id)
-        .gte('started_at', `${date}T00:00:00`)
-        .lt('started_at', `${date}T23:59:59`)
-      
-      if (sessionsError) {
-        throw new Error(sessionsError.message)
-      }
-      
-      const sessionIds = sessions?.map(s => s.session_id) || []
-      
-      if (sessionIds.length === 0) {
-        return []
-      }
-      
-      // 스냅샷 데이터 조회
-      const { data: snapshots, error: snapshotsError } = await supabase
-        .from('snapshot')
-        .select('*')
-        .in('session_id', sessionIds)
-        .order('ts', { ascending: false })
-      
-      if (snapshotsError) {
-        throw new Error(snapshotsError.message)
-      }
-      
-      // 스냅샷 데이터 변환
-      return snapshots?.map(snapshot => ({
-        id: snapshot.snapshot_id,
-        timestamp: new Date(snapshot.ts).toLocaleTimeString('ko-KR'),
-        thumbnail: snapshot.thumb_url || '/placeholder.svg?height=120&width=160',
-        focusScore: snapshot.focus_score || 0,
-        notes: getSnapshotNotes(snapshot.focus_score),
-        type: getSnapshotType(snapshot.focus_score)
-      })) || []
-    },
-    staleTime: 10 * 60 * 1000, // 10분
-    enabled: !!date,
-  })
-}
-
-function getSnapshotNotes(focusScore: number): string {
-  if (focusScore >= 90) return "최고 집중 순간 - 우수한 자세와 주의력"
-  if (focusScore >= 80) return "높은 집중도 유지 중"
-  if (focusScore >= 60) return "보통 수준의 집중도"
-  if (focusScore >= 40) return "집중도가 다소 낮음"
-  return "집중도가 매우 낮음 - 개선 필요"
-}
-
-function getSnapshotType(focusScore: number): 'high_focus' | 'distraction' | 'break' | 'normal' {
-  if (focusScore >= 90) return 'high_focus'
-  if (focusScore >= 70) return 'normal'
-  if (focusScore >= 50) return 'break'
-  return 'distraction'
-} 
+// 스냅샷 관련 훅 제거 (테이블 삭제됨) 
 
 // =====================================================
 // 11. 일일 성취도 훅
@@ -646,31 +571,8 @@ export function useSessionReport(sessionId: string) {
         console.error('샘플 데이터 조회 실패:', samplesError)
       }
 
-      // 세션 기간의 ML 피쳐 데이터 조회 (ml_features 테이블 - 집중 상태 포함)
-      const { data: mlFeatures, error: mlFeaturesError } = await supabase
-        .from('ml_features')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('ts', { ascending: true })
-
-      if (mlFeaturesError) {
-        console.error('ML 피쳐 데이터 조회 실패:', mlFeaturesError)
-      }
-
-      // 데이터 통합: focus_sample과 ml_features를 합쳐서 samples로 반환
-      const allSamples = [
-        ...(samples || []),
-        ...(mlFeatures || []).map(ml => ({
-          ...ml,
-          // focus_sample 테이블과 호환성을 위한 매핑
-          score: ml.focus_score,
-          ear_value: ml.ear_value,
-          eye_status: ml.eye_status,
-          head_pose_pitch: ml.head_pose_pitch,
-          head_pose_yaw: ml.head_pose_yaw,
-          head_pose_roll: ml.head_pose_roll
-        }))
-      ].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+      // ML 피쳐 데이터 조회 제거 (테이블 삭제됨)
+      const allSamples = samples || []
 
       // 세션 기간의 이벤트 데이터 조회
       const { data: events, error: eventsError } = await supabase
@@ -683,32 +585,19 @@ export function useSessionReport(sessionId: string) {
         console.error('이벤트 데이터 조회 실패:', eventsError)
       }
 
-      // 세션 기간의 스냅샷 데이터 조회
-      const { data: snapshots, error: snapshotsError } = await supabase
-        .from('snapshot')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('ts', { ascending: true })
-
-      if (snapshotsError) {
-        console.error('스냅샷 데이터 조회 실패:', snapshotsError)
-      }
+      // 스냅샷 데이터 조회 제거 (테이블 삭제됨)
 
       console.log('📊 세션 데이터 조회 결과:', {
         sessionId,
         samplesCount: samples?.length || 0,
-        mlFeaturesCount: mlFeatures?.length || 0,
         totalSamplesCount: allSamples.length,
-        eventsCount: events?.length || 0,
-        snapshotsCount: snapshots?.length || 0
+        eventsCount: events?.length || 0
       })
 
       return {
         session,
         samples: allSamples,
-        events: events || [],
-        snapshots: snapshots || [],
-        mlFeatures: mlFeatures || []
+        events: events || []
       }
     },
     staleTime: 5 * 60 * 1000,
