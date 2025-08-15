@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { profileKeys } from './useProfile'
+import { useAuth } from './useAuth'
 
 // 프로필 이미지 업로드
 export const useUploadProfileImage = () => {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
     mutationFn: async (file: File) => {
@@ -24,7 +26,9 @@ export const useUploadProfileImage = () => {
     },
     onSuccess: (data) => {
       // 프로필 데이터 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: profileKeys.profile() })
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: profileKeys.profile(user.id) })
+      }
       
       // 성공 메시지 표시 (선택사항)
       console.log(data.message)
@@ -38,6 +42,7 @@ export const useUploadProfileImage = () => {
 // 프로필 이미지 삭제
 export const useDeleteProfileImage = () => {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
     mutationFn: async () => {
@@ -54,7 +59,9 @@ export const useDeleteProfileImage = () => {
     },
     onSuccess: (data) => {
       // 프로필 데이터 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: profileKeys.profile() })
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: profileKeys.profile(user.id) })
+      }
       
       // 성공 메시지 표시 (선택사항)
       console.log(data.message)

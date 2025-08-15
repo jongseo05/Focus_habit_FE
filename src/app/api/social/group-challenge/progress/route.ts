@@ -1,111 +1,164 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
-// POST: 진행 상황 업데이트
+// 그룹 챌린지 진행률 업데이트
 export async function POST(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 인증 확인
+    // 사용자 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
     }
 
     const body = await request.json()
-    const { challenge_id, progress_value } = body
+    const { challenge_id, contribution } = body
 
-    if (!challenge_id || progress_value === undefined) {
-      return NextResponse.json({ error: 'Challenge ID and progress value are required' }, { status: 400 })
+    if (!challenge_id || contribution === undefined) {
+      return NextResponse.json({ error: 'challenge_id와 contribution이 필요합니다.' }, { status: 400 })
     }
 
-    // 챌린지 존재 여부 및 활성 상태 확인
+    // 챌린지 존재 확인
     const { data: challenge, error: challengeError } = await supabase
-      .from('group_challenges')
+      .from('group_challenge')
       .select('*')
       .eq('challenge_id', challenge_id)
       .eq('is_active', true)
       .single()
 
     if (challengeError || !challenge) {
-      return NextResponse.json({ error: 'Challenge not found or inactive' }, { status: 404 })
+      return NextResponse.json({ error: '활성 챌린지를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // 참가자 확인
+    // 사용자가 해당 룸의 참가자인지 확인
     const { data: participant, error: participantError } = await supabase
-      .from('challenge_participants')
-      .select('*')
+      .from('room_participant')
+      .select('participant_id')
+      .eq('room_id', challenge.room_id)
+      .eq('user_id', user.id)
+      .is('left_at', null)
+      .single()
+
+    if (participantError || !participant) {
+      return NextResponse.json({ error: '해당 룸의 참가자가 아닙니다.' }, { status: 403 })
+    }
+
+    // 기존 기여도 조회
+    const { data: existingContribution, error: existingError } = await supabase
+      .from('group_challenge_participant')
+      .select('contribution')
       .eq('challenge_id', challenge_id)
       .eq('user_id', user.id)
       .single()
 
-    if (participantError || !participant) {
-      return NextResponse.json({ error: 'Not a participant of this challenge' }, { status: 403 })
+    if (existingError && existingError.code !== 'PGRST116') {
+      console.error('기존 기여도 조회 실패:', existingError)
+      return NextResponse.json({ error: '기여도 조회에 실패했습니다.' }, { status: 500 })
     }
 
-    // 진행 상황 업데이트
-    const { error: updateError } = await supabase
-      .from('challenge_participants')
-      .update({ 
-        current_progress: progress_value,
-        updated_at: new Date().toISOString()
+    // 기여도 업데이트 또는 새로 생성
+    let newContribution = contribution
+    if (existingContribution) {
+      newContribution = existingContribution.contribution + contribution
+    }
+
+    const { data: updatedParticipant, error: updateError } = await supabase
+      .from('group_challenge_participant')
+      .upsert({
+        challenge_id,
+        user_id: user.id,
+        contribution: newContribution,
+        last_contribution_at: new Date().toISOString()
       })
-      .eq('participant_id', participant.participant_id)
+      .select()
+      .single()
 
     if (updateError) {
-      console.error('진행 상황 업데이트 실패:', updateError)
-      return NextResponse.json({ error: 'Failed to update progress' }, { status: 500 })
+      console.error('기여도 업데이트 실패:', updateError)
+      return NextResponse.json({ error: '기여도 업데이트에 실패했습니다.' }, { status: 500 })
     }
 
-    // 그룹 전체 진행 상황 계산
-    const { data: allParticipants, error: fetchError } = await supabase
-      .from('challenge_participants')
-      .select('current_progress')
+    // 전체 진행률 계산
+    const { data: allParticipants, error: allParticipantsError } = await supabase
+      .from('group_challenge_participant')
+      .select('contribution')
       .eq('challenge_id', challenge_id)
 
-    if (fetchError) {
-      console.error('참가자 목록 조회 실패:', fetchError)
-      return NextResponse.json({ error: 'Failed to fetch participants' }, { status: 500 })
+    if (allParticipantsError) {
+      console.error('전체 참가자 조회 실패:', allParticipantsError)
+      return NextResponse.json({ error: '진행률 계산에 실패했습니다.' }, { status: 500 })
     }
 
-    // 목표 타입에 따른 진행 상황 계산
-    let totalProgress = 0
-    let averageProgress = 0
-    let progressPercentage = 0
+    const totalContribution = allParticipants.reduce((sum, p) => sum + (p.contribution || 0), 0)
+    const completionPercentage = Math.min((totalContribution / challenge.target_value) * 100, 100)
 
-    if (allParticipants && allParticipants.length > 0) {
-      const totalParticipants = allParticipants.length
-      
-      if (challenge.goal_type === 'total_hours') {
-        totalProgress = allParticipants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
-        progressPercentage = Math.min((totalProgress / challenge.goal_value) * 100, 100)
-      } else if (challenge.goal_type === 'total_sessions') {
-        totalProgress = allParticipants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
-        progressPercentage = Math.min((totalProgress / challenge.goal_value) * 100, 100)
-      } else if (challenge.goal_type === 'average_focus_score') {
-        totalProgress = allParticipants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
-        averageProgress = totalProgress / totalParticipants
-        progressPercentage = Math.min((averageProgress / challenge.goal_value) * 100, 100)
+    // 챌린지 진행률 업데이트
+    const { error: challengeUpdateError } = await supabase
+      .from('group_challenge')
+      .update({
+        current_value: totalContribution,
+        is_completed: completionPercentage >= 100
+      })
+      .eq('challenge_id', challenge_id)
+
+    if (challengeUpdateError) {
+      console.error('챌린지 진행률 업데이트 실패:', challengeUpdateError)
+      return NextResponse.json({ error: '챌린지 진행률 업데이트에 실패했습니다.' }, { status: 500 })
+    }
+
+    // Realtime 이벤트 전송
+    try {
+      supabase
+        .channel(`social_room:${challenge.room_id}`)
+        .send({
+          type: 'broadcast',
+          event: 'group_challenge_progress_updated',
+          payload: {
+            challenge_id,
+            room_id: challenge.room_id,
+            current_value: totalContribution,
+            completion_percentage: completionPercentage,
+            updated_by: user.id,
+            timestamp: new Date().toISOString()
+          }
+        })
+    } catch (realtimeError) {
+      console.warn('Realtime 이벤트 전송 실패:', realtimeError)
+    }
+
+    // 챌린지 완료 시 완료 이벤트도 전송
+    if (completionPercentage >= 100) {
+      try {
+        supabase
+          .channel(`social_room:${challenge.room_id}`)
+          .send({
+            type: 'broadcast',
+            event: 'group_challenge_completed',
+            payload: {
+              challenge_id,
+              room_id: challenge.room_id,
+              completed_by: user.id,
+              final_value: totalContribution,
+              timestamp: new Date().toISOString()
+            }
+          })
+      } catch (realtimeError) {
+        console.warn('챌린지 완료 Realtime 이벤트 전송 실패:', realtimeError)
       }
     }
 
-    const groupProgress = {
-      total: totalProgress,
-      average: averageProgress,
-      participants_count: allParticipants?.length || 0,
-      goal_value: challenge.goal_value,
-      progress_percentage: progressPercentage
-    }
-
     return NextResponse.json({ 
-      success: true, 
-      group_progress: groupProgress,
-      message: 'Progress updated successfully'
+      participant: updatedParticipant,
+      total_contribution: totalContribution,
+      completion_percentage: completionPercentage,
+      is_completed: completionPercentage >= 100,
+      message: '기여도가 성공적으로 업데이트되었습니다.'
     })
 
   } catch (error) {
-    console.error('진행 상황 업데이트 오류:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('그룹 챌린지 진행률 업데이트 중 오류:', error)
+    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }
 

@@ -10,7 +10,7 @@ interface MainTabProps {
   participants: ParticipantWithUser[]
   currentUserId: string
   localStream: MediaStream | null
-  remoteStreams: { [key: string]: MediaStream }
+  remoteStreams: Map<string, MediaStream>
   videoError: string | null
   isConnecting: boolean
   onParticipantClick: (participantId: string) => void

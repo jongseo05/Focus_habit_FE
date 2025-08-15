@@ -95,7 +95,75 @@ export interface CompetitionResult {
 }
 
 // =====================================================
-// 3. 친구 시스템 관련 타입 (업데이트됨)
+// 3. 그룹 챌린지 관련 타입
+// =====================================================
+
+export interface GroupChallenge {
+  challenge_id: UUID
+  room_id: UUID
+  title: string
+  description: string
+  type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  target_value: number
+  current_value: number
+  unit: string // 'minutes', 'sessions', 'days', 'points', 'custom'
+  start_date: Timestamp
+  end_date: Timestamp
+  is_active: boolean
+  is_completed: boolean
+  created_by: UUID
+  created_at: Timestamp
+  updated_at: Timestamp
+}
+
+export interface GroupChallengeParticipant {
+  participant_id: UUID
+  challenge_id: UUID
+  user_id: UUID
+  contribution: number
+  last_contribution_at: Timestamp
+  joined_at: Timestamp
+}
+
+export interface GroupChallengeProgress {
+  challenge_id: UUID
+  total_participants: number
+  active_participants: number
+  total_contribution: number
+  average_contribution: number
+  completion_percentage: number
+  estimated_completion_date?: Timestamp
+  top_contributors: Array<{
+    user_id: UUID
+    name: string
+    contribution: number
+    avatar_url?: string
+  }>
+  all_participants: Array<{
+    user_id: UUID
+    contribution: number
+    joined_at: Timestamp
+  }>
+}
+
+export interface CreateGroupChallengeData {
+  room_id: UUID
+  title: string
+  description: string
+  type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  target_value: number
+  unit: string
+  end_date: Timestamp
+}
+
+// 여러 챌린지를 위한 타입
+export interface GroupChallengesResponse {
+  challenges: GroupChallenge[]
+  progressMap: Record<string, GroupChallengeProgress>
+}
+
+// =====================================================
+// 4. 친구 시스템 관련 타입 (업데이트됨)
 // =====================================================
 
 // 친구 요청
@@ -642,5 +710,45 @@ export interface ChallengeInvitationResponsePayload {
 export interface ChallengeInvitationExpiredPayload {
   invitation_id: UUID
   room_id: UUID
+  timestamp: Timestamp
+}
+
+// =====================================================
+// 11. 그룹 챌린지 Realtime 이벤트 타입
+// =====================================================
+
+export interface GroupChallengeCreatedPayload {
+  challenge_id: UUID
+  room_id: UUID
+  title: string
+  type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  target_value: number
+  created_by: UUID
+  timestamp: Timestamp
+}
+
+export interface GroupChallengeProgressUpdatedPayload {
+  challenge_id: UUID
+  room_id: UUID
+  current_value: number
+  completion_percentage: number
+  updated_by: UUID
+  timestamp: Timestamp
+}
+
+export interface GroupChallengeCompletedPayload {
+  challenge_id: UUID
+  room_id: UUID
+  completed_by: UUID
+  final_value: number
+  timestamp: Timestamp
+}
+
+export interface GroupChallengeDeletedPayload {
+  challenge_id: UUID
+  room_id: UUID
+  title: string
+  type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  deleted_by: UUID
   timestamp: Timestamp
 }

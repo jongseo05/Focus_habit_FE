@@ -55,7 +55,12 @@ const SpeechRecognition: any =
 
 export default function HybridAudioPipeline() {
   // 집중 모드 상태 가져오기
-  const { isRunning: isFocusSessionRunning, isPaused: isFocusSessionPaused } = useDashboardStore()
+  const { 
+    isRunning: isFocusSessionRunning, 
+    isPaused: isFocusSessionPaused,
+    focusScore,
+    updateFocusScore
+  } = useDashboardStore()
   
   // KoELECTRA 모델 훅
   const { 
@@ -431,6 +436,10 @@ export default function HybridAudioPipeline() {
             audioLevelSpeechStartRef.current = Date.now();
             silenceStartTimeRef.current = null; // 조용함 타이머 리셋
             rapidDropDetectedRef.current = false; // 급격한 하락 플래그 리셋
+            
+            // 발화 시작 시점 집중도 저장
+            saveSpeechStartFocusScore();
+            
             console.log('🎤 오디오 레벨 기반 발화 시작 감지 (레벨:', finalLevel.toFixed(1), ')');
           }
           
@@ -869,44 +878,8 @@ export default function HybridAudioPipeline() {
       const startTimestamp = speechStartTimeRef.current ? new Date(speechStartTimeRef.current).toLocaleTimeString() : '알 수 없음';
       const endTimestamp = speechEndTimeRef.current ? new Date(speechEndTimeRef.current).toLocaleTimeString() : '알 수 없음';
 
-      // KoELECTRA 모델 추론 (우선순위)
-      let isStudyRelated = false;
-      let koelectraConfidence = 0;
-      let analysisMethod = '키워드';
-
-      if (isModelLoaded) {
-        try {
-          
-          const result = await koelectraInference(text);
-          
-          // 디버깅: 추론 결과 상세 로그
-          
-          
-          if (result && result.confidence >= 0.6) {
-            // 디버깅: 클래스 판정 과정
-            const class0Score = result.logits[0];
-            const class1Score = result.logits[1];
-            const isClass1Higher = class1Score > class0Score;
-            
-            
-            
-            isStudyRelated = isClass1Higher; // 공부 관련 클래스가 더 높은 경우
-            koelectraConfidence = result.confidence;
-            analysisMethod = 'KoELECTRA';
-          } else {
-            
-            // 신뢰도가 낮으면 키워드 기반으로 대체
-            isStudyRelated = analyzeStudyRelatedByKeywords(text);
-          }
-        } catch (error) {
-          console.warn('KoELECTRA 추론 실패, 키워드 기반으로 대체:', error);
-          isStudyRelated = analyzeStudyRelatedByKeywords(text);
-        }
-      } else {
-        console.log('🎤 KoELECTRA 모델 미로드 - 키워드 기반으로 대체');
-        // 모델이 로드되지 않은 경우 키워드 기반
-        isStudyRelated = analyzeStudyRelatedByKeywords(text);
-      }
+      // GPT 발화분석 API 호출
+      const gptResult = await analyzeSpeechWithGPT(text);
 
       // 문맥 분석
       const context = analyzeTextContext(text);
@@ -914,7 +887,7 @@ export default function HybridAudioPipeline() {
       const contextLabel = getContextLabel(context);
 
       // 최종 판정 (문맥 가중치 적용)
-      const finalJudgment = isStudyRelated && contextualWeight > 0.3;
+      const finalJudgment = gptResult.isStudyRelated && contextualWeight > 0.3;
 
       const processingTime = performance.now() - startTime;
 
@@ -926,9 +899,9 @@ export default function HybridAudioPipeline() {
 ├─ 실제 발화 시간: ${actualSpeechDuration.toFixed(1)}초
 ├─ 전체 분석 시간: ${duration.toFixed(1)}초
 ├─ 원문: "${text}"
-├─ 분석 방법: ${analysisMethod}
-├─ KoELECTRA 신뢰도: ${koelectraConfidence.toFixed(3)}
-├─ 공부 관련: ${isStudyRelated ? '✅' : '❌'}
+├─ 분석 방법: GPT
+├─ GPT 신뢰도: ${gptResult.confidence.toFixed(3)}
+├─ 공부 관련: ${gptResult.isStudyRelated ? '✅' : '❌'}
 ├─ 문맥: ${contextLabel} (가중치: ${contextualWeight.toFixed(2)})
 ├─ 최종 판정: ${finalJudgment ? '공부 관련 발화' : '잡담'}
 └─ 처리 시간: ${processingTime.toFixed(1)}ms
@@ -944,6 +917,21 @@ export default function HybridAudioPipeline() {
       audioLevelSpeechStartRef.current = null;
       audioLevelSpeechEndRef.current = null;
       
+      // 발화 분석 결과를 상태에 저장
+      setLastSpeechAnalysis({
+        isStudyRelated: gptResult.isStudyRelated,
+        confidence: gptResult.confidence,
+        reasoning: gptResult.reasoning,
+        timestamp: Date.now(),
+        shouldOverrideFocus: finalJudgment // 발화 분석 결과를 집중도 덮어쓰기 로직에 사용
+      });
+
+      // 공부 관련 발화가 감지된 경우 집중도 덮어쓰기 실행
+      if (finalJudgment) {
+        console.log('🎤 공부 관련 발화 감지 - 집중도 덮어쓰기 실행');
+        await overrideFocusScoresDuringSpeech();
+      }
+
       console.log('🎤 발화 분석 완료 - 버퍼 및 상태 초기화됨');
 
     } catch (error) {
@@ -968,7 +956,39 @@ export default function HybridAudioPipeline() {
         }, 500);
       }
     }
-  }, [isModelLoaded, koelectraInference, isAnalyzing, restartSpeechRecognition]);
+  }, [isModelLoaded, isAnalyzing, restartSpeechRecognition]);
+
+  // GPT 발화분석 API 호출 함수
+  const analyzeSpeechWithGPT = async (transcript: string): Promise<{ isStudyRelated: boolean; confidence: number; reasoning: string }> => {
+    try {
+      const response = await fetch('/api/classify-speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transcript }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`GPT API 호출 실패: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return {
+        isStudyRelated: result.isStudyRelated,
+        confidence: result.confidence || 0.8,
+        reasoning: result.reasoning || 'GPT 분석 결과'
+      };
+    } catch (error) {
+      console.error('GPT 발화분석 오류:', error);
+      // GPT API 실패 시 기존 키워드 기반 분석으로 폴백
+      return {
+        isStudyRelated: analyzeStudyRelatedByKeywords(transcript),
+        confidence: 0.5,
+        reasoning: '키워드 기반 분석 (GPT API 실패)'
+      };
+    }
+  };
 
   // 텍스트 문맥을 분석하는 헬퍼 함수
   const analyzeTextContext = (text: string):
@@ -1079,6 +1099,93 @@ export default function HybridAudioPipeline() {
       default: return '불명확';
     }
   };
+
+  // 발화 분석 결과를 저장하는 상태
+  const [lastSpeechAnalysis, setLastSpeechAnalysis] = useState<{
+    isStudyRelated: boolean;
+    confidence: number;
+    reasoning: string;
+    timestamp: number;
+    shouldOverrideFocus: boolean;
+  } | null>(null);
+
+  // 발화 시작 시점의 집중도 저장
+  const [speechStartFocusScore, setSpeechStartFocusScore] = useState<number | null>(null);
+  const [speechStartTime, setSpeechStartTime] = useState<number | null>(null);
+
+  // 발화 시점 집중도 덮어쓰기 로직
+  const shouldOverrideFocusScore = useCallback((currentFocusScore: number): boolean => {
+    if (!lastSpeechAnalysis || !speechStartFocusScore || !speechStartTime) return false;
+    
+    // 최근 5초 내 발화 분석 결과가 있고, 학습 관련 발화인 경우
+    const timeSinceSpeech = Date.now() - lastSpeechAnalysis.timestamp;
+    const isRecentSpeech = timeSinceSpeech < 5000; // 5초 내
+    
+    return isRecentSpeech && 
+           lastSpeechAnalysis.isStudyRelated && 
+           lastSpeechAnalysis.confidence > 0.7;
+  }, [lastSpeechAnalysis, speechStartFocusScore, speechStartTime]);
+
+  // 집중도 점수 계산 시 발화 분석 결과 반영
+  const calculateAdjustedFocusScore = useCallback((baseFocusScore: number): number => {
+    if (shouldOverrideFocusScore(baseFocusScore)) {
+      // 학습 관련 발화가 감지된 경우, 발화 시작 직전 집중도로 덮어쓰기
+      console.log(`🎤 발화 분석 기반 집중도 덮어쓰기: ${baseFocusScore} → ${speechStartFocusScore}`);
+      return speechStartFocusScore!;
+    }
+    return baseFocusScore;
+  }, [shouldOverrideFocusScore, speechStartFocusScore]);
+
+  // 발화 시작 시점 집중도 저장
+  const saveSpeechStartFocusScore = useCallback(() => {
+    if (focusScore !== undefined) {
+      setSpeechStartFocusScore(focusScore);
+      setSpeechStartTime(Date.now());
+      console.log(`🎤 발화 시작 시점 집중도 저장: ${focusScore}점`);
+    }
+  }, [focusScore]);
+
+  // 발화 분석 후 집중도 덮어쓰기 및 DB 저장
+  const overrideFocusScoresDuringSpeech = useCallback(async () => {
+    if (!lastSpeechAnalysis?.isStudyRelated || !speechStartFocusScore || !speechStartTime) {
+      return;
+    }
+
+    try {
+      // 발화 시작 시점부터 현재까지의 집중도 값을 발화 시작 직전 값으로 덮어쓰기
+      const speechDuration = Date.now() - speechStartTime;
+      const overrideData = {
+        startTime: speechStartTime,
+        endTime: Date.now(),
+        duration: speechDuration,
+        originalFocusScore: focusScore,
+        overrideFocusScore: speechStartFocusScore,
+        reason: `공부 관련 발화 감지: ${lastSpeechAnalysis.reasoning}`,
+        confidence: lastSpeechAnalysis.confidence
+      };
+
+      console.log('🎤 집중도 덮어쓰기 데이터:', overrideData);
+
+      // DB에 집중도 덮어쓰기 정보 저장 (API 호출)
+      const response = await fetch('/api/focus-session/override-focus-scores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(overrideData),
+      });
+
+      if (response.ok) {
+        console.log('✅ 집중도 덮어쓰기 DB 저장 완료');
+        // 집중도 점수 즉시 업데이트
+        updateFocusScore(speechStartFocusScore);
+      } else {
+        console.error('❌ 집중도 덮어쓰기 DB 저장 실패:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ 집중도 덮어쓰기 처리 중 오류:', error);
+    }
+  }, [lastSpeechAnalysis, speechStartFocusScore, speechStartTime, focusScore, updateFocusScore]);
 
   useEffect(() => {
     // Speech Recognition 설정만 먼저 수행 (한 번만)

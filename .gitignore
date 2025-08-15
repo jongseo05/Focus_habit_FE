@@ -45,3 +45,10 @@ scripts/apply-social-schema.sql
 scripts/create-profiles-table.sql
 scripts/create-storage-buckets.sql
 scripts/apply-social-schema.sql
+
+# scripts folder
+scripts/
+
+# env file
+.env
+.env.local

@@ -15,6 +15,7 @@ import { VideoGrid } from './VideoGrid'
 import { ChallengeHUD } from './ChallengeHUD'
 import { ChallengeResultPanel } from './ChallengeResultPanel'
 import { ChallengeInvitationPanel } from './ChallengeInvitationPanel'
+import { GroupChallengePanel } from './GroupChallengePanel'
 import {
   StudyRoomHeader,
   StudyRoomNotifications,
@@ -33,11 +34,18 @@ import type {
   Challenge,
   ChallengeParticipant,
   ChallengeInvitation,
-      ChallengeInvitationCreatedPayload,
-    ChallengeInvitationResponsePayload,
-    ChallengeInvitationExpiredPayload,
-    ChallengeStartedPayload,
-    ChallengeEndedPayload
+  ChallengeInvitationCreatedPayload,
+  ChallengeInvitationResponsePayload,
+  ChallengeInvitationExpiredPayload,
+  ChallengeStartedPayload,
+  ChallengeEndedPayload,
+  GroupChallenge,
+  GroupChallengeProgress,
+  CreateGroupChallengeData,
+  GroupChallengeCreatedPayload,
+  GroupChallengeProgressUpdatedPayload,
+  GroupChallengeCompletedPayload,
+  GroupChallengeDeletedPayload
 } from '@/types/social'
 
 interface StudyRoomProps {
@@ -49,6 +57,14 @@ interface StudyRoomProps {
 
 export function StudyRoom({ room, onClose }: StudyRoomProps) {
   const { data: user } = useUser()
+  
+  // 디버그: 사용자 ID 출력
+  useEffect(() => {
+    if (user?.id) {
+      console.log('현재 사용자 ID:', user.id)
+    }
+  }, [user?.id])
+  
   const leaveRoomMutation = useLeaveStudyRoom()
   const endRoomMutation = useEndStudyRoom()
   const [participants, setParticipants] = useState<ParticipantWithUser[]>([])
@@ -104,6 +120,10 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
   // 대결 초대 관련 상태
   const [currentInvitation, setCurrentInvitation] = useState<ChallengeInvitation | null>(null)
   const [showInvitationPanel, setShowInvitationPanel] = useState(false)
+
+  // 그룹 챌린지 관련 상태
+  const [currentGroupChallenges, setCurrentGroupChallenges] = useState<GroupChallenge[]>([])
+  const [groupChallengeProgressMap, setGroupChallengeProgressMap] = useState<Record<string, GroupChallengeProgress>>({})
 
   // 집중세션 관련 상태
   const [isFocusSessionRunning, setIsFocusSessionRunning] = useState(false)
@@ -176,6 +196,119 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       console.error('대결 초대 로드 중 오류:', error)
     }
   }, [room?.room_id])
+
+  // 그룹 챌린지 로드
+  const loadGroupChallenge = useCallback(async () => {
+    if (!room?.room_id) return
+    
+    try {
+      const response = await fetch(`/api/social/group-challenge?room_id=${room.room_id}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.challenges && data.challenges.length > 0) {
+          setCurrentGroupChallenges(data.challenges)
+          setGroupChallengeProgressMap(data.progressMap || {})
+          console.log('그룹 챌린지 로드 완료:', data.challenges)
+        } else {
+          setCurrentGroupChallenges([])
+          setGroupChallengeProgressMap({})
+        }
+      } else {
+        console.error('그룹 챌린지 로드 실패:', response.status)
+      }
+    } catch (error) {
+      console.error('그룹 챌린지 로드 중 오류:', error)
+    }
+  }, [room?.room_id])
+
+  // 그룹 챌린지 생성
+  const createGroupChallenge = useCallback(async (data: CreateGroupChallengeData) => {
+    try {
+      console.log('그룹 챌린지 생성 요청 데이터:', data)
+      console.log('현재 room 객체:', room)
+      console.log('room?.room_id:', room?.room_id)
+      
+      const response = await fetch('/api/social/group-challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('그룹 챌린지 생성 완료:', result.challenge)
+        
+        // 새 챌린지를 기존 목록에 추가
+        setCurrentGroupChallenges(prev => [result.challenge, ...prev])
+        
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '새로운 그룹 챌린지가 생성되었습니다!',
+          type: 'join'
+        }])
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '그룹 챌린지 생성에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('그룹 챌린지 생성 실패:', error)
+      throw error
+    }
+  }, [])
+
+  // 그룹 챌린지 참여
+  const joinGroupChallenge = useCallback(async (challengeId: string) => {
+    try {
+      const response = await fetch('/api/social/group-challenge/participate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge_id: challengeId })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('그룹 챌린지 참여 완료:', result)
+        
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '그룹 챌린지에 참여했습니다!',
+          type: 'join'
+        }])
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '그룹 챌린지 참여에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('그룹 챌린지 참여 실패:', error)
+      throw error
+    }
+  }, [])
+
+  // 그룹 챌린지 탈퇴
+  const leaveGroupChallenge = useCallback(async (challengeId: string) => {
+    try {
+      const response = await fetch(`/api/social/group-challenge/participate?challenge_id=${challengeId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('그룹 챌린지 탈퇴 완료:', result)
+        
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '그룹 챌린지에서 탈퇴했습니다.',
+          type: 'leave'
+        }])
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '그룹 챌린지 탈퇴에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('그룹 챌린지 탈퇴 실패:', error)
+      throw error
+    }
+  }, [])
 
      // 실제 대결 시작 (pending -> active) - 먼저 정의
   const startActualCompetition = useCallback(async (challengeId?: string) => {
@@ -1267,6 +1400,92 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     }
   }, [room?.room_id, focusSessionTimer])
 
+  // 그룹 챌린지 Realtime 이벤트 핸들러들
+  const handleGroupChallengeCreated = useCallback((data: GroupChallengeCreatedPayload) => {
+    console.log('그룹 챌린지 생성 감지:', data)
+    
+    // 현재 룸의 챌린지인지 확인
+    if (data.room_id === room?.room_id) {
+      // 그룹 챌린지 정보 로드
+      loadGroupChallenge()
+      
+      // 알림 추가
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '새로운 그룹 챌린지가 생성되었습니다!',
+        type: 'join'
+      }])
+    }
+  }, [room?.room_id, loadGroupChallenge])
+
+  const handleGroupChallengeProgressUpdated = useCallback((data: GroupChallengeProgressUpdatedPayload) => {
+    console.log('그룹 챌린지 진행률 업데이트 감지:', data)
+    
+    // 현재 룸의 챌린지인지 확인
+    if (data.room_id === room?.room_id) {
+      // 진행률 업데이트
+      setGroupChallengeProgressMap(prev => {
+        const currentProgress = prev[data.challenge_id]
+        if (currentProgress) {
+          return {
+            ...prev,
+            [data.challenge_id]: {
+              ...currentProgress,
+              total_contribution: data.current_value,
+              completion_percentage: data.completion_percentage
+            }
+          }
+        }
+        return prev
+      })
+      
+      // 챌린지 완료 체크
+      if (data.completion_percentage >= 100) {
+        setCurrentGroupChallenges(prev => prev.map(challenge => 
+          challenge.challenge_id === data.challenge_id 
+            ? { ...challenge, is_completed: true }
+            : challenge
+        ))
+        
+        setNotifications(prev => [...prev, {
+          id: generateNotificationId(),
+          message: '🎉 그룹 챌린지가 완료되었습니다!',
+          type: 'join'
+        }])
+      }
+    }
+  }, [room?.room_id])
+
+  const handleGroupChallengeCompleted = useCallback((data: GroupChallengeCompletedPayload) => {
+    console.log('그룹 챌린지 완료 감지:', data)
+    if (data.room_id === room?.room_id) {
+      setCurrentGroupChallenges(prev => prev.map(challenge =>
+        challenge.challenge_id === data.challenge_id
+          ? { ...challenge, is_completed: true }
+          : challenge
+      ))
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '🎉 그룹 챌린지가 완료되었습니다!',
+        type: 'join'
+      }])
+    }
+  }, [room?.room_id])
+
+  const handleGroupChallengeDeleted = useCallback((data: GroupChallengeDeletedPayload) => {
+    console.log('그룹 챌린지 삭제 감지:', data)
+    if (data.room_id === room?.room_id) {
+      setCurrentGroupChallenges(prev => prev.filter(challenge => 
+        challenge.challenge_id !== data.challenge_id
+      ))
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: `🗑️ "${data.title}" 챌린지가 삭제되었습니다.`,
+        type: 'leave'
+      }])
+    }
+  }, [room?.room_id])
+
   // 로그 제한을 위한 ref (필요한 경우에만 사용)
   const lastLogTimeRef = useRef<number>(0)
 
@@ -1341,32 +1560,36 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
      return () => clearInterval(pollInterval)
    }, [room?.room_id, challenge.currentChallenge?.state, participants, handleFocusUpdate])
 
-     // 소셜 Realtime 연결
-       const { 
-      isConnected, 
-      joinRoom, 
-      leaveRoom, 
-      sendFocusUpdate: sendFocusUpdateWS, 
-      sendEncouragement: sendEncouragementWS 
-    } = useSocialRealtime({
-      roomId: room?.room_id,
-      userId: user?.id,
-      onFocusUpdate: handleFocusUpdate,
-      onRoomJoin: handleRoomJoin,
-      onRoomLeave: handleRoomLeave,
-      onEncouragement: handleEncouragement,
-      onChallengeInvitationCreated: handleChallengeInvitationCreated,
-      onChallengeInvitationResponse: handleChallengeInvitationResponse,
-      onChallengeInvitationExpired: handleChallengeInvitationExpired,
-      onChallengeStarted: handleChallengeStarted,
-      onChallengeEnded: handleChallengeEnded,
-      onFocusSessionStarted: handleFocusSessionStarted,
-      onFocusSessionEnded: handleFocusSessionEnded,
-      onError: (error) => {
-        console.warn('Realtime 연결 실패, 폴링 방식으로 대체:', error)
-        // Realtime 연결 실패 시에도 폴링으로 계속 작동
-      }
-    })
+           // 소셜 Realtime 연결
+        const { 
+       isConnected, 
+       joinRoom, 
+       leaveRoom, 
+       sendFocusUpdate: sendFocusUpdateWS, 
+       sendEncouragement: sendEncouragementWS 
+     } = useSocialRealtime({
+       roomId: room?.room_id,
+       userId: user?.id,
+       onFocusUpdate: handleFocusUpdate,
+       onRoomJoin: handleRoomJoin,
+       onRoomLeave: handleRoomLeave,
+       onEncouragement: handleEncouragement,
+       onChallengeInvitationCreated: handleChallengeInvitationCreated,
+       onChallengeInvitationResponse: handleChallengeInvitationResponse,
+       onChallengeInvitationExpired: handleChallengeInvitationExpired,
+       onChallengeStarted: handleChallengeStarted,
+       onChallengeEnded: handleChallengeEnded,
+       onFocusSessionStarted: handleFocusSessionStarted,
+       onFocusSessionEnded: handleFocusSessionEnded,
+       onGroupChallengeCreated: handleGroupChallengeCreated,
+       onGroupChallengeProgressUpdated: handleGroupChallengeProgressUpdated,
+       onGroupChallengeCompleted: handleGroupChallengeCompleted,
+       onGroupChallengeDeleted: handleGroupChallengeDeleted,
+       onError: (error) => {
+         console.warn('Realtime 연결 실패, 폴링 방식으로 대체:', error)
+         // Realtime 연결 실패 시에도 폴링으로 계속 작동
+       }
+     })
 
   // Supabase Realtime 연결 후 룸 입장
   useEffect(() => {
@@ -1444,8 +1667,11 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                // 대결 기록 로드
         loadCompetitionHistory()
         
-        // 대결 초대 로드
-        loadChallengeInvitation()
+                 // 대결 초대 로드
+         loadChallengeInvitation()
+         
+         // 그룹 챌린지 로드
+         loadGroupChallenge()
      }
      }, [room?.room_id, loadParticipants, challenge, loadCompetitionHistory, loadChallengeInvitation])
 
@@ -2014,6 +2240,56 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     )
   }
 
+  const handleLeaveChallenge = useCallback(async (challengeId: string) => {
+    try {
+      const response = await fetch(`/api/social/group-challenge/participate?challenge_id=${challengeId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '챌린지 탈퇴에 실패했습니다.')
+      }
+
+      // 성공 시 챌린지 목록 다시 로드
+      await loadGroupChallenge()
+      
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '챌린지에서 탈퇴했습니다.',
+        type: 'leave'
+      }])
+    } catch (error) {
+      console.error('챌린지 탈퇴 실패:', error)
+      alert(error instanceof Error ? error.message : '챌린지 탈퇴에 실패했습니다.')
+    }
+  }, [loadGroupChallenge])
+
+  const handleDeleteChallenge = useCallback(async (challengeId: string) => {
+    try {
+      const response = await fetch(`/api/social/group-challenge/delete?challenge_id=${challengeId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '챌린지 삭제에 실패했습니다.')
+      }
+
+      // 성공 시 챌린지 목록에서 제거
+      setCurrentGroupChallenges(prev => prev.filter(challenge => challenge.challenge_id !== challengeId))
+      
+      setNotifications(prev => [...prev, {
+        id: generateNotificationId(),
+        message: '챌린지가 삭제되었습니다.',
+        type: 'leave'
+      }])
+    } catch (error) {
+      console.error('챌린지 삭제 실패:', error)
+      alert(error instanceof Error ? error.message : '챌린지 삭제에 실패했습니다.')
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
       {/* 실시간 알림 */}
@@ -2209,31 +2485,45 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
                 </CardContent>
               </Card>
 
-              {/* 집중도 대결 모드 */}
-              <CompetitionPanel
-                isHost={isHost}
-                isCompetitionActive={challenge.currentChallenge?.state === 'active' && competitionTimeLeft > 0}
-                isBreakTime={isBreakTime}
-                competitionTimeLeft={competitionTimeLeft}
-                competitionDuration={competitionDuration}
-                breakDuration={breakDuration}
-                competitionScores={competitionScores}
-                competitionHistory={competitionHistory}
-                participants={participants}
-                showCompetitionSettings={showCompetitionSettings}
-                activeTab={activeTab}
-                customHours={customHours}
-                customMinutes={customMinutes}
-                hasPendingInvitation={!!currentInvitation && currentInvitation.status === 'pending'}
-                onShowCompetitionSettings={setShowCompetitionSettings}
-                onActiveTabChange={setActiveTab}
-                onCompetitionDurationChange={setCompetitionDuration}
-                onBreakDurationChange={setBreakDuration}
-                onCustomHoursChange={setCustomHours}
-                onCustomMinutesChange={setCustomMinutes}
-                                 onStartCompetition={startCompetition}
-                onEndCompetition={endCompetition}
-              />
+                             {/* 집중도 대결 모드 */}
+               <CompetitionPanel
+                 isHost={isHost}
+                 isCompetitionActive={challenge.currentChallenge?.state === 'active' && competitionTimeLeft > 0}
+                 isBreakTime={isBreakTime}
+                 competitionTimeLeft={competitionTimeLeft}
+                 competitionDuration={competitionDuration}
+                 breakDuration={breakDuration}
+                 competitionScores={competitionScores}
+                 competitionHistory={competitionHistory}
+                 participants={participants}
+                 showCompetitionSettings={showCompetitionSettings}
+                 activeTab={activeTab}
+                 customHours={customHours}
+                 customMinutes={customMinutes}
+                 hasPendingInvitation={!!currentInvitation && currentInvitation.status === 'pending'}
+                 onShowCompetitionSettings={setShowCompetitionSettings}
+                 onActiveTabChange={setActiveTab}
+                 onCompetitionDurationChange={setCompetitionDuration}
+                 onBreakDurationChange={setBreakDuration}
+                 onCustomHoursChange={setCustomHours}
+                 onCustomMinutesChange={setCustomMinutes}
+                                  onStartCompetition={startCompetition}
+                 onEndCompetition={endCompetition}
+               />
+
+               {/* 그룹 챌린지 패널 */}
+               <GroupChallengePanel
+                 roomId={room?.room_id || ''}
+                 participants={participants}
+                 isHost={isHost}
+                 currentChallenges={currentGroupChallenges}
+                 challengeProgressMap={groupChallengeProgressMap}
+                 currentUserId={user?.id || ''}
+                 onCreateChallenge={createGroupChallenge}
+                 onJoinChallenge={joinGroupChallenge}
+                 onLeaveChallenge={handleLeaveChallenge}
+                 onDeleteChallenge={handleDeleteChallenge}
+               />
               
 
 

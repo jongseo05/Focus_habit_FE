@@ -69,7 +69,18 @@ export async function GET(request: NextRequest) {
 
 // 요일별 통계 계산 함수
 function calculateDailyStats(sessions: any[], startOfWeek: Date) {
-  const dailyStats = []
+  interface DailyStat {
+    date: string;
+    day_of_week: number;
+    day_name: string;
+    total_time: number;
+    average_score: number;
+    session_count: number;
+    goal_time: number;
+    achieved_goal: boolean;
+  }
+
+  const dailyStats: DailyStat[] = []
   
   // 일주일 데이터 초기화
   for (let i = 0; i < 7; i++) {

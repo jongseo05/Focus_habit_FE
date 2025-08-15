@@ -14,7 +14,11 @@ import type {
   ChallengeEndedPayload,
   ChallengeInvitationCreatedPayload,
   ChallengeInvitationResponsePayload,
-  ChallengeInvitationExpiredPayload
+  ChallengeInvitationExpiredPayload,
+  GroupChallengeCreatedPayload,
+  GroupChallengeProgressUpdatedPayload,
+  GroupChallengeCompletedPayload,
+  GroupChallengeDeletedPayload
 } from '@/types/social'
 
 interface UseSocialRealtimeOptions {
@@ -32,6 +36,10 @@ interface UseSocialRealtimeOptions {
   onChallengeEnded?: (data: ChallengeEndedPayload) => void
   onFocusSessionStarted?: (data: { session_id: string, room_id: string, started_by: string }) => void
   onFocusSessionEnded?: (data: { room_id: string, ended_by: string, duration_min: number }) => void
+  onGroupChallengeCreated?: (data: GroupChallengeCreatedPayload) => void
+  onGroupChallengeProgressUpdated?: (data: GroupChallengeProgressUpdatedPayload) => void
+  onGroupChallengeCompleted?: (data: GroupChallengeCompletedPayload) => void
+  onGroupChallengeDeleted?: (data: GroupChallengeDeletedPayload) => void
   onError?: (error: any) => void
 }
 
@@ -51,6 +59,10 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeEnded,
     onFocusSessionStarted,
     onFocusSessionEnded,
+    onGroupChallengeCreated,
+    onGroupChallengeProgressUpdated,
+    onGroupChallengeCompleted,
+    onGroupChallengeDeleted,
     onError
   } = options
 
@@ -69,6 +81,10 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onChallengeEndedRef = useRef(onChallengeEnded)
   const onFocusSessionStartedRef = useRef(onFocusSessionStarted)
   const onFocusSessionEndedRef = useRef(onFocusSessionEnded)
+  const onGroupChallengeCreatedRef = useRef(onGroupChallengeCreated)
+  const onGroupChallengeProgressUpdatedRef = useRef(onGroupChallengeProgressUpdated)
+  const onGroupChallengeCompletedRef = useRef(onGroupChallengeCompleted)
+  const onGroupChallengeDeletedRef = useRef(onGroupChallengeDeleted)
   
   // ref 업데이트
   useEffect(() => {
@@ -85,7 +101,29 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
     onChallengeEndedRef.current = onChallengeEnded
     onFocusSessionStartedRef.current = onFocusSessionStarted
     onFocusSessionEndedRef.current = onFocusSessionEnded
-  }, [onError, onRoomJoin, onRoomLeave, onEncouragement, onFocusUpdate, onChallengeEvent, onChallengeInvitationCreated, onChallengeInvitationResponse, onChallengeInvitationExpired, onChallengeStarted, onChallengeEnded, onFocusSessionStarted, onFocusSessionEnded])
+    onGroupChallengeCreatedRef.current = onGroupChallengeCreated
+    onGroupChallengeProgressUpdatedRef.current = onGroupChallengeProgressUpdated
+    onGroupChallengeCompletedRef.current = onGroupChallengeCompleted
+    onGroupChallengeDeletedRef.current = onGroupChallengeDeleted
+  }, [
+    onError,
+    onRoomJoin,
+    onRoomLeave,
+    onEncouragement,
+    onFocusUpdate,
+    onChallengeEvent,
+    onChallengeInvitationCreated,
+    onChallengeInvitationResponse,
+    onChallengeInvitationExpired,
+    onChallengeStarted,
+    onChallengeEnded,
+    onFocusSessionStarted,
+    onFocusSessionEnded,
+    onGroupChallengeCreated,
+    onGroupChallengeProgressUpdated,
+    onGroupChallengeCompleted,
+    onGroupChallengeDeleted
+  ])
 
   // 참가자 변경 처리
   const handleParticipantChange = useCallback((payload: any) => {
@@ -346,6 +384,30 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
         console.log('집중세션 종료 이벤트 수신:', payload)
         if (onFocusSessionEndedRef.current) {
           onFocusSessionEndedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'group_challenge_created' }, (payload) => {
+        console.log('그룹 대결 생성 이벤트 수신:', payload)
+        if (onGroupChallengeCreatedRef.current) {
+          onGroupChallengeCreatedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'group_challenge_progress_updated' }, (payload) => {
+        console.log('그룹 대결 진행 상태 업데이트 이벤트 수신:', payload)
+        if (onGroupChallengeProgressUpdatedRef.current) {
+          onGroupChallengeProgressUpdatedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'group_challenge_completed' }, (payload) => {
+        console.log('그룹 대결 완료 이벤트 수신:', payload)
+        if (onGroupChallengeCompletedRef.current) {
+          onGroupChallengeCompletedRef.current(payload.payload)
+        }
+      })
+      .on('broadcast', { event: 'group_challenge_deleted' }, (payload) => {
+        console.log('그룹 대결 삭제 이벤트 수신:', payload)
+        if (onGroupChallengeDeletedRef.current) {
+          onGroupChallengeDeletedRef.current(payload.payload)
         }
       })
       .on('presence', { event: 'sync' }, () => {
