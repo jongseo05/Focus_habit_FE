@@ -141,10 +141,43 @@ export function ChallengeProgressCard({ className }: ChallengeProgressCardProps)
             도전 과제
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          </div>
+        <CardContent className="space-y-4">
+          {/* 스켈레톤 로딩 - 2개의 챌린지 카드 모양 */}
+          {[...Array(2)].map((_, index) => (
+            <div key={index} className="space-y-3 p-4 bg-gradient-to-r from-slate-50 to-white rounded-lg border border-slate-200 animate-pulse">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3 flex-1">
+                  {/* 아이콘 스켈레톤 */}
+                  <div className="w-8 h-8 bg-slate-200 rounded-full"></div>
+                  <div className="flex-1 space-y-2">
+                    {/* 제목 스켈레톤 */}
+                    <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                    {/* 설명 스켈레톤 */}
+                    <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+                  </div>
+                  {/* 상세보기 버튼 스켈레톤 */}
+                  <div className="w-16 h-6 bg-slate-200 rounded"></div>
+                </div>
+                {/* 날짜 배지 스켈레톤 */}
+                <div className="w-20 h-6 bg-slate-200 rounded-full"></div>
+              </div>
+              
+              <div className="space-y-2">
+                {/* 목표 라벨과 진행률 스켈레톤 */}
+                <div className="flex justify-between items-center">
+                  <div className="h-4 bg-slate-200 rounded w-20"></div>
+                  <div className="h-4 bg-slate-200 rounded w-12"></div>
+                </div>
+                {/* 프로그레스 바 스켈레톤 */}
+                <div className="h-2 bg-slate-200 rounded-full"></div>
+                {/* 하단 정보 스켈레톤 */}
+                <div className="flex justify-between items-center">
+                  <div className="h-3 bg-slate-200 rounded w-24"></div>
+                  <div className="h-3 bg-slate-200 rounded w-20"></div>
+                </div>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     )

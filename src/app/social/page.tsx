@@ -109,7 +109,7 @@ export default function SocialPage() {
     }
   }, [])
 
-  // 강제로 URL 파라미터 확인 (더 확실한 방법)
+  // url 파라미터 확인
   useEffect(() => {
     const checkUrlParams = () => {
       if (typeof window !== 'undefined') {
