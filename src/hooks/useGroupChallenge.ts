@@ -72,14 +72,16 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
       setLoading(true)
       setError(null)
       
-      // 각 쿼리를 개별적으로 실행하여 하나가 실패해도 다른 것들은 성공하도록 함
-      const allChallenges = await fetchChallenges('all')
-      const myChallengesData = await fetchChallenges('my')
-      const availableChallengesData = await fetchChallenges('available')
+      // 대시보드에서는 my 챌린지만 필요하므로 available 쿼리는 제거
+      const [myChallengesData, allChallenges] = await Promise.allSettled([
+        fetchChallenges('my'),
+        fetchChallenges('all')
+      ])
 
-      setChallenges(allChallenges || [])
-      setMyChallenges(myChallengesData || [])
-      setAvailableChallenges(availableChallengesData || [])
+      setMyChallenges(myChallengesData.status === 'fulfilled' ? (myChallengesData.value || []) : [])
+      setChallenges(allChallenges.status === 'fulfilled' ? (allChallenges.value || []) : [])
+      setAvailableChallenges([]) // available 챌린지는 빈 배열로 설정
+      
     } catch (error) {
       console.error('챌린지 새로고침 실패:', error)
       setError('Failed to refresh challenges')
@@ -202,7 +204,7 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
       // 내가 참가한 활성 챌린지들 가져오기
       const activeChallenges = myChallenges.filter(challenge => {
         const now = new Date()
-        const endDate = new Date(challenge.ends_at)
+        const endDate = new Date(challenge.end_date)
         return now <= endDate && challenge.is_active
       })
 
@@ -212,18 +214,22 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
       for (const challenge of activeChallenges) {
         let progressValue = 0
 
-        switch (challenge.goal_type) {
-          case 'total_hours':
-            // 총 학습 시간 (분 단위로 변환)
+        switch (challenge.type) {
+          case 'focus_time':
+            // 집중 시간 (분 단위)
             progressValue = sessionDuration
             break
-          case 'total_sessions':
-            // 총 세션 수 (1회 추가)
+          case 'study_sessions':
+            // 학습 세션 수 (1회 추가)
             progressValue = 1
             break
-          case 'average_focus_score':
-            // 평균 집중도 (현재 점수로 업데이트)
+          case 'focus_score':
+            // 집중도 점수 (현재 점수로 업데이트)
             progressValue = focusScore
+            break
+          case 'streak_days':
+            // 연속 학습일 (세션 완료 시 1일 추가)
+            progressValue = 1
             break
         }
 
@@ -242,11 +248,11 @@ export function useGroupChallenge(): UseGroupChallengeReturn {
   // 활성 챌린지 가져오기
   const getActiveChallenges = useCallback(() => {
     const now = new Date()
-    return myChallenges.filter(challenge => {
-      const endDate = new Date(challenge.ends_at)
+    return challenges.filter(challenge => {
+      const endDate = new Date(challenge.end_date)
       return now <= endDate && challenge.is_active
     })
-  }, [myChallenges])
+  }, [challenges])
 
   // 초기 데이터 로드
   useEffect(() => {

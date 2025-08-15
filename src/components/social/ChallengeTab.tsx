@@ -64,12 +64,12 @@ export function ChallengeTab({
                     <Trophy className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-green-800">{linkedChallenge.name}</h3>
+                    <h3 className="font-semibold text-green-800">{linkedChallenge.title}</h3>
                     <p className="text-sm text-green-600">{linkedChallenge.description}</p>
                     <div className="flex items-center gap-4 mt-2 text-xs text-green-700">
-                      <span>목표: {linkedChallenge.goal_value} {linkedChallenge.goal_type}</span>
-                      <span>기간: {linkedChallenge.duration_days}일</span>
-                      <span>마감: {new Date(linkedChallenge.ends_at).toLocaleDateString()}</span>
+                                              <span>목표: {linkedChallenge.target_value} {linkedChallenge.type}</span>
+                                             <span>기간: {Math.ceil((new Date(linkedChallenge.end_date).getTime() - new Date(linkedChallenge.start_date).getTime()) / (1000 * 60 * 60 * 24))}일</span>
+                      <span>마감: {new Date(linkedChallenge.end_date).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </div>
@@ -148,9 +148,9 @@ export function ChallengeTab({
                             {availableChallenges.map((challenge) => (
                               <SelectItem key={challenge.challenge_id} value={challenge.challenge_id}>
                                 <div className="flex flex-col">
-                                  <span className="font-medium">{challenge.name}</span>
+                                                                      <span className="font-medium">{challenge.title}</span>
                                   <span className="text-xs text-gray-500">
-                                    {challenge.goal_value} {challenge.goal_type} • {challenge.duration_days}일
+                                                                         {challenge.target_value} {challenge.type} • {Math.ceil((new Date(challenge.end_date).getTime() - new Date(challenge.start_date).getTime()) / (1000 * 60 * 60 * 24))}일
                                   </span>
                                 </div>
                               </SelectItem>

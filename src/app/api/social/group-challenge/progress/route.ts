@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
 
     // 챌린지 정보 조회
     const { data: challenge, error: challengeError } = await supabase
-      .from('group_challenges')
+      .from('group_challenge')
       .select('*')
       .eq('challenge_id', challenge_id)
       .single()
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
 
     // 참가자들의 진행 상황 조회 (조인 없이)
     const { data: participants, error: participantsError } = await supabase
-      .from('challenge_participants')
+      .from('group_challenge_participant')
       .select('*')
       .eq('challenge_id', challenge_id)
 
@@ -225,22 +225,25 @@ export async function GET(request: NextRequest) {
     if (participants && participants.length > 0) {
       const totalParticipants = participants.length
       
-      if (challenge.goal_type === 'total_hours') {
-        totalProgress = participants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
-        progressPercentage = Math.min((totalProgress / challenge.goal_value) * 100, 100)
-      } else if (challenge.goal_type === 'total_sessions') {
-        totalProgress = participants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
-        progressPercentage = Math.min((totalProgress / challenge.goal_value) * 100, 100)
-      } else if (challenge.goal_type === 'average_focus_score') {
-        totalProgress = participants.reduce((sum, p) => sum + (p.current_progress || 0), 0)
+      if (challenge.type === 'focus_time') {
+        totalProgress = participants.reduce((sum, p) => sum + (p.contribution || 0), 0)
+        progressPercentage = Math.min((totalProgress / challenge.target_value) * 100, 100)
+      } else if (challenge.type === 'study_sessions') {
+        totalProgress = participants.reduce((sum, p) => sum + (p.contribution || 0), 0)
+        progressPercentage = Math.min((totalProgress / challenge.target_value) * 100, 100)
+      } else if (challenge.type === 'focus_score') {
+        totalProgress = participants.reduce((sum, p) => sum + (p.contribution || 0), 0)
         averageProgress = totalProgress / totalParticipants
-        progressPercentage = Math.min((averageProgress / challenge.goal_value) * 100, 100)
+        progressPercentage = Math.min((averageProgress / challenge.target_value) * 100, 100)
+      } else if (challenge.type === 'streak_days') {
+        totalProgress = participants.reduce((sum, p) => sum + (p.contribution || 0), 0)
+        progressPercentage = Math.min((totalProgress / challenge.target_value) * 100, 100)
       }
 
       // 현재 사용자의 진행 상황 찾기
       const currentUserParticipant = participants.find(p => p.user_id === user.id)
       if (currentUserParticipant) {
-        userProgress = currentUserParticipant.current_progress || 0
+        userProgress = currentUserParticipant.contribution || 0
       }
 
       console.log('진행 상황 계산 완료:', {
@@ -254,8 +257,8 @@ export async function GET(request: NextRequest) {
 
     const challengeProgress = {
       challenge_id,
-      goal_type: challenge.goal_type,
-      goal_value: challenge.goal_value,
+      goal_type: challenge.type,
+      goal_value: challenge.target_value,
       total_progress: totalProgress,
       average_progress: averageProgress,
       progress_percentage: progressPercentage,
@@ -265,7 +268,7 @@ export async function GET(request: NextRequest) {
         user_id: p.user_id,
         name: 'Unknown', // 사용자 이름은 별도로 조회 필요
         avatar_url: undefined, // 아바타는 별도로 조회 필요
-        current_progress: p.current_progress || 0,
+        current_progress: p.contribution || 0,
         joined_at: p.joined_at
       })) || []
     }

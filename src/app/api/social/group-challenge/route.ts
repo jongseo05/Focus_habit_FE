@@ -143,13 +143,9 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const room_id = searchParams.get('room_id')
+    const type = searchParams.get('type') || 'all'
 
-    if (!room_id) {
-      return NextResponse.json({ error: 'room_id가 필요합니다.' }, { status: 400 })
-    }
-
-    // 현재 활성 그룹 챌린지들 조회
-    const { data: challenges, error: challengeError } = await supabase
+    let query = supabase
       .from('group_challenge')
       .select(`
         *,
@@ -161,9 +157,81 @@ export async function GET(request: NextRequest) {
           joined_at
         )
       `)
-      .eq('room_id', room_id)
       .eq('is_active', true)
+
+    // room_id가 있으면 해당 룸의 챌린지만 조회
+    if (room_id) {
+      query = query.eq('room_id', room_id)
+    }
+
+    // type에 따른 필터링
+    if (type === 'my') {
+      // 내가 참가한 챌린지들의 ID 목록을 먼저 조회
+      const { data: myChallengeIds, error: myChallengeIdsError } = await supabase
+        .from('group_challenge_participant')
+        .select('challenge_id')
+        .eq('user_id', user.id)
+      
+      if (myChallengeIdsError) {
+        console.error('내 챌린지 ID 조회 실패:', myChallengeIdsError)
+        // 에러가 발생하면 빈 결과 반환
+        return NextResponse.json({ challenges: [], progressMap: {} })
+      } else if (myChallengeIds && myChallengeIds.length > 0) {
+        const challengeIds = myChallengeIds.map(p => p.challenge_id).filter(id => id)
+        if (challengeIds.length > 0) {
+          query = query.in('challenge_id', challengeIds)
+        } else {
+          // 참가한 챌린지가 없으면 빈 결과 반환
+          return NextResponse.json({ challenges: [], progressMap: {} })
+        }
+      } else {
+        // 참가한 챌린지가 없으면 빈 결과 반환
+        return NextResponse.json({ challenges: [], progressMap: {} })
+      }
+    } else if (type === 'available') {
+      try {
+        // 내가 참가하지 않은 챌린지들의 ID 목록을 먼저 조회
+        const { data: myChallengeIds, error: myChallengeIdsError } = await supabase
+          .from('group_challenge_participant')
+          .select('challenge_id')
+          .eq('user_id', user.id)
+        
+        console.log('available 쿼리 - 내 챌린지 ID 조회 결과:', { myChallengeIds, myChallengeIdsError })
+        
+        if (myChallengeIdsError) {
+          console.error('내 챌린지 ID 조회 실패:', myChallengeIdsError)
+          // 에러가 발생해도 모든 챌린지를 available로 처리
+        } else if (myChallengeIds && myChallengeIds.length > 0) {
+          const challengeIds = myChallengeIds.map(p => p.challenge_id).filter(id => id && typeof id === 'string')
+          console.log('available 쿼리 - 필터링할 챌린지 ID들:', challengeIds)
+          if (challengeIds.length > 0 && challengeIds.length < 100) { // 안전한 제한
+            try {
+              query = query.not('challenge_id', 'in', challengeIds)
+            } catch (notQueryError) {
+              console.error('not in 쿼리 실패, 모든 챌린지 반환:', notQueryError)
+              // not in 쿼리가 실패하면 모든 챌린지를 available로 처리
+            }
+          }
+        }
+        // 참가한 챌린지가 없으면 모든 챌린지가 available
+      } catch (availableError) {
+        console.error('available 쿼리 처리 중 오류:', availableError)
+        // 에러가 발생해도 모든 챌린지를 available로 처리
+      }
+    }
+    // type === 'all'인 경우 모든 챌린지 조회
+
+    console.log('최종 쿼리 실행 전 - type:', type, 'room_id:', room_id)
+    
+    const { data: challenges, error: challengeError } = await query
       .order('created_at', { ascending: false })
+
+    console.log('쿼리 실행 결과:', { 
+      challengesCount: challenges?.length || 0, 
+      challengeError,
+      type,
+      room_id 
+    })
 
     if (challengeError) {
       console.error('그룹 챌린지 조회 실패:', challengeError)

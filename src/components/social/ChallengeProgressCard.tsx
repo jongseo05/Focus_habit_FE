@@ -84,33 +84,47 @@ export function ChallengeProgressCard({ className }: ChallengeProgressCardProps)
   }, [activeChallenges, challengeProgresses, progressLoading])
 
   const getGoalTypeInfo = (challenge: GroupChallenge) => {
-    switch (challenge.goal_type) {
-      case 'total_hours':
+    switch (challenge.type) {
+      case 'focus_time':
         return {
           icon: Zap,
-          label: '총 학습 시간',
-          unit: '시간',
+          label: '집중 시간',
+          unit: '분',
           color: 'text-orange-600'
         }
-      case 'total_sessions':
+      case 'study_sessions':
         return {
           icon: Target,
-          label: '총 세션 수',
+          label: '학습 세션',
           unit: '회',
           color: 'text-green-600'
         }
-      case 'average_focus_score':
+      case 'streak_days':
+        return {
+          icon: Calendar,
+          label: '연속 학습',
+          unit: '일',
+          color: 'text-blue-600'
+        }
+      case 'focus_score':
         return {
           icon: TrendingUp,
-          label: '평균 집중도',
+          label: '집중도 점수',
           unit: '점',
           color: 'text-purple-600'
+        }
+      case 'custom':
+        return {
+          icon: Star,
+          label: '커스텀',
+          unit: challenge.unit || '',
+          color: 'text-yellow-600'
         }
       default:
         return {
           icon: Star,
           label: '목표',
-          unit: '',
+          unit: challenge.unit || '',
           color: 'text-yellow-600'
         }
     }
@@ -238,7 +252,7 @@ export function ChallengeProgressCard({ className }: ChallengeProgressCardProps)
           const goalInfo = getGoalTypeInfo(challenge)
           const Icon = goalInfo.icon
           const progress = getProgressPercentage(challenge)
-          const remainingDays = getRemainingDays(challenge.ends_at)
+          const remainingDays = getRemainingDays(challenge.end_date)
           const challengeProgress = challengeProgresses[challenge.challenge_id]
           const isLoading = progressLoading[challenge.challenge_id]
           
@@ -250,17 +264,10 @@ export function ChallengeProgressCard({ className }: ChallengeProgressCardProps)
                      <Icon className={`h-4 w-4 ${goalInfo.color}`} />
                    </div>
                                      <div className="flex-1">
-                     <h4 className="font-semibold text-slate-900 text-sm">{challenge.name}</h4>
+                                           <h4 className="font-semibold text-slate-900 text-sm">{challenge.title}</h4>
                      <p className="text-xs text-slate-600">{challenge.description}</p>
                    </div>
-                   <Button 
-                     variant="ghost" 
-                     size="sm" 
-                     className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 h-auto"
-                     onClick={() => window.location.href = '/social?tab=challenges'}
-                   >
-                     상세보기
-                   </Button>
+
                 </div>
                 <div className="text-right">
                   <Badge 
@@ -282,7 +289,7 @@ export function ChallengeProgressCard({ className }: ChallengeProgressCardProps)
                 </div>
                 <Progress value={progress} className="h-2" />
                 <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>목표: {challenge.goal_value} {goalInfo.unit}</span>
+                                     <span>목표: {challenge.target_value} {goalInfo.unit}</span>
                                                    <div className="flex items-center gap-1">
                    <Users className="h-3 w-3 text-slate-500" />
                    <span>

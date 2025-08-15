@@ -15,7 +15,8 @@ import {
   Calendar,
   TrendingUp,
   UserPlus,
-  CheckCircle
+  CheckCircle,
+  Star
 } from 'lucide-react'
 import type { GroupChallenge } from '@/types/social'
 
@@ -60,24 +61,36 @@ export function GroupChallengeCard({
   }
 
   const getGoalTypeInfo = () => {
-    switch (challenge.goal_type) {
-      case 'total_hours':
+    switch (challenge.type) {
+      case 'focus_time':
         return {
           icon: <Clock className="h-4 w-4" />,
-          label: '총 학습 시간',
-          unit: '시간'
+          label: '집중 시간',
+          unit: '분'
         }
-      case 'total_sessions':
+      case 'study_sessions':
         return {
           icon: <Target className="h-4 w-4" />,
-          label: '총 세션 수',
+          label: '학습 세션',
           unit: '회'
         }
-      case 'average_focus_score':
+      case 'streak_days':
+        return {
+          icon: <Calendar className="h-4 w-4" />,
+          label: '연속 학습',
+          unit: '일'
+        }
+      case 'focus_score':
         return {
           icon: <TrendingUp className="h-4 w-4" />,
-          label: '평균 집중도',
+          label: '집중도 점수',
           unit: '점'
+        }
+      case 'custom':
+        return {
+          icon: <Star className="h-4 w-4" />,
+          label: '커스텀',
+          unit: challenge.unit || ''
         }
       default:
         return { icon: null, label: '', unit: '' }
@@ -86,7 +99,7 @@ export function GroupChallengeCard({
 
   const getStatusInfo = () => {
     const now = new Date()
-    const endDate = new Date(challenge.ends_at)
+    const endDate = new Date(challenge.end_date)
     const isEnded = now > endDate
     const isActive = challenge.is_active && !isEnded
 
@@ -115,7 +128,7 @@ export function GroupChallengeCard({
 
   const getRemainingTime = () => {
     const now = new Date()
-    const endDate = new Date(challenge.ends_at)
+    const endDate = new Date(challenge.end_date)
     const diffTime = endDate.getTime() - now.getTime()
     
     if (diffTime <= 0) return '종료됨'
@@ -143,7 +156,7 @@ export function GroupChallengeCard({
           <div className="flex-1">
             <CardTitle className="text-lg flex items-center gap-2">
               <Trophy className="h-5 w-5 text-yellow-500" />
-              {challenge.name}
+              {challenge.title}
             </CardTitle>
             {challenge.description && (
               <p className="text-sm text-gray-600 mt-1">
@@ -162,7 +175,7 @@ export function GroupChallengeCard({
         <div className="flex items-center gap-2 text-sm">
           {goalInfo.icon}
           <span className="font-medium">{goalInfo.label}:</span>
-          <span>{challenge.goal_value} {goalInfo.unit}</span>
+          <span>{challenge.target_value} {goalInfo.unit}</span>
         </div>
 
         {/* 진행률 */}
