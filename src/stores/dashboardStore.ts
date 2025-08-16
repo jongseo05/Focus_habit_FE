@@ -56,6 +56,7 @@ interface DashboardState extends FocusSessionState, DashboardUIState {
   // 유틸리티
   formatTime: (seconds: number) => string
   reset: () => void
+  resetToInitialState: () => void
 }
 
 const initialState = {
@@ -156,7 +157,19 @@ export const useDashboardStore = create<DashboardState>()(
         return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
       },
       
-      reset: () => set(initialState)
+      reset: () => set(initialState),
+      
+      // 초기 상태로 리셋 (페이지 포커스 시 사용)
+      resetToInitialState: () => {
+        const currentState = get()
+        set({
+          ...currentState,
+          // 세션 관련 상태는 유지하되, UI 상태만 초기화
+          hoveredChartPoint: null,
+          hoveredBarIndex: null,
+          showErrorDisplay: false
+        })
+      }
     }),
     {
       name: 'dashboard-storage',
@@ -169,6 +182,22 @@ export const useDashboardStore = create<DashboardState>()(
     }
   )
 )
+
+// 페이지 포커스 시 상태 초기화
+if (typeof window !== 'undefined') {
+  const handleFocus = () => {
+    useDashboardStore.getState().resetToInitialState()
+  }
+  
+  const handleVisibilityChange = () => {
+    if (!document.hidden) {
+      useDashboardStore.getState().resetToInitialState()
+    }
+  }
+  
+  window.addEventListener('focus', handleFocus)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+}
 
 // 선택자 훅들 (성능 최적화)
 export const useFocusSession = () => useDashboardStore((state) => ({
@@ -187,12 +216,10 @@ export const useDashboardUI = () => useDashboardStore((state) => ({
   showWebcam: state.showWebcam,
   showPermissionLayer: state.showPermissionLayer,
   showErrorDisplay: state.showErrorDisplay,
-  snapshotCollapsed: state.snapshotCollapsed,
   notifications: state.notifications,
   setShowWebcam: state.setShowWebcam,
   setShowPermissionLayer: state.setShowPermissionLayer,
   setShowErrorDisplay: state.setShowErrorDisplay,
-      // toggleSnapshotCollapsed: state.toggleSnapshotCollapsed, // 스냅샷 기능 삭제됨
   addNotification: state.addNotification,
   removeNotification: state.removeNotification
 }))

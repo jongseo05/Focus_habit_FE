@@ -95,7 +95,28 @@ export interface CompetitionResult {
 }
 
 // =====================================================
-// 3. 그룹 챌린지 관련 타입
+// 3. 개인 챌린지 관련 타입
+// =====================================================
+
+export interface PersonalChallenge {
+  challenge_id: UUID
+  user_id: UUID
+  title: string
+  description: string
+  type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  target_value: number
+  current_value: number
+  unit: string
+  start_date: Timestamp
+  end_date: Timestamp
+  is_active: boolean
+  is_completed: boolean
+  created_at: Timestamp
+  updated_at: Timestamp
+}
+
+// =====================================================
+// 4. 그룹 챌린지 관련 타입
 // =====================================================
 
 export interface GroupChallenge {
@@ -104,6 +125,7 @@ export interface GroupChallenge {
   title: string
   description: string
   type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
+  challenge_type: 'personal' | 'team' // 개인 챌린지인지 팀 챌린지인지 구분
   target_value: number
   current_value: number
   unit: string // 'minutes', 'sessions', 'days', 'points', 'custom'

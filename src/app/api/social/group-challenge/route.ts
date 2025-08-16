@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
         title,
         description,
         type,
+        challenge_type: 'team', // 팀 챌린지로 명시
         target_value,
         current_value: 0,
         unit,

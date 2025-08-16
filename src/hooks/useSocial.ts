@@ -543,3 +543,24 @@ export function useRealTimeUpdates(roomId?: string) {
     isConnected: true, // 실제로는 WebSocket 연결 상태
   }
 }
+
+// 스터디룸 챌린지 조회
+export function useStudyRoomChallenges() {
+  const { data: user } = useUser()
+
+  return useQuery({
+    queryKey: ['study-room-challenges'],
+    queryFn: async (): Promise<StudyRoom[]> => {
+      if (!user) throw new Error('로그인이 필요합니다.')
+
+      const response = await fetch('/api/social/study-room?withChallenges=true')
+      if (!response.ok) {
+        throw new Error('스터디룸 챌린지를 불러오는데 실패했습니다.')
+      }
+      return response.json()
+    },
+    enabled: !!user,
+    staleTime: 30000, // 30초
+    refetchInterval: 60000, // 1분마다 자동 새로고침
+  })
+}

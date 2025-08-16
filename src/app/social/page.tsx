@@ -49,9 +49,6 @@ import { useSignOut, useAuth } from '@/hooks/useAuth'
 import { FriendsList } from '@/components/social/FriendsList'
 import { FriendRequests } from '@/components/social/FriendRequests'
 import { FriendRanking } from '@/components/social/FriendRanking'
-import { CreateGroupChallengeForm } from '@/components/social/CreateGroupChallengeForm'
-import { GroupChallengeCard } from '@/components/social/GroupChallengeCard'
-import { useGroupChallenge } from '@/hooks/useGroupChallenge'
 
 function SocialPageContent() {
   const searchParams = useSearchParams()
@@ -64,21 +61,9 @@ function SocialPageContent() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'study' | 'work' | 'reading'>('all')
   
-  // 챌린지 관련 상태
-  const [showCreateChallengeForm, setShowCreateChallengeForm] = useState(false)
-  const [showAllChallenges, setShowAllChallenges] = useState(false)
-  
   // Auth hooks
   const { user } = useAuth()
   const signOut = useSignOut()
-  
-  // 챌린지 훅
-  const { 
-    challenges, 
-    loading: challengeLoading, 
-    error: challengeError,
-    refreshChallenges 
-  } = useGroupChallenge()
   
   // Mock notifications for header
   const notifications = [
@@ -90,7 +75,7 @@ function SocialPageContent() {
   useEffect(() => {
     const tab = searchParams.get('tab')
     console.log('URL 파라미터에서 tab 값:', tab)
-    if (tab && (tab === 'rooms' || tab === 'friends' || tab === 'challenges')) {
+    if (tab && (tab === 'rooms' || tab === 'friends')) {
       console.log('탭을 변경합니다:', tab)
       setCurrentTab(tab)
     }
@@ -102,7 +87,7 @@ function SocialPageContent() {
       const urlParams = new URLSearchParams(window.location.search)
       const tab = urlParams.get('tab')
       console.log('초기 로딩 시 URL 파라미터에서 tab 값:', tab)
-      if (tab && (tab === 'rooms' || tab === 'friends' || tab === 'challenges')) {
+      if (tab && (tab === 'rooms' || tab === 'friends')) {
         console.log('초기 로딩 시 탭을 변경합니다:', tab)
         setCurrentTab(tab)
       }
@@ -121,7 +106,7 @@ function SocialPageContent() {
           if (tabMatch) {
             const tab = tabMatch[1]
             console.log('정규식으로 찾은 tab 값:', tab)
-            if (tab === 'rooms' || tab === 'friends' || tab === 'challenges') {
+            if (tab === 'rooms' || tab === 'friends') {
               console.log('정규식으로 찾은 tab으로 탭을 변경합니다:', tab)
               setCurrentTab(tab)
             }
@@ -224,45 +209,12 @@ function SocialPageContent() {
     setShowCreateForm(false)
   }
 
-  // 챌린지 관련 핸들러
-  const handleChallengeCreateSuccess = () => {
-    setShowCreateChallengeForm(false)
-    refreshChallenges()
-  }
-
-  const handleChallengeJoinSuccess = () => {
-    refreshChallenges()
-  }
-
   if (showCreateForm) {
     return (
       <CreateStudyRoomForm
         onClose={() => setShowCreateForm(false)}
         onSuccess={handleCreateRoom}
       />
-    )
-  }
-
-  if (showCreateChallengeForm) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6">
-            <Button
-              variant="outline"
-              onClick={() => setShowCreateChallengeForm(false)}
-              className="mb-4"
-            >
-              ← 목록으로 돌아가기
-            </Button>
-            <h1 className="text-2xl font-bold">새로운 그룹 챌린지 생성</h1>
-          </div>
-          <CreateGroupChallengeForm
-            onSuccess={handleChallengeCreateSuccess}
-            onCancel={() => setShowCreateChallengeForm(false)}
-          />
-        </div>
-      </div>
     )
   }
 
@@ -331,6 +283,13 @@ function SocialPageContent() {
                 </Button>
               </Link>
 
+              {/* Personal Challenges */}
+              <Link href="/social/challenge">
+                <Button variant="ghost" size="sm" title="개인 챌린지로 이동">
+                  <Trophy className="w-5 h-5" />
+                </Button>
+              </Link>
+
               {/* Weekly Report */}
               <Link href="/report/weekly">
                 <Button variant="ghost" size="sm" title="주간 리포트 보기">
@@ -368,8 +327,8 @@ function SocialPageContent() {
             </p>
           </div>
 
-                     <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+          <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="rooms" className="flex items-center gap-2">
                 <Hash className="h-4 w-4" />
                 스터디룸
@@ -377,10 +336,6 @@ function SocialPageContent() {
               <TabsTrigger value="friends" className="flex items-center gap-2">
                 <Heart className="h-4 w-4" />
                 친구
-              </TabsTrigger>
-              <TabsTrigger value="challenges" className="flex items-center gap-2">
-                <Target className="h-4 w-4" />
-                챌린지
               </TabsTrigger>
             </TabsList>
 
@@ -511,147 +466,26 @@ function SocialPageContent() {
               )}
             </TabsContent>
 
-            
-
-                                      {/* 친구 탭 */}
-             <TabsContent value="friends" className="space-y-6">
-                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* 친구 목록 */}
-                  <FriendsList 
-                    onAddFriend={() => {
-                      // 친구 목록 컴포넌트 내부에서 처리됨
-                    }}
-                    onFriendAdded={() => {
-                      // 친구 목록 새로고침 (React Query가 자동으로 처리)
-                    }}
-                  />
-                  
-                  {/* 친구 요청 */}
-                  <FriendRequests />
-                </div>
-               
-               {/* 친구 랭킹 */}
-               <FriendRanking />
-               
-               
-             </TabsContent>
-
-                         {/* 챌린지 탭 */}
-             <TabsContent value="challenges" className="space-y-6">
-               {/* 챌린지 소개 섹션 */}
-               <div className="text-center mb-8">
-                 <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                   그룹 챌린지
-                 </h3>
-                 <p className="text-gray-600 mb-6">
-                   친구들과 함께 목표를 달성하고 동기부여를 받아보세요!
-                 </p>
-                 
-                 {/* 챌린지 타입 소개 카드들 */}
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                   <Card className="text-center p-6">
-                     <Clock className="h-8 w-8 mx-auto text-blue-500 mb-3" />
-                     <h4 className="font-semibold mb-2">학습 시간 챌린지</h4>
-                     <p className="text-sm text-gray-600">그룹 전체가 함께 총 학습 시간 목표를 달성해보세요</p>
-                   </Card>
-                   
-                   <Card className="text-center p-6">
-                     <Target className="h-8 w-8 mx-auto text-green-500 mb-3" />
-                     <h4 className="font-semibold mb-2">세션 수 챌린지</h4>
-                     <p className="text-sm text-gray-600">완료한 집중 세션 수로 경쟁해보세요</p>
-                   </Card>
-                   
-                   <Card className="text-center p-6">
-                     <TrendingUp className="h-8 w-8 mx-auto text-purple-500 mb-3" />
-                     <h4 className="font-semibold mb-2">집중도 챌린지</h4>
-                     <p className="text-sm text-gray-600">평균 집중도 점수로 실력을 겨뤄보세요</p>
-                   </Card>
-                 </div>
-               </div>
-
-               {/* 챌린지 생성 및 목록 섹션 */}
-               <div className="space-y-6">
-                 {/* 헤더 */}
-                 <div className="flex items-center justify-between">
-                   <h4 className="text-xl font-semibold">활성 챌린지</h4>
-                   <Button
-                     onClick={() => setShowCreateChallengeForm(true)}
-                     className="flex items-center gap-2"
-                   >
-                     <Plus className="h-4 w-4" />
-                     챌린지 생성
-                   </Button>
-                 </div>
-
-                 {/* 챌린지 목록 */}
-                 {challengeLoading ? (
-                   <div className="text-center py-12">
-                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-                     <p className="mt-2 text-gray-600">챌린지를 불러오는 중...</p>
-                   </div>
-                 ) : challenges.length === 0 ? (
-                   <Card>
-                     <CardContent className="p-12 text-center">
-                       <Trophy className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                       <h3 className="text-lg font-medium text-gray-900 mb-2">
-                         아직 챌린지가 없습니다
-                       </h3>
-                       <p className="text-gray-600 mb-4">
-                         첫 번째 챌린지를 생성해보세요!
-                       </p>
-                       <Button onClick={() => setShowCreateChallengeForm(true)}>
-                         <Plus className="h-4 w-4 mr-2" />
-                         챌린지 생성하기
-                       </Button>
-                     </CardContent>
-                   </Card>
-                 ) : (
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                     {challenges.slice(0, 6).map((challenge) => (
-                       <GroupChallengeCard
-                         key={challenge.challenge_id}
-                         challenge={challenge}
-                         showJoinButton={true}
-                         onJoin={handleChallengeJoinSuccess}
-                         currentUserId={user?.id}
-                       />
-                     ))}
-                   </div>
-                 )}
-
-                                   {/* 더보기 버튼 */}
-                  {challenges.length > 6 && (
-                    <div className="text-center">
-                      <Button variant="outline" onClick={() => setShowAllChallenges(true)}>
-                        더 많은 챌린지 보기 ({challenges.length - 6}개 더)
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* 전체 챌린지 목록 */}
-                  {showAllChallenges && (
-                    <div className="mt-8">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-xl font-semibold">전체 챌린지 목록</h4>
-                        <Button variant="outline" onClick={() => setShowAllChallenges(false)}>
-                          접기
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {challenges.map((challenge) => (
-                          <GroupChallengeCard
-                            key={challenge.challenge_id}
-                            challenge={challenge}
-                            showJoinButton={true}
-                            onJoin={handleChallengeJoinSuccess}
-                            currentUserId={user?.id}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-               </div>
-             </TabsContent>
+            {/* 친구 탭 */}
+            <TabsContent value="friends" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 친구 목록 */}
+                <FriendsList 
+                  onAddFriend={() => {
+                    // 친구 목록 컴포넌트 내부에서 처리됨
+                  }}
+                  onFriendAdded={() => {
+                    // 친구 목록 새로고침 (React Query가 자동으로 처리)
+                  }}
+                />
+                
+                {/* 친구 요청 */}
+                <FriendRequests />
+              </div>
+             
+              {/* 친구 랭킹 */}
+              <FriendRanking />
+            </TabsContent>
           </Tabs>
         </div>
       </div>
