@@ -30,6 +30,7 @@ export interface WeeklyReportData {
     distractions: number
     dayOfWeek: string
   }>
+  heatmapData: number[][]
   activityData: Array<{
     timestamp: string
     action: string
