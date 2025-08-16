@@ -243,7 +243,7 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
     )
   }
 
-  const { session, samples, events, snapshots, mlFeatures } = sessionData
+  const { session, samples, events } = sessionData
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
@@ -385,10 +385,10 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                 <TabsContent value="evidence" className="mt-6">
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">증거 스냅샷</h3>
-                    <div className="bg-slate-50 rounded-lg p-8 text-center">
-                      <p className="text-slate-600">증거 스냅샷이 여기에 표시됩니다.</p>
-                      <p className="text-sm text-slate-500 mt-2">스냅샷 데이터: {snapshots.length}개</p>
-                    </div>
+                                         <div className="bg-slate-50 rounded-lg p-8 text-center">
+                       <p className="text-slate-600">증거 스냅샷이 여기에 표시됩니다.</p>
+                       <p className="text-sm text-slate-500 mt-2">스냅샷 데이터: 0개</p>
+                     </div>
                   </div>
                 </TabsContent>
 

@@ -10,7 +10,8 @@ import type {
   FriendsListResponse,
   CreateFriendRequestData,
   FriendRequestResponse,
-  FriendRankingResponse
+  FriendRankingResponse,
+  FriendRequestsView
 } from '@/types/social'
 
 // =====================================================
@@ -253,7 +254,7 @@ export function useFriendsList() {
 export function useFriendRequests() {
   return useQuery({
     queryKey: ['friend-requests'],
-    queryFn: async (): Promise<FriendRequestResponse[]> => {
+    queryFn: async (): Promise<FriendRequestsView[]> => {
       const response = await fetch('/api/social/friends/requests')
       if (!response.ok) {
         throw new Error('친구 요청 목록을 불러오는데 실패했습니다.')
@@ -465,5 +466,114 @@ export function useFriendRanking(
     // 성능 최적화 추가
     refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
     refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
+  })
+}
+
+// =====================================================
+// 7. 추가 친구 관련 훅 (누락된 함수들)
+// =====================================================
+
+// 친구 목록 조회 (useFriendsList와 동일하지만 useFriends로도 사용 가능)
+export const useFriends = useFriendsList
+
+// 친구 검색
+export function useFriendSearch() {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+
+  const searchFriends = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(query)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setSearchResults(data)
+      } else {
+        setSearchResults([])
+      }
+    } catch (error) {
+      console.error('친구 검색 중 오류 발생:', error)
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  return {
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    isSearching,
+    searchFriends,
+  }
+}
+
+// 친구 요청 보내기 (useCreateFriendRequest와 동일하지만 useSendFriendRequest로도 사용 가능)
+export const useSendFriendRequest = useCreateFriendRequest
+
+// 친구 요청 응답 (수락/거절)
+export function useRespondToFriendRequest() {
+  const queryClient = useQueryClient()
+  
+  const acceptRequest = useMutation({
+    mutationFn: async ({ requestId }: { requestId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/requests/${requestId}/accept`, {
+        method: 'POST',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 요청 수락에 실패했습니다.')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['friends-list'] })
+    },
+  })
+
+  const rejectRequest = useMutation({
+    mutationFn: async ({ requestId }: { requestId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/requests/${requestId}/reject`, {
+        method: 'POST',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 요청 거절에 실패했습니다.')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
+    },
+  })
+
+  return {
+    acceptRequest,
+    rejectRequest,
+  }
+}
+
+// 친구 삭제
+export function useRemoveFriend() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ friendId }: { friendId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/${friendId}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 삭제에 실패했습니다.')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['friends-list'] })
+    },
   })
 }

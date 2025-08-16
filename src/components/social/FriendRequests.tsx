@@ -10,11 +10,15 @@ import { toast } from 'sonner'
 
 export function FriendRequests() {
   const { data: requestsData, isLoading, error } = useFriendRequests()
-  const respondMutation = useRespondToFriendRequest()
+  const { acceptRequest, rejectRequest } = useRespondToFriendRequest()
 
   const handleRespond = async (requestId: string, status: 'accepted' | 'rejected', userName: string) => {
     try {
-      await respondMutation.mutateAsync({ request_id: requestId, status })
+      if (status === 'accepted') {
+        await acceptRequest.mutateAsync({ requestId })
+      } else {
+        await rejectRequest.mutateAsync({ requestId })
+      }
       toast.success(
         status === 'accepted' 
           ? `${userName}님의 친구 요청을 수락했습니다.` 
@@ -78,14 +82,14 @@ export function FriendRequests() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <UserPlus className="h-5 w-5" />
-          친구 요청 ({requestsData?.total_count || 0})
+          친구 요청 ({requestsData?.length || 0})
         </CardTitle>
       </CardHeader>
       
       <CardContent>
-        {requestsData?.requests && requestsData.requests.length > 0 ? (
+        {requestsData && requestsData.length > 0 ? (
           <div className="space-y-3">
-            {requestsData.requests.map((request) => (
+            {requestsData.map((request) => (
               <div
                 key={request.request_id}
                 className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -121,7 +125,7 @@ export function FriendRequests() {
                   <Button
                     size="sm"
                     onClick={() => handleRespond(request.request_id, 'accepted', request.from_user_name)}
-                    disabled={respondMutation.isPending}
+                    disabled={acceptRequest.isPending}
                     className="bg-green-500 hover:bg-green-600"
                   >
                     <Check className="h-4 w-4 mr-1" />
@@ -131,7 +135,7 @@ export function FriendRequests() {
                     size="sm"
                     variant="outline"
                     onClick={() => handleRespond(request.request_id, 'rejected', request.from_user_name)}
-                    disabled={respondMutation.isPending}
+                    disabled={rejectRequest.isPending}
                     className="text-red-500 border-red-500 hover:bg-red-50"
                   >
                     <X className="h-4 w-4 mr-1" />

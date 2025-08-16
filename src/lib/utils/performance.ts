@@ -155,7 +155,7 @@ export const throttle = <T extends (...args: any[]) => any>(
 }
 
 // 메모리 누수 방지를 위한 약한 참조 맵
-export class WeakRefMap<K, V> {
+export class WeakRefMap<K, V extends WeakKey> {
   private map = new Map<K, WeakRef<V>>()
   private finalizationRegistry: FinalizationRegistry<K>
 

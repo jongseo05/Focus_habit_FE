@@ -18,16 +18,18 @@ interface FriendsListProps {
 // 검색 결과 영역을 별도 컴포넌트로 분리
 function AddFriendResults({ 
   searchTerm, 
-  searchMutation, 
+  searchResults, 
+  isSearching,
   sendRequestMutation, 
   handleSendRequest 
 }: {
   searchTerm: string
-  searchMutation: any
+  searchResults: any[]
+  isSearching: boolean
   sendRequestMutation: any
   handleSendRequest: (userId: string, userName: string) => void
 }) {
-  if (searchTerm.trim().length >= 2 && searchMutation.isPending) {
+  if (searchTerm.trim().length >= 2 && isSearching) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="space-y-4 w-full max-w-sm">
@@ -39,10 +41,10 @@ function AddFriendResults({
     )
   }
 
-  if (searchMutation.data?.results && searchMutation.data.results.length > 0) {
+  if (searchResults && searchResults.length > 0) {
     return (
       <div className="space-y-3">
-        {searchMutation.data.results.map((user: any) => (
+        {searchResults.map((user: any) => (
           <div
             key={user.user_id}
             className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -95,7 +97,7 @@ function AddFriendResults({
     )
   }
 
-  if (searchTerm.trim().length >= 2 && searchMutation.data?.results && searchMutation.data.results.length === 0) {
+  if (searchTerm.trim().length >= 2 && searchResults && searchResults.length === 0) {
     return (
       <div className="text-center py-8">
         <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -116,15 +118,15 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [showAddFriendMode, setShowAddFriendMode] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[]>([])
   
-  const { data: friendsData, isLoading, error } = useFriends(searchTerm)
+  const { data: friendsData, isLoading, error } = useFriends()
   const removeFriendMutation = useRemoveFriend()
-  const searchMutation = useFriendSearch()
   const sendRequestMutation = useSendFriendRequest()
 
   const handleRemoveFriend = async (friendId: string, friendName: string) => {
     try {
-      await removeFriendMutation.mutateAsync(friendId)
+      await removeFriendMutation.mutateAsync({ friendId })
       toast.success(`${friendName}님을 친구 목록에서 삭제했습니다.`)
       onFriendAdded?.() // 친구 목록 새로고침
     } catch (error) {
@@ -138,25 +140,28 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   }
 
   // 실시간 검색을 위한 처리
-  const handleSearchChange = (value: string) => {
+  const handleSearchChange = async (value: string) => {
     setSearchTerm(value)
     
-    // 2자 이상일 때만 검색 실행
     if (value.trim().length >= 2) {
       setIsSearching(true)
-      searchMutation.mutate(value.trim(), {
-        onSuccess: () => {
-          setIsSearching(false)
-        },
-        onError: () => {
-          setIsSearching(false)
-          toast.error('검색에 실패했습니다.')
+      try {
+        const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(value.trim())}`)
+        if (response.ok) {
+          const data = await response.json()
+          setSearchResults(data.results || [])
+        } else {
+          setSearchResults([])
         }
-      })
+      } catch (error) {
+        console.error('친구 검색 중 오류 발생:', error)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
     } else {
+      setSearchResults([])
       setIsSearching(false)
-      // 2자 미만일 때는 검색 결과 초기화
-      searchMutation.reset()
     }
   }
 
@@ -316,7 +321,8 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
           <div className="min-h-[200px]">
             <AddFriendResults
               searchTerm={searchTerm}
-              searchMutation={searchMutation}
+              searchResults={searchResults}
+              isSearching={isSearching}
               sendRequestMutation={sendRequestMutation}
               handleSendRequest={handleSendRequest}
             />

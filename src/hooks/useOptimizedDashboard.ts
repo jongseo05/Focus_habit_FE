@@ -179,12 +179,10 @@ export function useDashboard() {
     showWebcam: state.showWebcam,
     showPermissionLayer: state.showPermissionLayer,
     showErrorDisplay: state.showErrorDisplay,
-    snapshotCollapsed: state.snapshotCollapsed,
     notifications: state.notifications,
     setShowWebcam: state.setShowWebcam,
     setShowPermissionLayer: state.setShowPermissionLayer,
     setShowErrorDisplay: state.setShowErrorDisplay,
-    toggleSnapshotCollapsed: state.toggleSnapshotCollapsed,
     addNotification: state.addNotification,
     removeNotification: state.removeNotification
   }))

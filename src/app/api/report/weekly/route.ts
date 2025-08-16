@@ -325,7 +325,13 @@ function generateHeatmapData(sessions: any[], weekStart: Date, weekEnd: Date) {
 
 // 활동 데이터 생성
 function generateActivityData(sessions: any[]) {
-  const activityData = []
+  const activityData: Array<{
+    timestamp: string;
+    action: string;
+    type: 'positive' | 'neutral' | 'negative';
+    impact: number;
+    description: string;
+  }> = []
   
   sessions.forEach(session => {
     // 세션 시작 활동

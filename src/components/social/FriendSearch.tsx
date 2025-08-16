@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useFriendSearch, useSendFriendRequest } from '@/hooks/useSocial'
+import { useSendFriendRequest } from '@/hooks/useSocial'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,13 +18,15 @@ interface FriendSearchProps {
 // 검색 결과 영역을 별도 컴포넌트로 분리
 function SearchResults({ 
   searchTerm, 
-  searchMutation, 
+  searchResults, 
+  isSearching,
   sendRequestMutation, 
   setSelectedUser, 
   mode 
 }: {
   searchTerm: string
-  searchMutation: any
+  searchResults: any[]
+  isSearching: boolean
   sendRequestMutation: any
   setSelectedUser: (user: any) => void
   mode: 'search' | 'add'
@@ -59,7 +61,7 @@ function SearchResults({
     }
   }
 
-  if (searchTerm.trim().length >= 2 && searchMutation.isPending) {
+  if (searchTerm.trim().length >= 2 && isSearching) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="space-y-4 w-full max-w-sm">
@@ -71,10 +73,10 @@ function SearchResults({
     )
   }
 
-  if (searchMutation.data?.results && searchMutation.data.results.length > 0) {
+  if (searchResults && searchResults.length > 0) {
     return (
       <div className="space-y-3">
-        {searchMutation.data.results.map((user: any) => (
+        {searchResults.map((user: any) => (
           <div
             key={user.user_id}
             className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -144,7 +146,7 @@ function SearchResults({
     )
   }
 
-  if (searchTerm.trim().length >= 2 && searchMutation.data?.results && searchMutation.data.results.length === 0) {
+  if (searchTerm.trim().length >= 2 && searchResults && searchResults.length === 0) {
     return (
       <div className="text-center py-8">
         <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -168,19 +170,34 @@ export function FriendSearch({ onClose, mode = 'search' }: FriendSearchProps) {
   const [message, setMessage] = useState('')
   const [selectedUser, setSelectedUser] = useState<any>(null)
   
-  const searchMutation = useFriendSearch()
   const sendRequestMutation = useSendFriendRequest()
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
 
   // 실시간 검색을 위한 디바운스 처리
-  const handleSearchChange = (value: string) => {
+  const handleSearchChange = async (value: string) => {
     setSearchTerm(value)
     
     // 2자 이상일 때만 검색 실행
     if (value.trim().length >= 2) {
-      searchMutation.mutate(value.trim())
+      setIsSearching(true)
+      try {
+        const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(value.trim())}`)
+        if (response.ok) {
+          const data = await response.json()
+          setSearchResults(data.results || [])
+        } else {
+          setSearchResults([])
+        }
+      } catch (error) {
+        console.error('친구 검색 중 오류 발생:', error)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
     } else {
       // 2자 미만일 때는 검색 결과 초기화
-      searchMutation.reset()
+      setSearchResults([])
     }
   }
 
@@ -250,7 +267,8 @@ export function FriendSearch({ onClose, mode = 'search' }: FriendSearchProps) {
       <div className="min-h-[200px]">
         <SearchResults
           searchTerm={searchTerm}
-          searchMutation={searchMutation}
+          searchResults={searchResults}
+          isSearching={isSearching}
           sendRequestMutation={sendRequestMutation}
           setSelectedUser={setSelectedUser}
           mode={mode}
