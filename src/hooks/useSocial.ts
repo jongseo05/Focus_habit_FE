@@ -9,7 +9,6 @@ import type {
   UserFriend,
   FriendsListResponse,
   CreateFriendRequestData,
-  FriendRequestsResponse,
   FriendRequestResponse,
   FriendRankingResponse
 } from '@/types/social'
@@ -29,72 +28,59 @@ export function useStudyRooms() {
       return response.json()
     },
     staleTime: 30000, // 30초
-    refetchInterval: 60000, // 1분마다 자동 새로고침
+    refetchInterval: false, // 자동 새로고침 비활성화 (대시보드에서 사용 시)
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션 (대시보드에서 사용 시)
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }
 
 export function useCreateStudyRoom() {
   const queryClient = useQueryClient()
-  const { data: user } = useUser()
-
+  
   return useMutation({
-    mutationFn: async (data: Omit<CreateStudyRoomData, 'host_id'>): Promise<StudyRoom> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
+    mutationFn: async (data: CreateStudyRoomData): Promise<StudyRoom> => {
       const response = await fetch('/api/social/study-room', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...data,
-          host_id: user.id
-        })
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
-
+      
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '스터디룸 생성에 실패했습니다.')
+        throw new Error('스터디룸 생성에 실패했습니다.')
       }
-
+      
       return response.json()
     },
     onSuccess: () => {
-      // 스터디룸 목록 캐시 무효화
+      // 성공 시 관련 쿼리만 무효화 (전체 캐시 무효화 방지)
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
-    }
+    },
   })
 }
 
 export function useJoinStudyRoom() {
   const queryClient = useQueryClient()
-  const { data: user } = useUser()
-
+  
   return useMutation({
-    mutationFn: async (roomId: string): Promise<{ success: boolean; message?: string }> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
+    mutationFn: async ({ roomId }: { roomId: string }): Promise<void> => {
       const response = await fetch(`/api/social/study-room/${roomId}/join`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id })
       })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || '스터디룸 참가에 실패했습니다.')
-      }
-
-      return result
-    },
-    onSuccess: (data) => {
-      // 스터디룸 목록 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
       
-      // 성공 메시지가 있으면 콘솔에 출력 (디버깅용)
-      if (data.message) {
-        console.log('참가 결과:', data.message)
+      if (!response.ok) {
+        throw new Error('스터디룸 입장에 실패했습니다.')
       }
-    }
+    },
+    onSuccess: (_, { roomId }) => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+    },
   })
 }
 
@@ -102,27 +88,20 @@ export function useLeaveStudyRoom() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async ({ roomId }: { roomId: string }) => {
+    mutationFn: async ({ roomId }: { roomId: string }): Promise<void> => {
       const response = await fetch(`/api/social/study-room/${roomId}/leave`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ user_id: '' }) // 서버에서 인증된 사용자 ID 사용
       })
       
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '스터디룸 나가기에 실패했습니다.')
+        throw new Error('스터디룸 퇴장에 실패했습니다.')
       }
-      
-      return response.json()
     },
     onSuccess: (_, { roomId }) => {
-      // 관련 쿼리 무효화
-      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+      // 성공 시 관련 쿼리만 무효화
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
-    }
+      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+    },
   })
 }
 
@@ -130,369 +109,261 @@ export function useEndStudyRoom() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async ({ roomId }: { roomId: string }) => {
-      const response = await fetch(`/api/social/study-room/${roomId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+    mutationFn: async ({ roomId }: { roomId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/study-room/${roomId}/end`, {
+        method: 'POST',
       })
       
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '스터디룸 종료에 실패했습니다.')
+        throw new Error('스터디룸 종료에 실패했습니다.')
       }
-      
-      return response.json()
     },
     onSuccess: (_, { roomId }) => {
-      // 관련 쿼리 무효화
-      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+      // 성공 시 관련 쿼리만 무효화
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['room', roomId] })
-    }
+      queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
+    },
   })
 }
+
+// =====================================================
+// 2. 룸 참가자 관련 훅
+// =====================================================
 
 export function useRoomParticipants(roomId: string) {
   return useQuery({
     queryKey: ['room-participants', roomId],
-    queryFn: async (): Promise<{ participants: RoomParticipant[], count: number }> => {
+    queryFn: async (): Promise<RoomParticipant[]> => {
       const response = await fetch(`/api/social/study-room/${roomId}/participants`)
       if (!response.ok) {
         throw new Error('참가자 목록을 불러오는데 실패했습니다.')
       }
       return response.json()
     },
-    enabled: !!roomId,
-    staleTime: 10000, // 10초
-    refetchInterval: 30000, // 30초마다 자동 새로고침
+    enabled: !!roomId, // roomId가 있을 때만 실행
+    staleTime: 15000, // 15초
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 3 * 60 * 1000, // 3분 후 가비지 컬렉션
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }
 
 // =====================================================
-// 2. 집중도 대결 관련 훅
+// 3. 챌린지 관련 훅
 // =====================================================
 
-export function useFocusCompetitions(roomId: string) {
-  return useQuery({
-    queryKey: ['focus-competitions', roomId],
-    queryFn: async (): Promise<FocusCompetition[]> => {
-      const response = await fetch(`/api/social/competitions?roomId=${roomId}`)
-      if (!response.ok) {
-        throw new Error('대결 목록을 불러오는데 실패했습니다.')
-      }
-      return response.json()
-    },
-    enabled: !!roomId,
-  })
-}
-
-export function useCreateCompetition() {
+export function useCreateChallenge() {
   const queryClient = useQueryClient()
-
+  
   return useMutation({
-    mutationFn: async (data: { roomId: string; name: string; durationMinutes: number }): Promise<FocusCompetition> => {
-      const response = await fetch('/api/social/competitions', {
+    mutationFn: async (data: any): Promise<any> => {
+      const response = await fetch('/api/social/challenge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
-
+      
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '대결 생성에 실패했습니다.')
+        throw new Error('챌린지 생성에 실패했습니다.')
       }
-
+      
       return response.json()
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['focus-competitions', variables.roomId] })
-    }
+    onSuccess: () => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['challenges'] })
+    },
+  })
+}
+
+export function useJoinChallenge() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ challengeId }: { challengeId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/challenge/${challengeId}/join`, {
+        method: 'POST',
+      })
+      
+      if (!response.ok) {
+        throw new Error('챌린지 참가에 실패했습니다.')
+      }
+    },
+    onSuccess: (_, { challengeId }) => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['challenges'] })
+      queryClient.invalidateQueries({ queryKey: ['challenge', challengeId] })
+    },
+  })
+}
+
+export function useTickChallenge() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ challengeId, progress }: { challengeId: string; progress: number }): Promise<void> => {
+      const response = await fetch(`/api/social/challenge/${challengeId}/tick`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ progress }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('챌린지 진행도 업데이트에 실패했습니다.')
+      }
+    },
+    onSuccess: (_, { challengeId }) => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['challenge', challengeId] })
+    },
   })
 }
 
 // =====================================================
-// 3. 친구 시스템 관련 훅 (업데이트됨)
+// 4. 친구 관련 훅
 // =====================================================
 
-// 친구 목록 조회
-export function useFriends(search?: string) {
-  const { data: user } = useUser()
-
+export function useFriendsList() {
   return useQuery({
-    queryKey: ['friends', search],
+    queryKey: ['friends-list'],
     queryFn: async (): Promise<FriendsListResponse> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
-      const params = new URLSearchParams()
-      if (search) params.append('search', search)
-      params.append('limit', '50')
-
-      const response = await fetch(`/api/social/friends?${params}`)
+      const response = await fetch('/api/social/friends')
       if (!response.ok) {
         throw new Error('친구 목록을 불러오는데 실패했습니다.')
       }
       return response.json()
     },
-    enabled: !!user,
+    staleTime: 60000, // 1분
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 10 * 60 * 1000, // 10분 후 가비지 컬렉션
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }
 
-// 친구 요청 보내기
-export function useSendFriendRequest() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (data: CreateFriendRequestData) => {
-      const response = await fetch('/api/social/friends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '친구 요청을 보내는데 실패했습니다.')
-      }
-      return response.json()
-    },
-    onSuccess: () => {
-      // 친구 목록 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['friends'] })
-      // 친구 요청 목록 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
-    }
-  })
-}
-
-// 친구 검색
-export function useFriendSearch() {
-  const { data: user } = useUser()
-
-  return useMutation({
-    mutationFn: async (search: string) => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
-      const response = await fetch('/api/social/friends', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search, limit: 20 })
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '사용자 검색에 실패했습니다.')
-      }
-      return response.json()
-    }
-  })
-}
-
-// 받은 친구 요청 목록 조회
 export function useFriendRequests() {
-  const { data: user } = useUser()
-
   return useQuery({
     queryKey: ['friend-requests'],
-    queryFn: async (): Promise<FriendRequestsResponse> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
+    queryFn: async (): Promise<FriendRequestResponse[]> => {
       const response = await fetch('/api/social/friends/requests')
       if (!response.ok) {
         throw new Error('친구 요청 목록을 불러오는데 실패했습니다.')
       }
       return response.json()
     },
-    enabled: !!user,
+    staleTime: 30000, // 30초
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }
 
-// 친구 요청 응답 (수락/거절)
-export function useRespondToFriendRequest() {
+export function useCreateFriendRequest() {
   const queryClient = useQueryClient()
-
+  
   return useMutation({
-    mutationFn: async (data: FriendRequestResponse) => {
+    mutationFn: async (data: CreateFriendRequestData): Promise<FriendRequestResponse> => {
       const response = await fetch('/api/social/friends/requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
+      
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '요청 응답 처리에 실패했습니다.')
+        throw new Error('친구 요청 생성에 실패했습니다.')
       }
+      
       return response.json()
     },
     onSuccess: () => {
-      // 친구 목록 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['friends'] })
-      // 친구 요청 목록 캐시 무효화
+      // 성공 시 관련 쿼리만 무효화
       queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
-    }
-  })
-}
-
-// 친구 랭킹 조회
-export function useFriendRanking(period: 'daily' | 'weekly' | 'monthly' = 'weekly') {
-  const { data: user } = useUser()
-
-  return useQuery({
-    queryKey: ['friend-ranking', period],
-    queryFn: async (): Promise<FriendRankingResponse> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
-      const response = await fetch(`/api/social/friends/ranking?period=${period}`)
-      if (!response.ok) {
-        throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
-      }
-      return response.json()
     },
-    enabled: !!user,
-    staleTime: 10000, // 10초
-    refetchInterval: 30000, // 30초마다 자동 새로고침
   })
 }
 
-// 친구 삭제
-export function useRemoveFriend() {
+export function useAcceptFriendRequest() {
   const queryClient = useQueryClient()
-
+  
   return useMutation({
-    mutationFn: async (friendId: string) => {
-      const response = await fetch(`/api/social/friends/${friendId}`, {
-        method: 'DELETE'
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '친구 삭제에 실패했습니다.')
-      }
-      return response.json()
-    },
-    onSuccess: () => {
-      // 친구 목록 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['friends'] })
-      // 친구 랭킹 캐시 무효화
-      queryClient.invalidateQueries({ queryKey: ['friend-ranking'] })
-    }
-  })
-}
-
-// 친구 격려 메시지 기능은 제외됨
-
-// 친구 활동 상태 업데이트
-export function useUpdateFriendActivityStatus() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (data: { status: string, current_focus_score?: number }) => {
-      const response = await fetch('/api/social/friends/activity-status', {
+    mutationFn: async ({ requestId }: { requestId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/requests/${requestId}/accept`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
       })
+      
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '활동 상태 업데이트에 실패했습니다.')
+        throw new Error('친구 요청 수락에 실패했습니다.')
       }
-      return response.json()
     },
     onSuccess: () => {
-      // 친구 목록 캐시 무효화 (활동 상태 포함)
-      queryClient.invalidateQueries({ queryKey: ['friends'] })
-    }
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['friends-list'] })
+    },
+  })
+}
+
+export function useRejectFriendRequest() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ requestId }: { requestId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/requests/${requestId}/reject`, {
+        method: 'POST',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 요청 거절에 실패했습니다.')
+      }
+    },
+    onSuccess: () => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['friend-requests'] })
+    },
   })
 }
 
 // =====================================================
-// 4. 격려 메시지 관련 훅
-// =====================================================
-
-// 격려 메시지 기능은 제외됨
-// export function useEncouragementMessages() {
-//   const { data: user } = useUser()
-
-//   return useQuery({
-//     queryKey: ['encouragement-messages'],
-//     queryFn: async (): Promise<any[]> => {
-//       if (!user) throw new Error('로그인이 필요합니다.')
-
-//       const response = await fetch('/api/social/encouragement')
-//       if (!response.ok) {
-//         throw new Error('격려 메시지를 불러오는데 실패했습니다.')
-//       }
-//       return response.json()
-//     },
-//     enabled: !!user,
-//   })
-// }
-
-// 격려 메시지 기능은 제외됨
-// export function useSendEncouragement() {
-//   const queryClient = useQueryClient()
-
-//   return useMutation({
-//     mutationFn: async (data: {
-//       toUserId: string
-//       roomId?: string
-//       messageType: 'text' | 'emoji' | 'sticker' | 'ai_generated'
-//       content: string
-//     }): Promise<void> => {
-//       const response = await fetch('/api/social/encouragement', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify(data)
-//       })
-
-//       if (!response.ok) {
-//         const error = await response.json()
-//         throw new Error(error.error || '격려 메시지 전송에 실패했습니다.')
-//       }
-//     },
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
-//     }
-//   })
-// }
-
-// export function useMarkMessageAsRead() {
-//   const queryClient = useQueryClient()
-
-//   return useMutation({
-//     mutationFn: async (messageId: string): Promise<void> => {
-//       const response = await fetch(`/api/social/encouragement/${messageId}/read`, {
-//         method: 'PUT'
-//       })
-
-//       if (!response.ok) {
-//         const error = await response.json()
-//         throw new Error(error.error || '메시지 읽음 처리에 실패했습니다.')
-//       }
-//     },
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['encouragement-messages'] })
-//     }
-//   })
-// }
-
-// =====================================================
-// 5. 소셜 통계 관련 훅
+// 5. 통계 관련 훅
 // =====================================================
 
 export function useSocialStats() {
   const { data: user } = useUser()
-
+  
   return useQuery({
     queryKey: ['social-stats'],
     queryFn: async (): Promise<any | null> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-
+      if (!user) return null
+      
       const response = await fetch('/api/social/stats')
       if (!response.ok) {
         throw new Error('소셜 통계를 불러오는데 실패했습니다.')
       }
+
       return response.json()
     },
     enabled: !!user,
+    staleTime: 300000, // 5분
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 15 * 60 * 1000, // 15분 후 가비지 컬렉션
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }
 
@@ -509,18 +380,18 @@ export function useRealTimeUpdates(roomId?: string) {
 
     // WebSocket 연결 및 실시간 업데이트 처리
     const handleFocusUpdate = (data: any) => {
-      // 집중도 업데이트 시 캐시 무효화
+      // 집중도 업데이트 시 캐시 무효화 (선택적)
       queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
     }
 
     const handleParticipantJoin = (data: any) => {
-      // 참가자 입장 시 캐시 무효화
+      // 참가자 입장 시 캐시 무효화 (선택적)
       queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
     }
 
     const handleParticipantLeave = (data: any) => {
-      // 참가자 퇴장 시 캐시 무효화
+      // 참가자 퇴장 시 캐시 무효화 (선택적)
       queryClient.invalidateQueries({ queryKey: ['room-participants', roomId] })
       queryClient.invalidateQueries({ queryKey: ['study-rooms'] })
     }
@@ -545,22 +416,54 @@ export function useRealTimeUpdates(roomId?: string) {
 }
 
 // 스터디룸 챌린지 조회
-export function useStudyRoomChallenges() {
+export function useStudyRoomChallenges(options?: { enabled?: boolean }) {
   const { data: user } = useUser()
 
   return useQuery({
     queryKey: ['study-room-challenges'],
     queryFn: async (): Promise<StudyRoom[]> => {
       if (!user) throw new Error('로그인이 필요합니다.')
-
       const response = await fetch('/api/social/study-room?withChallenges=true')
       if (!response.ok) {
         throw new Error('스터디룸 챌린지를 불러오는데 실패했습니다.')
       }
       return response.json()
     },
-    enabled: !!user,
+    enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
     staleTime: 30000, // 30초
-    refetchInterval: 60000, // 1분마다 자동 새로고침
+    refetchInterval: false, // 자동 새로고침 비활성화 (대시보드에서 사용 시)
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션 (대시보드에서 사용 시)
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
+  })
+}
+
+// 친구 랭킹 조회
+export function useFriendRanking(
+  period: 'daily' | 'weekly' | 'monthly' = 'weekly',
+  options?: { enabled?: boolean }
+) {
+  const { data: user } = useUser()
+
+  return useQuery({
+    queryKey: ['friend-ranking', period],
+    queryFn: async (): Promise<FriendRankingResponse> => {
+      if (!user) throw new Error('로그인이 필요합니다.')
+      const response = await fetch(`/api/social/friends/ranking?period=${period}`)
+      if (!response.ok) {
+        throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
+      }
+      return response.json()
+    },
+    enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
+    staleTime: 10000, // 10초
+    refetchInterval: false, // 자동 새로고침 비활성화 (대시보드에서 사용 시)
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션 (대시보드에서 사용 시)
+    // 성능 최적화 추가
+    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
+    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
   })
 }

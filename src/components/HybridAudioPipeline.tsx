@@ -64,8 +64,8 @@ export default function HybridAudioPipeline() {
 
   // 오디오 파이프라인 Ref
   const audioContextRef = useRef<AudioContext | null>(null)
-  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
-  const workerRef = useRef<Worker | null>(null)
+  // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
+  // Web Worker 제거됨 (GPT 기반 발화분석으로 대체)
   const streamRef = useRef<MediaStream | null>(null) // 스트림을 한 번만 생성하고 재사용
 
   // --- 상태 관리 ---
@@ -286,44 +286,17 @@ export default function HybridAudioPipeline() {
           audioTrack.onunmute = () => {};
         }
 
-              // AudioWorklet 모듈 로드 시도 (AudioContext 상태 확인 후)
+              // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
         try {
           if (audioContext.state !== 'running') {
             await audioContext.resume();
           }
           
-          await audioContext.audioWorklet.addModule("/audio/stft-mel-processor.js")
-          const workletNode = new AudioWorkletNode(audioContext, "stft-mel-processor", {
-            numberOfInputs: 1,
-            numberOfOutputs: 0,
-            processorOptions: {
-              sampleRate: 16000,
-              frameSize: 1024,
-              hopSize: 512
-            }
-          })
-          workletNodeRef.current = workletNode
-
-          // AudioWorklet용 소스
-          const workletSource = audioContext.createMediaStreamSource(stream)
-          workletSource.connect(workletNode)
+          // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
           
 
 
-        // Web Worker 생성 (성능 최적화)
-        const createWorker = () => {
-          if (typeof window !== 'undefined' && typeof Worker !== 'undefined') {
-            try {
-              return new Worker("/audio/ml-inference-worker.js");
-            } catch (error) {
-              return null;
-            }
-          }
-          return null;
-        };
-
-        const worker = createWorker();
-        workerRef.current = worker;
+          // Web Worker 제거됨 (GPT 기반 발화분석으로 대체)
 
         // 오디오 레벨 분석용 소스와 분석기 (한 번만 생성)
         const levelSource = audioContext.createMediaStreamSource(stream);
@@ -517,8 +490,8 @@ export default function HybridAudioPipeline() {
 
         setIsInitialized(true);
         console.log('🎤 오디오 파이프라인 초기화 완료');
-      } catch (workletError) {
-        console.warn("AudioWorklet 로드 실패, 기본 오디오 처리로 대체:", workletError);
+              } catch (error) {
+        // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
         
         // 기본 오디오 레벨 체크 (명확한 음성 감지)
         // 오디오 레벨 분석용 소스와 분석기 (한 번만 생성)
@@ -1172,7 +1145,7 @@ export default function HybridAudioPipeline() {
       }
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       // AudioContext는 닫지 않음 (오디오 레벨 체크를 위해 유지)
-      if (workerRef.current) workerRef.current.terminate();
+      // Web Worker 제거됨 (GPT 기반 발화분석으로 대체)
     }
   }, [setupSpeechRecognition])
 

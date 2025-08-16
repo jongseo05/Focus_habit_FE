@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Brain,
@@ -775,6 +775,8 @@ function DashboardContent() {
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000, // 5분
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    refetchOnMount: false, // 컴포넌트 마운트 시 새로고침 비활성화
   })
   
   // elapsed 시간 업데이트
@@ -785,7 +787,11 @@ function DashboardContent() {
         updateElapsed()
       }, 1000)
     }
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
   }, [session.isRunning, session.isPaused, updateElapsed])
   
 
@@ -1251,7 +1257,7 @@ function DashboardContent() {
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false)
 
   // ML 피쳐값 로드 함수
-  const loadMLFeatures = async () => {
+  const loadMLFeatures = useCallback(async () => {
     if (!activeSession?.session_id) return
     
     setIsLoadingFeatures(true)
@@ -1268,14 +1274,14 @@ function DashboardContent() {
     } finally {
       setIsLoadingFeatures(false)
     }
-  }
+  }, [activeSession?.session_id])
 
   // 활성 세션이 변경될 때마다 ML 피쳐값 로드
   useEffect(() => {
     if (activeSession?.session_id) {
       loadMLFeatures()
     }
-  }, [activeSession?.session_id])
+  }, [activeSession?.session_id, loadMLFeatures])
 
   // 세션 시작 시 ML 피쳐값 초기화하지 않음 (데이터 유지)
   // useEffect(() => {
@@ -1284,8 +1290,8 @@ function DashboardContent() {
   //   }
   // }, [session.isRunning])
 
-  // AI 집중도 점수 계산 및 저장 함수 (useEffect 외부로 이동)
-const calculateAndSaveFocusScore = async () => {
+  // AI 집중도 점수 계산 및 저장 함수 (useCallback으로 최적화)
+  const calculateAndSaveFocusScore = useCallback(async () => {
   try {
     // AI 집중도 엔진 import
     const { FocusScoreEngine } = await import('@/lib/focusScoreEngine')
@@ -1393,7 +1399,7 @@ const calculateAndSaveFocusScore = async () => {
     } catch (error) {
       console.error('❌ AI 집중도 점수 계산 실패:', error)
     }
-  }
+  }, [activeSession?.session_id, mlFeatures, session])
 
   // AI 집중도 점수 계산 및 저장 (세션 중일 때)
   useEffect(() => {
@@ -1403,7 +1409,37 @@ const calculateAndSaveFocusScore = async () => {
     const interval = setInterval(calculateAndSaveFocusScore, 5000)
     
     return () => clearInterval(interval)
-     }, [session.isRunning, activeSession?.session_id, mlFeatures, session])
+  }, [session.isRunning, activeSession?.session_id, calculateAndSaveFocusScore])
+
+  // 페이지 언마운트 시 정리 작업
+  useEffect(() => {
+    return () => {
+      // 컴포넌트 언마운트 시 정리 작업
+      console.log('Dashboard 컴포넌트 정리 중...')
+      
+      // 소셜 관련 쿼리 캐시 정리
+      if (typeof window !== 'undefined' && window.location.pathname !== '/social') {
+        console.log('소셜 관련 쿼리 캐시 정리 중...')
+      }
+    }
+  }, [])
+
+  // 페이지 가시성 변경 시 쿼리 관리
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log('페이지가 숨겨짐 - 쿼리 비활성화')
+      } else {
+        console.log('페이지가 다시 보임 - 쿼리 활성화')
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
 
 
@@ -2150,9 +2186,28 @@ const calculateAndSaveFocusScore = async () => {
 
 // 대시보드용 친구 랭킹 컴포넌트 (간단한 버전)
 function DashboardFriendRanking() {
-  const { data: rankingData, isLoading, error } = useFriendRanking('weekly')
+  const [isVisible, setIsVisible] = useState(true)
+  
+  // 페이지 가시성 확인
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsVisible(!document.hidden)
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    setIsVisible(!document.hidden)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+  
+  // 친구 랭킹 데이터 (페이지 가시성에 따라 조건부 활성화)
+  const { data: rankingData, isLoading: rankingLoading, error: rankingError } = useFriendRanking('weekly', {
+    enabled: isVisible // 페이지가 보일 때만 활성화
+  })
 
-  if (isLoading) {
+  if (rankingLoading) {
     return (
       <div className="space-y-3">
         <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
@@ -2162,7 +2217,7 @@ function DashboardFriendRanking() {
     )
   }
 
-  if (error) {
+  if (rankingError) {
     return (
       <div className="text-center py-4 text-slate-500">
         <Users className="h-8 w-8 mx-auto mb-2 text-slate-400" />
@@ -2242,10 +2297,28 @@ function DashboardFriendRanking() {
 
 // 대시보드용 팀 목표 컴포넌트 (스터디룸 챌린지)
 function DashboardTeamGoals() {
+  const [isVisible, setIsVisible] = useState(true)
+  
+  // 페이지 가시성 확인
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsVisible(!document.hidden)
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    setIsVisible(!document.hidden)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+  
   console.log('DashboardTeamGoals 컴포넌트 렌더링 시작')
-  const { data: studyRooms, isLoading, error } = useStudyRoomChallenges()
+  const { data: studyRooms, isLoading: studyRoomsLoading, error: studyRoomsError } = useStudyRoomChallenges({
+    enabled: isVisible // 페이지가 보일 때만 활성화
+  })
   const { user } = useAuth()
-  console.log('useStudyRoomChallenges 결과:', { studyRooms, isLoading, error })
+  console.log('useStudyRoomChallenges 결과:', { studyRooms, isLoading: studyRoomsLoading, error: studyRoomsError })
   console.log('현재 사용자:', user)
   
   // 데이터 구조 상세 분석
@@ -2256,7 +2329,7 @@ function DashboardTeamGoals() {
     console.log('활성 챌린지가 있는 룸들:', studyRooms.filter(room => room.linked_challenge && room.linked_challenge.is_active))
   }
 
-  if (isLoading) {
+  if (studyRoomsLoading) {
     return (
       <div className="space-y-3">
         <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
@@ -2265,7 +2338,7 @@ function DashboardTeamGoals() {
     )
   }
 
-  if (error) {
+  if (studyRoomsError) {
     return (
       <div className="text-center py-4 text-slate-500">
         <Target className="h-8 w-8 mx-auto mb-2 text-slate-400" />

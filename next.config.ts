@@ -2,19 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  // Turbopack 설정
+  // Turbopack 설정 (Worker 파일 제거됨)
   turbopack: {
     rules: {
-      // Worker 파일을 정적 자산으로 처리
-      '*.worker.js': {
-        loaders: ['asset'],
-        as: '*.js',
-      },
-      // ml-inference-worker.js 파일 처리
-      '**/ml-inference-worker.js': {
-        loaders: ['asset'],
-        as: '*.js',
-      },
+      // Worker 파일 제거됨 (GPT 기반 발화분석으로 대체)
     },
   },
   // Worker 파일을 public 폴더에서 제공

@@ -62,6 +62,14 @@ export function useSocialWebSocket(options: UseSocialWebSocketOptions = {}) {
   // 소셜 핸들러 초기화
   useEffect(() => {
     socialHandlerRef.current = new SocialWebSocketHandler(webSocketHandlers)
+    
+    // 정리 함수
+    return () => {
+      if (socialHandlerRef.current) {
+        console.log('Social WebSocket 핸들러 정리 중...')
+        socialHandlerRef.current = null
+      }
+    }
   }, [onFocusUpdate, onRoomJoin, onRoomLeave, onEncouragement, onError])
 
   // 룸 ID 변경 시 핸들러 업데이트

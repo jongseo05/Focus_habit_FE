@@ -33,11 +33,11 @@ const MicrophonePermissionLayer = ({
 }: MicrophonePermissionLayerProps) => {
   const [showHelp, setShowHelp] = useState(false)
 
-  // AudioContext, AudioWorkletNode 관리용 ref
+  // AudioContext 관리용 ref (AudioWorklet 제거됨)
   const audioContextRef = useRef<AudioContext | null>(null)
-  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
+  // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
 
-  // 16kHz mono 스트림 획득 및 AudioWorkletNode 연결
+  // 16kHz mono 스트림 획득 (AudioWorklet 제거됨)
   const handlePermissionRequest = async () => {
     const success = await onRequestPermission()
     if (success && navigator.mediaDevices?.getUserMedia) {
@@ -49,26 +49,12 @@ const MicrophonePermissionLayer = ({
         // AudioContext 생성
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
         audioContextRef.current = audioContext
-        // AudioWorkletProcessor 등록
-        await audioContext.audioWorklet.addModule('/audio/stft-mel-processor.js')
-        const workletNode = new AudioWorkletNode(audioContext, 'stft-mel-processor')
-        workletNodeRef.current = workletNode
-        // 마이크 스트림을 AudioContext에 연결
+        // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
+        // 마이크 스트림을 AudioContext에 직접 연결
         const source = audioContext.createMediaStreamSource(stream)
-        source.connect(workletNode)
-        // workletNode.connect(audioContext.destination) // 필요시 모니터링용
+        // AudioWorklet 제거됨 (GPT 기반 발화분석으로 대체)
 
-        // Web Worker 예시 (ML 추론용, 실제 worker 구현 필요)
-        // const worker = new Worker('/audio/ml-inference-worker.js')
-        // workletNode.port.onmessage = (e) => {
-        //   if (e.data && e.data.mel) {
-        //     worker.postMessage({ mel: e.data.mel })
-        //   }
-        // }
-        // worker.onmessage = (e) => {
-        //   // 추론 결과 수신 및 후처리
-        //   // e.data: { result, ... }
-        // }
+        // Web Worker 제거됨 (GPT 기반 발화분석으로 대체)
         
 
       } catch (err) {

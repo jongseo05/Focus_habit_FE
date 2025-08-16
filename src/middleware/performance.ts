@@ -1,8 +1,7 @@
-import { updateSession } from './src/lib/supabase/middleware';
-import { type NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  // 성능 최적화 미들웨어 적용
+// 성능 최적화를 위한 미들웨어
+export function performanceMiddleware(request: NextRequest) {
   const response = NextResponse.next()
   
   // 캐시 최적화 헤더 추가
@@ -23,18 +22,13 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('X-Frame-Options', 'DENY')
   
-  // Supabase 세션 업데이트
-  const sessionResponse = await updateSession(request)
-  
-  // 성능 헤더를 세션 응답에 복사
-  if (sessionResponse instanceof NextResponse) {
-    response.headers.forEach((value, key) => {
-      sessionResponse.headers.set(key, value)
-    })
-    return sessionResponse
-  }
-  
   return response
+}
+
+// 메인 미들웨어 함수
+export function middleware(request: NextRequest) {
+  // 성능 최적화 미들웨어 적용
+  return performanceMiddleware(request)
 }
 
 export const config = {
@@ -49,4 +43,4 @@ export const config = {
      */
     '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
-};
+}
