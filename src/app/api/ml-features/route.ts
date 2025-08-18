@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer } from '../../../lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError,
+  parsePaginationParams,
+  createPaginatedResponse
+} from '../../../lib/api/standardResponse'
 
 // ML 피쳐값 저장
 export async function POST(request: NextRequest) {
@@ -11,23 +19,21 @@ export async function POST(request: NextRequest) {
     // 요청 데이터 검증
     if (!sessionId || !features) {
       console.error('❌ 필수 데이터 누락:', { sessionId: !!sessionId, features: !!features })
-      return NextResponse.json(
-        { error: 'sessionId and features are required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId와 features는 필수 항목입니다.',
+        400
       )
     }
 
-    // 현재 사용자 정보 가져오기
+    // 표준 인증 확인
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      console.error('❌ 인증 오류:', authError)
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     console.log('✅ 사용자 인증 성공:', user.id)
 
@@ -41,9 +47,9 @@ export async function POST(request: NextRequest) {
 
     if (sessionError || !session) {
       console.error('❌ 세션 조회 오류:', sessionError)
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
@@ -74,25 +80,21 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('❌ ML 피쳐값 저장 실패:', error)
-      return NextResponse.json(
-        { error: 'Failed to save ML features', details: error.message },
-        { status: 500 }
+      return createErrorResponse(
+        `ML 피쳐값 저장에 실패했습니다: ${error.message}`,
+        500
       )
     }
 
     console.log('✅ ML 피쳐값 저장 성공:', data)
 
-    return NextResponse.json({
-      success: true,
-      data: data
-    })
+    return createSuccessResponse(
+      data,
+      'ML 피쳐값이 성공적으로 저장되었습니다.'
+    )
 
   } catch (error) {
-    console.error('❌ ML 피쳐값 저장 중 예외 발생:', error)
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, 'ML 피쳐값 저장')
   }
 }
 
@@ -100,23 +102,23 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     const { searchParams } = new URL(request.url)
     const sessionId = searchParams.get('sessionId')
     const format = searchParams.get('format') || 'json' // 'json' or 'csv'
+    const pagination = parsePaginationParams(searchParams)
 
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId is required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId는 필수 항목입니다.',
+        400
       )
     }
 
@@ -129,28 +131,29 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
-    // ML 피쳐값 조회
-    const { data: features, error } = await supabase
-      .from('ml_features')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('ts', { ascending: true })
-
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch ML features' },
-        { status: 500 }
-      )
-    }
-
+    // ML 피쳐값 조회 (페이지네이션 적용)
     if (format === 'csv') {
+      // CSV의 경우 모든 데이터 조회 (페이지네이션 적용 안함)
+      const { data: features, error } = await supabase
+        .from('ml_features')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+
+      if (error) {
+        console.error('Database error:', error)
+        return createErrorResponse(
+          'ML 피쳐 조회에 실패했습니다.',
+          500
+        )
+      }
+
       // CSV 형식으로 변환
       const csvContent = convertToCSV(features || [])
       return new NextResponse(csvContent, {
@@ -161,18 +164,38 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // JSON 형식으로 반환
-    return NextResponse.json({
-      success: true,
-      data: features || []
-    })
+    // JSON 형식 - 페이지네이션 적용
+    const [featuresResult, countResult] = await Promise.all([
+      supabase
+        .from('ml_features')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('ts', { ascending: true })
+        .range(pagination.offset, pagination.offset + pagination.limit - 1),
+      supabase
+        .from('ml_features')
+        .select('feature_id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+    ])
+
+    if (featuresResult.error) {
+      console.error('Database error:', featuresResult.error)
+      return createErrorResponse(
+        'ML 피쳐 조회에 실패했습니다.',
+        500
+      )
+    }
+
+    // JSON 형식으로 페이지네이션 응답 반환
+    return createPaginatedResponse(
+      featuresResult.data || [],
+      countResult.count || 0,
+      pagination,
+      `${featuresResult.data?.length || 0}개의 ML 피쳐를 조회했습니다.`
+    )
 
   } catch (error) {
-    console.error('API error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, 'ML 피쳐 조회')
   }
 }
 

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer } from '../../../lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '../../../lib/api/standardResponse'
 
 // 제스처 피쳐 및 집중 상태 저장 API
 export async function POST(request: NextRequest) {
@@ -12,30 +18,28 @@ export async function POST(request: NextRequest) {
 
     // 요청 데이터 검증
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId is required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId는 필수 항목입니다.',
+        400
       )
     }
 
     if (!features) {
-      return NextResponse.json(
-        { error: 'features is required' },
-        { status: 400 }
+      return createErrorResponse(
+        'features는 필수 항목입니다.',
+        400
       )
     }
 
-    // 현재 사용자 정보 가져오기
+    // 표준 인증 확인
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      console.error('❌ 인증 오류:', authError)
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     // 세션이 해당 사용자의 것인지 확인
     const { data: session, error: sessionError } = await supabase
@@ -47,9 +51,9 @@ export async function POST(request: NextRequest) {
 
     if (sessionError || !session) {
       console.error('❌ 세션 조회 오류:', sessionError)
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
@@ -75,9 +79,9 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('❌ ML 피쳐 저장 실패:', insertError)
-      return NextResponse.json(
-        { error: `ML 피쳐 저장 실패: ${insertError.message}` },
-        { status: 500 }
+      return createErrorResponse(
+        `ML 피쳐 저장에 실패했습니다: ${insertError.message}`,
+        500
       )
     }
 
@@ -110,17 +114,12 @@ export async function POST(request: NextRequest) {
       focusScore: features.focusScore
     })
 
-    return NextResponse.json({
-      success: true,
-      data: savedFeature,
-      message: '제스처 피쳐가 성공적으로 저장되었습니다.'
-    })
+    return createSuccessResponse(
+      savedFeature,
+      '제스처 피쳐가 성공적으로 저장되었습니다.'
+    )
 
   } catch (error) {
-    console.error('❌ 제스처 피쳐 API 중 예외 발생:', error)
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '제스처 피쳐 저장')
   }
 }

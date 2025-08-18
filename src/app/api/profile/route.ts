@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer } from '../../../lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '../../../lib/api/standardResponse'
 
 // GET: 사용자 프로필 조회
 export async function GET(request: NextRequest) {

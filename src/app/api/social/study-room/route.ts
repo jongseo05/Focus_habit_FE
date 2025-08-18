@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
-import type { CreateStudyRoomData } from '@/types/social'
+import { supabaseServer } from '../../../../lib/supabase/server'
+import type { CreateStudyRoomData } from '../../../../types/social'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError,
+  parsePaginationParams,
+  createPaginatedResponse
+} from '../../../../lib/api/standardResponse'
 
 // GET: 활성 스터디룸 목록 조회
 export async function GET(request: NextRequest) {
@@ -14,18 +22,16 @@ export async function GET(request: NextRequest) {
     // 쿼리 파라미터 확인
     const { searchParams } = new URL(request.url)
     const withChallenges = searchParams.get('withChallenges') === 'true'
+    const pagination = parsePaginationParams(searchParams)
     
-    console.log('3. 쿼리 파라미터:', { withChallenges })
+    console.log('3. 쿼리 파라미터:', { withChallenges, pagination })
     
-    // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    // 표준 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
     
     console.log('4. 인증된 사용자:', user.id)
     
@@ -73,7 +79,7 @@ export async function GET(request: NextRequest) {
         
         if (!userRoomIds || userRoomIds.length === 0) {
           console.log('8.3. 사용자가 참여 중인 룸이 없음')
-          return NextResponse.json([])
+          return createSuccessResponse([], '참여 중인 스터디룸이 없습니다.')
         }
         
         const roomIds = userRoomIds.map(r => r.room_id)
@@ -130,7 +136,10 @@ export async function GET(request: NextRequest) {
         )
         
         console.log('9. 챌린지 정보 포함 조회 완료:', roomsWithChallenges.length)
-        return NextResponse.json(roomsWithChallenges)
+        return createSuccessResponse(
+          roomsWithChallenges,
+          `${roomsWithChallenges.length}개의 참여 중인 스터디룸을 조회했습니다.`
+        )
         
       } catch (challengeError) {
         console.error('9.1. 챌린지 정보 포함 조회 실패, 기본 조회로 대체:', challengeError)
@@ -145,7 +154,7 @@ export async function GET(request: NextRequest) {
         }
         
         if (!userRoomIds || userRoomIds.length === 0) {
-          return NextResponse.json([])
+          return createSuccessResponse([], '참여 중인 스터디룸이 없습니다.')
         }
         
         const roomIds = userRoomIds.map(r => r.room_id)
@@ -159,44 +168,48 @@ export async function GET(request: NextRequest) {
           throw userRoomsError
         }
         
-        return NextResponse.json(userRooms || [])
+        return createSuccessResponse(
+          userRooms || [],
+          `${userRooms?.length || 0}개의 참여 중인 스터디룸을 조회했습니다.`
+        )
       }
     } else {
-      // 기본 조회 (모든 활성 스터디룸)
-      const { data: activeRooms, error: activeError } = await supabase
-        .from('study_rooms')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(20)
+      // 기본 조회 (모든 활성 스터디룸) with 페이지네이션
+      const [roomsResult, countResult] = await Promise.all([
+        supabase
+          .from('study_rooms')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .range(pagination.offset, pagination.offset + pagination.limit - 1),
+        supabase
+          .from('study_rooms')
+          .select('room_id', { count: 'exact', head: true })
+          .eq('is_active', true)
+      ])
       
-      console.log('9. 활성 스터디룸 조회 결과:', { activeRooms, activeError })
+      console.log('9. 활성 스터디룸 조회 결과:', { 
+        rooms: roomsResult.data?.length, 
+        count: countResult.count,
+        error: roomsResult.error || countResult.error 
+      })
       
-      if (activeError) {
-        console.error('10. 활성 스터디룸 조회에서 에러 발생:', activeError)
-        throw activeError
+      if (roomsResult.error) {
+        console.error('10. 활성 스터디룸 조회에서 에러 발생:', roomsResult.error)
+        throw roomsResult.error
       }
       
       console.log('11. === 활성 스터디룸 목록 조회 완료 ===')
-      return NextResponse.json(activeRooms || [])
+      return createPaginatedResponse(
+        roomsResult.data || [],
+        countResult.count || 0,
+        pagination,
+        `${roomsResult.data?.length || 0}개의 활성 스터디룸을 조회했습니다.`
+      )
     }
     
   } catch (error) {
-    console.error('=== 스터디룸 목록 조회 실패 ===')
-    console.error('에러 타입:', typeof error)
-    console.error('에러 메시지:', error)
-    console.error('에러 스택:', error instanceof Error ? error.stack : '스택 없음')
-    
-    // 더 자세한 에러 정보를 클라이언트에 반환
-    return NextResponse.json(
-      { 
-        error: '스터디룸 목록을 불러오는데 실패했습니다.',
-        details: error instanceof Error ? error.message : JSON.stringify(error),
-        errorType: typeof error,
-        timestamp: new Date().toISOString()
-      },
-      { status: 500 }
-    )
+    return handleAPIError(error, '스터디룸 목록 조회')
   }
 }
 
@@ -208,17 +221,13 @@ export async function POST(request: NextRequest) {
     const supabase = await supabaseServer()
     console.log('Supabase 서버 연결 완료')
     
-    // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    console.log('인증 결과:', { user: user?.id, authError })
-    
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    // 표준 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
+    console.log('인증 결과:', { user: user?.id })
 
     const body = await request.json()
     console.log('받은 요청 데이터:', body)
@@ -255,16 +264,19 @@ export async function POST(request: NextRequest) {
           return await createStudyRoomFallback(supabase, roomData)
         }
         
-        return NextResponse.json(
-          { error: '스터디룸 생성에 실패했습니다.' },
-          { status: 500 }
+        return createErrorResponse(
+          '스터디룸 생성에 실패했습니다.',
+          500
         )
       }
 
       const roomData_result = Array.isArray(room) ? room[0] : room
       console.log('트랜잭션으로 스터디룸 생성 성공:', roomData_result?.room_id)
       
-      return NextResponse.json(roomData_result)
+      return createSuccessResponse(
+        roomData_result,
+        '스터디룸이 성공적으로 생성되었습니다.'
+      )
       
     } catch (error) {
       console.error('❌ 트랜잭션 처리 중 오류:', error)
@@ -273,14 +285,7 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('=== 스터디룸 생성 API 에러 ===')
-    console.error('에러 타입:', typeof error)
-    console.error('에러 메시지:', error)
-    console.error('에러 스택:', error instanceof Error ? error.stack : '스택 없음')
-    return NextResponse.json(
-      { error: '스터디룸 생성에 실패했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '스터디룸 생성')
   }
 }
 
@@ -307,9 +312,9 @@ async function createStudyRoomFallback(supabase: any, roomData: any) {
 
     if (createError || !room) {
       console.error('폴백 스터디룸 생성 실패:', createError)
-      return NextResponse.json(
-        { error: '스터디룸 생성에 실패했습니다.' },
-        { status: 500 }
+      return createErrorResponse(
+        '스터디룸 생성에 실패했습니다.',
+        500
       )
     }
 
@@ -331,13 +336,12 @@ async function createStudyRoomFallback(supabase: any, roomData: any) {
     }
 
     console.log('✅ 폴백으로 스터디룸 생성 성공:', room.room_id)
-    return NextResponse.json(room)
+    return createSuccessResponse(
+      room,
+      '스터디룸이 성공적으로 생성되었습니다. (폴백 모드)'
+    )
     
   } catch (error) {
-    console.error('❌ 폴백 스터디룸 생성 실패:', error)
-    return NextResponse.json(
-      { error: '스터디룸 생성에 실패했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '폴백 스터디룸 생성')
   }
 }
