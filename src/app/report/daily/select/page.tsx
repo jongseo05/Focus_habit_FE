@@ -19,6 +19,7 @@ import Link from "next/link"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useDailyStats } from "@/hooks/useDailyStats"
+import AppHeader from "@/components/AppHeader"
 
 export default function DateSelectPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
@@ -125,6 +126,7 @@ export default function DateSelectPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
+      <AppHeader />
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200">
         <div className="container mx-auto px-6 py-4">

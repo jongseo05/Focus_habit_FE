@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useTodaySessions } from "@/hooks/useReport"
+import AppHeader from "@/components/AppHeader"
 
 export default function TodayReportPage() {
   // 한국 시간대 기준으로 오늘 날짜 계산
@@ -92,6 +93,7 @@ export default function TodayReportPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
+      <AppHeader />
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200">
         <div className="container mx-auto px-6 py-4">
