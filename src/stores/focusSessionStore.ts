@@ -103,16 +103,38 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
         if (process.env.NODE_ENV === 'development') {
           console.log('🎯 세션 시작:', {
             startTime: now,
-            formattedTime: new Date(now).toLocaleTimeString()
+            formattedTime: new Date(now).toLocaleTimeString(),
+            timestamp: new Date(now).toISOString()
           })
         }
         
-        set({
-          isRunning: true,
-          isPaused: false,
-          startTime: now,
-          elapsed: 0,
-          syncError: null
+        set((prevState) => {
+          const newState = {
+            ...prevState,
+            isRunning: true,
+            isPaused: false,
+            startTime: now,
+            elapsed: 0,
+            syncError: null
+          }
+          
+          // 상태 변경 확인용 로그
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔄 세션 상태 변경:', {
+              before: {
+                isRunning: prevState.isRunning,
+                startTime: prevState.startTime,
+                elapsed: prevState.elapsed
+              },
+              after: {
+                isRunning: newState.isRunning,
+                startTime: newState.startTime,
+                elapsed: newState.elapsed
+              }
+            })
+          }
+          
+          return newState
         })
       },
       
@@ -127,32 +149,64 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
       },
       
       stopSession: () => {
-        set({
-          isRunning: false,
-          isPaused: false,
-          elapsed: 0,
-          startTime: null
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🛑 세션 종료')
+        }
+        
+        set((prevState) => {
+          const newState = {
+            ...prevState,
+            isRunning: false,
+            isPaused: false,
+            elapsed: 0,
+            startTime: null
+          }
+          
+          // 상태 변경 확인용 로그
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔄 세션 종료 상태 변경:', {
+              before: {
+                isRunning: prevState.isRunning,
+                startTime: prevState.startTime,
+                elapsed: prevState.elapsed
+              },
+              after: {
+                isRunning: newState.isRunning,
+                startTime: newState.startTime,
+                elapsed: newState.elapsed
+              }
+            })
+          }
+          
+          return newState
         })
       },
       
       updateElapsed: () => {
         set((state) => {
           if (state.isRunning && !state.isPaused && state.startTime) {
-            const elapsed = Math.floor((Date.now() - state.startTime) / 1000)
+            const now = Date.now()
+            const elapsed = Math.floor((now - state.startTime) / 1000)
             
-            // 디버깅용 로그 (개발 환경에서만)
-            if (process.env.NODE_ENV === 'development' && elapsed % 10 === 0) {
+            // 디버깅용 로그 (매번 출력하도록 변경)
+            if (process.env.NODE_ENV === 'development') {
               console.log('⏱️ 타이머 업데이트:', {
                 isRunning: state.isRunning,
                 isPaused: state.isPaused,
                 startTime: state.startTime,
-                currentTime: Date.now(),
+                currentTime: now,
                 elapsed: elapsed,
+                previousElapsed: state.elapsed,
                 formattedTime: `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`
               })
             }
             
-            return { elapsed }
+            // elapsed가 실제로 변경되었는지 확인
+            if (elapsed !== state.elapsed) {
+              return { elapsed }
+            } else {
+              return state
+            }
           }
           
           // 조건을 만족하지 않는 경우 디버깅 로그
@@ -161,7 +215,8 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
               isRunning: state.isRunning,
               isPaused: state.isPaused,
               hasStartTime: !!state.startTime,
-              startTime: state.startTime
+              startTime: state.startTime,
+              currentElapsed: state.elapsed
             })
           }
           
@@ -297,6 +352,7 @@ export const useFocusSessionState = () => ({
   isPaused: useFocusSessionStore((state) => state.isPaused),
   elapsed: useFocusSessionStore((state) => state.elapsed),
   focusScore: useFocusSessionStore((state) => state.focusScore),
+  startTime: useFocusSessionStore((state) => state.startTime),
   formatTime: useFocusSessionStore((state) => state.formatTime),
   getDuration: useFocusSessionStore((state) => state.getDuration),
   isSessionActive: useFocusSessionStore((state) => state.isSessionActive)

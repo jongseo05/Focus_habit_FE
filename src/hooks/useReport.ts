@@ -459,7 +459,20 @@ export function useTodaySessions(date: string) {
         throw new Error('인증되지 않은 사용자입니다.')
       }
 
-      // 오늘 날짜의 집중 세션 조회
+      // 오늘 날짜의 집중 세션 조회 (시간대 보정)
+      const startOfDay = new Date(date)
+      startOfDay.setHours(0, 0, 0, 0)
+      
+      const endOfDay = new Date(date)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      console.log('🔍 세션 조회 범위:', {
+        date,
+        startOfDay: startOfDay.toISOString(),
+        endOfDay: endOfDay.toISOString(),
+        userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      })
+
       const { data: sessions, error } = await supabase
         .from('focus_session')
         .select(`
@@ -472,13 +485,25 @@ export function useTodaySessions(date: string) {
           distractions
         `)
         .eq('user_id', user.id)
-        .gte('started_at', `${date}T00:00:00`)
-        .lt('started_at', `${date}T23:59:59`)
+        .gte('started_at', startOfDay.toISOString())
+        .lte('started_at', endOfDay.toISOString())
         .order('started_at', { ascending: false })
 
       if (error) {
-        throw new Error('세션 데이터를 불러오는데 실패했습니다.')
+        console.error('❌ 세션 데이터 조회 실패:', error)
+        throw new Error(`세션 데이터를 불러오는데 실패했습니다: ${error.message}`)
       }
+
+      console.log('✅ 세션 데이터 조회 성공:', {
+        date,
+        sessionsCount: sessions?.length || 0,
+        sessions: sessions?.map(s => ({
+          id: s.session_id,
+          started_at: s.started_at,
+          ended_at: s.ended_at,
+          focus_score: s.focus_score
+        }))
+      })
 
       return sessions?.map(session => {
         // 실제 세션 시간 계산

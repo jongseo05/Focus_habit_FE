@@ -93,6 +93,13 @@ export async function POST(request: NextRequest) {
 
     const updatedSession = endResult.value.data
 
+    console.log('✅ 세션 종료 완료:', {
+      sessionId: updatedSession.session_id,
+      started_at: updatedSession.started_at,
+      ended_at: updatedSession.ended_at,
+      final_focus_score: updatedSession.focus_score
+    })
+
     // 샘플 데이터 처리
     const samples = samplesResult.status === 'fulfilled' && !samplesResult.value.error 
       ? samplesResult.value.data || []

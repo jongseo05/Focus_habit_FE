@@ -166,17 +166,31 @@ function DashboardContent() {
   // elapsed 시간 업데이트
   useEffect(() => {
     let interval: NodeJS.Timeout
+    
     if (sessionStateState.isRunning && !sessionStateState.isPaused) {
+      console.log('🕒 타이머 시작:', {
+        isRunning: sessionStateState.isRunning,
+        isPaused: sessionStateState.isPaused,
+        startTime: sessionStateState.startTime
+      })
+      
       interval = setInterval(() => {
         sessionActions.updateElapsed()
       }, 1000)
+    } else {
+      console.log('🛑 타이머 중지 조건:', {
+        isRunning: sessionStateState.isRunning,
+        isPaused: sessionStateState.isPaused
+      })
     }
+    
     return () => {
       if (interval) {
+        console.log('🔄 타이머 정리')
         clearInterval(interval)
       }
     }
-  }, [sessionStateState.isRunning, sessionStateState.isPaused, sessionActions])
+  }, [sessionStateState.isRunning, sessionStateState.isPaused])
   
 
   
