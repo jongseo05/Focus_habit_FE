@@ -53,21 +53,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ML 피쳐 데이터 저장
+    // ML 피쳐 데이터 저장 (ml_features 테이블 사용)
+    const currentTimestamp = new Date().toISOString()
     const { data: savedFeature, error: insertError } = await supabase
       .from('ml_features')
       .insert({
         session_id: sessionId,
-        ts: new Date().toISOString(),
-        head_pose_pitch: features.headPose?.pitch,
-        head_pose_yaw: features.headPose?.yaw,
-        head_pose_roll: features.headPose?.roll,
-        eye_status: features.eyeStatus,
-        ear_value: features.earValue,
-        frame_number: features.frameNumber,
-        focus_status: features.focusStatus,
-        focus_confidence: features.focusConfidence,
-        focus_score: features.focusScore
+        ts: currentTimestamp,
+        head_pose_pitch: features.headPose?.pitch || null,
+        head_pose_yaw: features.headPose?.yaw || null,
+        head_pose_roll: features.headPose?.roll || null,
+        eye_status: features.eyeStatus || null,
+        ear_value: features.earValue || null,
+        frame_number: features.frameNumber || 0,
+        focus_status: features.focusStatus || null,
+        focus_confidence: features.focusConfidence || null,
+        focus_score: features.focusScore || null
       })
       .select()
       .single()
@@ -80,13 +81,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 집중 상태가 변경되었으면 이벤트도 저장
+    // 집중 상태가 변경되었으면 이벤트도 저장 (에러 처리 포함)
     if (features.focusStatus) {
-      await supabase
+      const { error: eventError } = await supabase
         .from('focus_event')
         .insert({
           session_id: sessionId,
-          ts: new Date().toISOString(),
+          ts: currentTimestamp, // 동일한 타임스탬프 사용
           event_type: 'focus',
           payload: {
             focus_status: features.focusStatus,
@@ -95,6 +96,11 @@ export async function POST(request: NextRequest) {
             frame_number: features.frameNumber
           }
         })
+      
+      if (eventError) {
+        console.error('⚠️ 집중도 이벤트 저장 실패 (계속 진행):', eventError.message)
+        // 이벤트 저장 실패는 치명적이지 않으므로 경고만 로그
+      }
     }
 
     console.log('✅ 제스처 피쳐 저장 성공:', {

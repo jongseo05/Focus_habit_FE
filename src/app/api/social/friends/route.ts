@@ -31,19 +31,33 @@ export async function GET(request: NextRequest) {
 
     console.log('조회 파라미터:', { search, limit, offset })
 
+    // friends_list_view 대신 직접 JOIN 쿼리 사용
     let query = supabase
-      .from('friends_list_view')
-      .select('*')
+      .from('user_friends')
+      .select(`
+        friendship_id,
+        friend_id,
+        status,
+        created_at,
+        profiles!user_friends_friend_id_fkey(
+          user_id,
+          display_name,
+          avatar_url,
+          handle,
+          bio
+        )
+      `)
       .eq('user_id', user.id)
+      .eq('status', 'active')
 
-    // 검색어가 있으면 필터링
+    // 검색어가 있으면 필터링 (profiles 테이블의 display_name 검색)
     if (search) {
-      query = query.or(`friend_name.ilike.%${search}%`)
+      query = query.or(`profiles.display_name.ilike.%${search}%,profiles.handle.ilike.%${search}%`)
     }
 
     // 페이징 적용
     query = query.range(offset, offset + limit - 1)
-    query = query.order('friend_name', { ascending: true }) // display_name으로 정렬
+    query = query.order('profiles.display_name', { ascending: true }) // display_name으로 정렬
 
     const { data: friends, error: friendsError } = await query
 
@@ -59,12 +73,20 @@ export async function GET(request: NextRequest) {
 
     // 전체 개수 조회
     let countQuery = supabase
-      .from('friends_list_view')
+      .from('user_friends')
       .select('friendship_id', { count: 'exact' })
       .eq('user_id', user.id)
+      .eq('status', 'active')
 
+    // 검색어가 있으면 profiles 테이블과 조인하여 필터링
     if (search) {
-      countQuery = countQuery.or(`friend_name.ilike.%${search}%`)
+      countQuery = supabase
+        .from('user_friends')
+        .select('friendship_id', { count: 'exact' })
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .eq('profiles.display_name.ilike', `%${search}%`)
+        .or('profiles.handle.ilike', `%${search}%`)
     }
 
     const { count, error: countError } = await countQuery
@@ -235,139 +257,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT: 친구 검색
-export async function PUT(request: NextRequest) {
-  console.log('=== 친구 검색 시작 ===')
-  
-  try {
-    const supabase = await supabaseServer()
-    
-    // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
-    }
-
-    const body = await request.json()
-    const { search, limit = 20 } = body
-
-    console.log('검색 파라미터:', { search, limit })
-
-    if (!search || search.trim().length < 2) {
-      return NextResponse.json(
-        { error: '검색어는 최소 2자 이상이어야 합니다.' },
-        { status: 400 }
-      )
-    }
-
-    // 사용자 검색 (자기 자신 제외) - display_name 우선 검색
-    const { data: users, error: usersError } = await supabase
-      .from('profiles')
-      .select(`
-        user_id,
-        display_name,
-        avatar_url,
-        handle,
-        bio
-      `)
-      .or(`display_name.ilike.%${search}%,handle.ilike.%${search}%`)
-      .neq('user_id', user.id)
-      .order('display_name', { ascending: true }) // display_name으로 정렬
-      .limit(limit)
-
-    console.log('사용자 검색 결과:', { users: users?.length, error: usersError })
-
-    if (usersError) {
-      console.error('사용자 검색 실패:', usersError)
-      return NextResponse.json(
-        { error: '사용자 검색에 실패했습니다.' },
-        { status: 500 }
-      )
-    }
-
-    if (!users || users.length === 0) {
-      return NextResponse.json({
-        results: [],
-        total_count: 0
-      })
-    }
-
-    // 각 사용자에 대해 친구 관계 및 요청 상태 확인
-    const userIds = users.map(u => u.user_id)
-    
-    // 친구 관계 확인
-    const { data: friendships, error: friendshipError } = await supabase
-      .from('user_friends')
-      .select('friend_id')
-      .eq('user_id', user.id)
-      .in('friend_id', userIds)
-
-    if (friendshipError) {
-      console.error('친구 관계 확인 실패:', friendshipError)
-    }
-
-    // 친구 요청 확인
-    const { data: requests, error: requestError } = await supabase
-      .from('friend_requests')
-      .select('to_user_id')
-      .eq('from_user_id', user.id)
-      .eq('status', 'pending')
-      .in('to_user_id', userIds)
-
-    if (requestError) {
-      console.error('친구 요청 확인 실패:', requestError)
-    }
-
-    // 활동 상태 확인
-    const { data: activityStatuses, error: activityError } = await supabase
-      .from('friend_activity_status')
-      .select('user_id, current_focus_score, last_activity')
-      .in('user_id', userIds)
-
-    if (activityError) {
-      console.error('활동 상태 확인 실패:', activityError)
-    }
-
-    // 결과 조합 및 display_name으로 정렬
-    const results: FriendSearchResult[] = users.map(user => {
-      const isFriend = friendships?.some(f => f.friend_id === user.user_id) || false
-      const hasPendingRequest = requests?.some(r => r.to_user_id === user.user_id) || false
-      const activityStatus = activityStatuses?.find(a => a.user_id === user.user_id)
-
-      return {
-        user_id: user.user_id,
-        display_name: user.display_name,
-        avatar_url: user.avatar_url,
-        handle: user.handle,
-        bio: user.bio,
-        is_friend: isFriend,
-        has_pending_request: hasPendingRequest,
-        current_focus_score: activityStatus?.current_focus_score,
-        last_activity: activityStatus?.last_activity
-      }
-    }).sort((a, b) => {
-      // display_name으로 정렬 (한글 우선)
-      return a.display_name.localeCompare(b.display_name, 'ko-KR')
-    })
-
-    const response: FriendSearchResponse = {
-      results,
-      total_count: results.length
-    }
-
-    console.log('=== 친구 검색 완료 ===')
-    return NextResponse.json(response)
-
-  } catch (error) {
-    console.error('=== 친구 검색 실패 ===')
-    console.error('에러:', error)
-    return NextResponse.json(
-      { error: '사용자 검색에 실패했습니다.' },
-      { status: 500 }
-    )
-  }
-}
+// 참고: 친구 검색 기능은 /api/social/friends/search (GET)로 이동됨

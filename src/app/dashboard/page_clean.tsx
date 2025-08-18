@@ -138,13 +138,13 @@ function DashboardContent() {
   
   // 최근 완료된 세션들 조회 (데이터 로그용)
   const { data: recentSessions } = useQuery({
-    queryKey: ['recent-sessions', user?.id],
+    queryKey: ['recent-sessionStates', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
       
       const supabase = supabaseBrowser()
       const { data, error } = await supabase
-        .from('focus_session')
+        .from('focus_sessionState')
         .select('*')
         .eq('user_id', user.id)
         .not('ended_at', 'is', null) // 완료된 세션만
@@ -246,12 +246,6 @@ function DashboardContent() {
 
   // 집중모드 시작 함수
   const startFocusSession = async () => {
-    // 이미 실행 중인 세션이 있으면 중복 실행 방지
-    if (sessionStateState.isRunning) {
-      console.log('⏰ 세션이 이미 실행 중입니다. 중복 시작을 방지합니다.')
-      return
-    }
-    
     if (!sessionStateState.isRunning) {
       try {
         
@@ -259,7 +253,7 @@ function DashboardContent() {
         sessionActions.startSession()
         
         // 🚀 최적화: API 라우트를 통해 세션 생성 (인증과 검증 포함)
-        const response = await fetch('/api/focus-session', {
+        const response = await fetch('/api/focus-sessionState', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -267,7 +261,7 @@ function DashboardContent() {
           body: JSON.stringify({
             goal_min: 30,
             context_tag: '집중 세션',
-            session_type: 'study'
+            sessionState_type: 'study'
           })
         })
 
@@ -319,7 +313,7 @@ function DashboardContent() {
       // 🚀 최적화: 활성 세션 조회 - API 우선, 빠른 실패 처리
       let activeSession = null
       try {
-        const sessionStateResponse = await fetch('/api/focus-session?active=true', {
+        const sessionStateResponse = await fetch('/api/focus-sessionState?active=true', {
           signal: AbortSignal.timeout(3000) // 3초 타임아웃
         })
         
@@ -334,8 +328,8 @@ function DashboardContent() {
         // API 실패 시 직접 DB 조회 (필요한 필드만)
         try {
           const { data: directSession, error: directError } = await supabase
-            .from('focus_session')
-            .select('session_id, started_at, goal_min, context_tag, session_type, notes, focus_score')
+            .from('focus_sessionState')
+            .select('session_id, started_at, goal_min, context_tag, sessionState_type, notes, focus_score')
             .eq('user_id', user.id)
             .is('ended_at', null)
             .order('started_at', { ascending: false })
@@ -357,7 +351,7 @@ function DashboardContent() {
         try {
   
           
-          const response = await fetch('/api/focus-session/end', {
+          const response = await fetch('/api/focus-sessionState/end', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -452,10 +446,7 @@ function DashboardContent() {
       
       // 세션이 아직 시작되지 않았다면 시작
       if (!sessionStateState.isRunning) {
-        console.log('🎯 권한 부여 후 세션 시작')
         sessionActions.startSession()
-      } else {
-        console.log('⏰ 세션이 이미 실행 중이므로 startTime 유지')
       }
     } else {
       // 스트림 시작 실패해도 권한 레이어는 닫고 세션은 유지
@@ -524,7 +515,7 @@ function DashboardContent() {
         includeAllUsers: includeAllUsers.toString()
       });
       
-      const response = await fetch(`/api/focus-session/${targetSessionId}/download?${queryParams}`);
+      const response = await fetch(`/api/focus-sessionState/${targetSessionId}/download?${queryParams}`);
       if (!response.ok) throw new Error('세션 데이터 조회 실패');
       
       if (format === 'csv') {
@@ -533,8 +524,8 @@ function DashboardContent() {
         const a = document.createElement('a');
         a.href = url;
         const filename = includeAllUsers 
-          ? `focus-session-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`
-          : `focus-session-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`;
+          ? `focus-sessionState-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`
+          : `focus-sessionState-${targetSessionId}-${new Date().toISOString().split('T')[0]}.csv`;
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
@@ -545,8 +536,8 @@ function DashboardContent() {
         const a = document.createElement('a');
         a.href = url;
         const filename = includeAllUsers 
-          ? `focus-session-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`
-          : `focus-session-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`;
+          ? `focus-sessionState-all-users-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`
+          : `focus-sessionState-${targetSessionId}-${new Date().toISOString().split('T')[0]}.json`;
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
@@ -566,8 +557,7 @@ function DashboardContent() {
       setShowCameraPermissionLayer(false)
       if (!microphoneStream.isPermissionGranted) {
         setShowMicrophonePermissionLayer(true)
-      } else if (!sessionStateState.isRunning) {
-        console.log('🎯 카메라 권한 확보, 집중 세션 시작')
+      } else {
         startFocusSession()
       }
     }
@@ -584,9 +574,8 @@ function DashboardContent() {
       // 오디오 파이프라인 자동 시작
       setShowAudioPipeline(true)
       
-      // 두 권한 모두 있고 세션이 실행 중이 아닌 경우만 시작
-      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted && !sessionStateState.isRunning) {
-        console.log('🎯 모든 권한 확보, 집중 세션 시작')
+      // 두 권한 모두 있으면 집중 세션도 시작
+      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted) {
         startFocusSession()
       }
     }

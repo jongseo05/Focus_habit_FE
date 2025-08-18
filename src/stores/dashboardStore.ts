@@ -1,15 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-// 집중 세션 상태 관리를 위한 스토어
-interface FocusSessionState {
-  isRunning: boolean
-  isPaused: boolean
-  elapsed: number
-  focusScore: number
-  startTime: number | null
-}
-
 // 대시보드 UI 상태 관리를 위한 스토어
 interface DashboardUIState {
   // 웹캠 관련
@@ -33,15 +24,8 @@ interface DashboardUIState {
   }>
 }
 
-// 통합 대시보드 상태
-interface DashboardState extends FocusSessionState, DashboardUIState {
-  // 집중 세션 액션
-  startSession: () => void
-  pauseSession: () => void
-  stopSession: () => void
-  updateElapsed: () => void
-  updateFocusScore: (score: number) => void
-  
+// 대시보드 상태 (UI만)
+interface DashboardState extends DashboardUIState {
   // UI 액션
   setShowWebcam: (show: boolean) => void
   setShowPermissionLayer: (show: boolean) => void
@@ -54,19 +38,11 @@ interface DashboardState extends FocusSessionState, DashboardUIState {
   removeNotification: (id: number) => void
   
   // 유틸리티
-  formatTime: (seconds: number) => string
   reset: () => void
   resetToInitialState: () => void
 }
 
 const initialState = {
-  // 집중 세션 초기값
-  isRunning: false,
-  isPaused: false,
-  elapsed: 0,
-  focusScore: 85,
-  startTime: null,
-  
   // UI 초기값
   showWebcam: false,
   showPermissionLayer: false,
@@ -85,50 +61,6 @@ export const useDashboardStore = create<DashboardState>()(
   persist(
     (set, get) => ({
       ...initialState,
-      
-      // 집중 세션 액션
-      startSession: () => {
-        set({
-          isRunning: true,
-          isPaused: false,
-          startTime: Date.now(),
-          elapsed: 0
-        })
-      },
-      
-      pauseSession: () => {
-        set((state) => ({
-          isPaused: !state.isPaused
-        }))
-      },
-      
-      stopSession: () => {
-        set({
-          isRunning: false,
-          isPaused: false,
-          elapsed: 0,
-          startTime: null
-        })
-      },
-      
-      updateElapsed: () => {
-        set((state) => {
-          if (state.isRunning && !state.isPaused && state.startTime) {
-            const elapsed = Math.floor((Date.now() - state.startTime) / 1000)
-            return { elapsed }
-          }
-          return state
-        })
-      },
-      
-      updateFocusScore: (score: number) => {
-        console.log('🔄 대시보드 스토어 updateFocusScore 호출:', {
-          oldScore: get().focusScore,
-          newScore: score,
-          clampedScore: Math.max(0, Math.min(100, score))
-        })
-        set({ focusScore: Math.max(0, Math.min(100, score)) })
-      },
       
       // UI 액션
       setShowWebcam: (show: boolean) => set({ showWebcam: show }),
@@ -156,12 +88,6 @@ export const useDashboardStore = create<DashboardState>()(
       },
       
       // 유틸리티
-      formatTime: (seconds: number) => {
-        const mins = Math.floor(seconds / 60)
-        const secs = seconds % 60
-        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-      },
-      
       reset: () => set(initialState),
       
       // 초기 상태로 리셋 (페이지 포커스 시 사용)
@@ -169,7 +95,7 @@ export const useDashboardStore = create<DashboardState>()(
         const currentState = get()
         set({
           ...currentState,
-          // 세션 관련 상태는 유지하되, UI 상태만 초기화
+          // UI 상태만 초기화
           hoveredChartPoint: null,
           hoveredBarIndex: null,
           showErrorDisplay: false
@@ -205,18 +131,6 @@ if (typeof window !== 'undefined') {
 }
 
 // 선택자 훅들 (성능 최적화)
-export const useFocusSession = () => useDashboardStore((state) => ({
-  isRunning: state.isRunning,
-  isPaused: state.isPaused,
-  elapsed: state.elapsed,
-  focusScore: state.focusScore,
-  startSession: state.startSession,
-  pauseSession: state.pauseSession,
-  stopSession: state.stopSession,
-  updateFocusScore: state.updateFocusScore,
-  formatTime: state.formatTime
-}))
-
 export const useDashboardUI = () => useDashboardStore((state) => ({
   showWebcam: state.showWebcam,
   showPermissionLayer: state.showPermissionLayer,

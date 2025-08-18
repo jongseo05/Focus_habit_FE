@@ -52,3 +52,6 @@ scripts/
 # env file
 .env
 .env.local
+
+# cursor
+.cursor/

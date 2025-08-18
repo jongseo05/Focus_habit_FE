@@ -67,21 +67,25 @@ export async function GET(
       console.error('Daily summary fetch error:', summaryError)
     }
 
-    // ML 피쳐 데이터 가져오기 (집중 상태 포함)
+    // 집중도 샘플 데이터 가져오기 (focus_sample 테이블)
     const sessionIds = sessions?.map(s => s.session_id) || []
-    let mlFeaturesData: any[] = []
+    let focusSampleData: any[] = []
     
     if (sessionIds.length > 0) {
-      const { data: mlFeatures, error: mlFeaturesError } = await supabase
-        .from('ml_features')
-        .select('session_id, ts, focus_status, focus_score, focus_confidence')
+      const { data: focusSamples, error: focusSamplesError } = await supabase
+        .from('focus_sample')
+        .select('session_id, ts, score, score_conf, topic_tag')
         .in('session_id', sessionIds)
         .order('ts', { ascending: true })
 
-      if (mlFeaturesError) {
-        console.error('ML features fetch error:', mlFeaturesError)
+      if (focusSamplesError) {
+        console.error('Focus samples fetch error:', focusSamplesError)
       } else {
-        mlFeaturesData = mlFeatures || []
+        focusSampleData = focusSamples || []
+        console.log('📊 집중도 샘플 데이터 조회:', {
+          sessionIds: sessionIds.length,
+          samplesCount: focusSampleData.length
+        })
       }
     }
 
@@ -93,12 +97,12 @@ export async function GET(
     let totalDistractions = 0
     let validScores = 0
 
-    // 집중 상태 통계
-    let focusedCount = 0
-    let normalCount = 0
-    let distractedCount = 0
-    let totalMlScore = 0
-    let validMlScores = 0
+    // 집중도 샘플 데이터 통계
+    let totalSampleScore = 0
+    let validSampleScores = 0
+    let highFocusCount = 0
+    let mediumFocusCount = 0
+    let lowFocusCount = 0
 
     sessions?.forEach(session => {
       // 집중 시간 계산
@@ -124,30 +128,25 @@ export async function GET(
       totalDistractions += session.distractions || 0
     })
 
-    // ML 피쳐 데이터 통계 계산
-    mlFeaturesData.forEach(feature => {
-      if (feature.focus_status) {
-        switch (feature.focus_status) {
-          case 'focused':
-            focusedCount++
-            break
-          case 'normal':
-            normalCount++
-            break
-          case 'distracted':
-            distractedCount++
-            break
+    // 집중도 샘플 데이터 통계 계산
+    focusSampleData.forEach(sample => {
+      if (sample.score) {
+        totalSampleScore += sample.score
+        validSampleScores++
+        
+        // 집중도 레벨 분류
+        if (sample.score >= 80) {
+          highFocusCount++
+        } else if (sample.score >= 60) {
+          mediumFocusCount++
+        } else {
+          lowFocusCount++
         }
-      }
-      
-      if (feature.focus_score) {
-        totalMlScore += feature.focus_score
-        validMlScores++
       }
     })
 
     let averageScore = validScores > 0 ? totalScore / validScores : 0
-    let averageMlScore = validMlScores > 0 ? totalMlScore / validMlScores : 0
+    let averageSampleScore = validSampleScores > 0 ? totalSampleScore / validSampleScores : 0
 
     // daily_summary가 있으면 그 데이터를 우선 사용
     if (dailySummary) {
@@ -164,10 +163,11 @@ export async function GET(
       peakScore,
       totalDistractions,
       sessions: sessions || [],
-      focusedCount,
-      normalCount,
-      distractedCount,
-      averageMlScore
+      highFocusCount,
+      mediumFocusCount,
+      lowFocusCount,
+      averageSampleScore,
+      totalSampleCount: validSampleScores
     }
 
     return NextResponse.json(dailyReport)

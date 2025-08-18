@@ -63,15 +63,21 @@ export function useWebSocket(
   // eventHandlers가 변경될 때마다 ref 업데이트 및 WebSocket 클라이언트 이벤트 핸들러 업데이트
   useEffect(() => {
     eventHandlersRef.current = eventHandlers
-    console.log('🔧 eventHandlers 업데이트:', {
-      hasEventHandlers: !!eventHandlers,
-      hasOnMessage: !!eventHandlers?.onMessage,
-      keys: eventHandlers ? Object.keys(eventHandlers) : []
-    })
+    
+    // 개발 환경에서만 상세한 로그 출력
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔧 eventHandlers 업데이트:', {
+        hasEventHandlers: !!eventHandlers,
+        hasOnMessage: !!eventHandlers?.onMessage,
+        keys: eventHandlers ? Object.keys(eventHandlers) : []
+      })
+    }
     
     // WebSocket 클라이언트가 연결되어 있으면 이벤트 핸들러 업데이트
     if (wsClientRef.current && eventHandlers) {
-      console.log('🔄 WebSocket 클라이언트 이벤트 핸들러 업데이트')
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 WebSocket 클라이언트 이벤트 핸들러 업데이트')
+      }
       wsClientRef.current.updateEventHandlers(eventHandlers)
     }
   }, [eventHandlers])

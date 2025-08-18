@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
-import { useDashboardStore } from "@/stores/dashboardStore"
+import { useFocusSessionState, useFocusSessionActions } from "@/stores/focusSessionStore"
 
 // 공부 관련 텍스트 분석 함수 (키워드 기반) - 메모이제이션 적용
 const analyzeStudyRelatedByKeywords = (() => {
@@ -56,9 +56,10 @@ export default function HybridAudioPipeline() {
   const { 
     isRunning: isFocusSessionRunning, 
     isPaused: isFocusSessionPaused,
-    focusScore,
-    updateFocusScore
-  } = useDashboardStore()
+    focusScore
+  } = useFocusSessionState()
+  
+  const { updateFocusScore } = useFocusSessionActions()
   
 
 
@@ -162,20 +163,30 @@ export default function HybridAudioPipeline() {
 
     const currentState = recognitionRef.current.state;
     
-    // inactive 또는 undefined 상태일 때 재시작 (브라우저 호환성 고려)
+    // 상태 체크 및 안전한 재시작
+    if (currentState === 'active') {
+      console.log('🎤 음성 인식이 이미 활성 상태입니다');
+      return true; // 이미 활성 상태면 성공으로 처리
+    }
+    
+    // inactive 또는 undefined 상태일 때만 재시작
     if (currentState === 'inactive' || currentState === undefined) {
       try {
         recognitionRef.current.start();
+        console.log('🎤 음성 인식 재시작 성공');
         return true;
       } catch (error) {
+        if (error instanceof Error && error.message.includes('already started')) {
+          console.log('🎤 음성 인식이 이미 시작된 상태입니다');
+          return true; // 이미 시작된 상태는 성공으로 처리
+        }
         console.warn('🎤 음성 인식 재시작 실패:', error);
         return false;
       }
-    } else if (currentState === 'active') {
-      return true; // 이미 활성 상태면 성공으로 처리
-    } else {
-      return false;
     }
+    
+    console.warn('🎤 알 수 없는 음성 인식 상태:', currentState);
+    return false;
   }, []);
 
   // 집중 모드 상태 변화 감지 및 오디오 파이프라인 제어

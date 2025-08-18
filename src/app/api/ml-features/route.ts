@@ -53,18 +53,21 @@ export async function POST(request: NextRequest) {
       endedAt: session.ended_at 
     })
 
-    // ML 피쳐값 저장
+    // ML 피쳐값 저장 (새로운 ml_features 테이블 구조에 맞춤)
     const { data, error } = await supabase
       .from('ml_features')
       .insert({
         session_id: sessionId,
-        ts: new Date(features.timestamp).toISOString(),
-        head_pose_pitch: features.head_pose.pitch,
-        head_pose_yaw: features.head_pose.yaw,
-        head_pose_roll: features.head_pose.roll,
-        eye_status: features.eye_status.status,
-        ear_value: features.eye_status.ear_value,
-        frame_number: features.frame_number || 0
+        ts: new Date(features.timestamp || Date.now()).toISOString(),
+        head_pose_pitch: features.head_pose?.pitch || null,
+        head_pose_yaw: features.head_pose?.yaw || null,
+        head_pose_roll: features.head_pose?.roll || null,
+        eye_status: features.eye_status?.status || features.eye_status || null,
+        ear_value: features.eye_status?.ear_value || features.ear_value || null,
+        frame_number: features.frame_number || 0,
+        focus_status: features.focus_status || null,
+        focus_confidence: features.focus_confidence || null,
+        focus_score: features.focus_score || null
       })
       .select()
       .single()

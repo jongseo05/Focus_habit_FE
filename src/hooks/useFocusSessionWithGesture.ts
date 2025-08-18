@@ -3,6 +3,7 @@ import { useWebSocket } from './useWebSocket'
 import { useMediaStream } from './useMediaStream'
 import { FrameStreamer } from '@/lib/websocket/utils'
 import { useDashboardStore } from '@/stores/dashboardStore'
+import { useFocusSessionActions } from '@/stores/focusSessionStore'
 import type { WebcamFrameAnalysisResult, FocusAnalysisFeatures } from '@/types/websocket'
 import { useFocusSessionErrorHandler } from '@/hooks/useFocusSessionErrorHandler'
 import { FocusSessionErrorType, FocusSessionStatus } from '@/types/focusSession'
@@ -208,8 +209,8 @@ export function useFocusSessionWithGesture(
   const [lastGestureTime, setLastGestureTime] = useState<string>('')
   const [gestureHistory, setGestureHistory] = useState<Array<{ gesture: string; timestamp: string }>>([])
   
-  // 대시보드 스토어에서 집중도 업데이트 함수 가져오기
-  const { updateFocusScore } = useDashboardStore()
+  // 집중 세션 스토어에서 집중도 업데이트 함수 가져오기
+  const { updateFocusScore } = useFocusSessionActions()
 
   // 헤드 포즈를 기반으로 제스처 판단하는 함수
   const determineGestureFromHeadPose = (headPose: { pitch: number; yaw: number; roll: number }): string => {
@@ -243,12 +244,13 @@ export function useFocusSessionWithGesture(
       clearTimeout(saveTimeoutRef.current)
     }
 
-    // 마지막 저장된 점수와 같으면 저장하지 않음
-    if (lastSavedScoreRef.current === focusScore) {
+    // 마지막 저장된 점수와 같으면 저장하지 않음 (5점 이상 차이나면 저장)
+    if (lastSavedScoreRef.current !== null && Math.abs(lastSavedScoreRef.current - focusScore) < 5) {
+      console.log('📊 점수 변화 미미, 저장 건너뜀:', { last: lastSavedScoreRef.current, current: focusScore })
       return
     }
 
-    // 2초 후에 저장
+    // 1초 후에 저장 (디바운싱 시간 단축)
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         const response = await fetch('/api/focus-score', {
@@ -375,6 +377,8 @@ export function useFocusSessionWithGesture(
             ...prev.slice(0, 49)
           ])
         }
+        
+        return // 정상 처리 완료
       }
               // 새로운 서버 응답 구조 처리 (prediction_result가 없는 경우)
         else if (parsedData && typeof parsedData === 'object' && 'timestamp' in parsedData && 'eye_status' in parsedData && 'head_pose' in parsedData) {
@@ -439,6 +443,8 @@ export function useFocusSessionWithGesture(
             ...prev.slice(0, 49)
           ])
         }
+        
+        return // 정상 처리 완료
       }
       // 기존 제스처 인식 응답 처리 (하위 호환성)
       else if (parsedData && typeof parsedData === 'object' && 'gesture' in parsedData && 'timestamp' in parsedData) {
@@ -449,6 +455,8 @@ export function useFocusSessionWithGesture(
           gestureData,
           ...prev.slice(0, 49)
         ])
+        
+        return // 정상 처리 완료
       }
       // 기존 응답 구조 처리 (하위 호환성)
       else if (parsedData && typeof parsedData === 'object') {
@@ -728,9 +736,9 @@ export function useFocusSessionWithGesture(
     } else {
       console.log('🛑 제스처 인식 중지')
       stopGestureRecognition()
-      // 일시정지 시에는 WebSocket 연결 유지, 완전 종료 시에만 연결 해제
-      if (!isRunning && !sessionId) {
-        console.log('🔌 WebSocket 연결 해제')
+      // 세션이 끝났으면 WebSocket 연결 해제
+      if (!isRunning) {
+        console.log('🔌 세션 종료로 인한 WebSocket 연결 해제')
         disconnect()
       }
     }

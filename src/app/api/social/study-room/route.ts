@@ -234,7 +234,62 @@ export async function POST(request: NextRequest) {
 
     console.log('생성할 룸 데이터:', roomData)
     
-    // 스터디룸 생성
+    // 🔄 트랜잭션으로 스터디룸 생성 + 호스트 참가 (원자적 처리)
+    try {
+      const { data: room, error: transactionError } = await supabase
+        .rpc('create_study_room_with_host', {
+          p_host_id: roomData.host_id,
+          p_name: roomData.name,
+          p_description: roomData.description,
+          p_max_participants: roomData.max_participants,
+          p_session_type: roomData.session_type,
+          p_goal_minutes: roomData.goal_minutes
+        })
+
+      if (transactionError) {
+        console.error('트랜잭션 스터디룸 생성 실패:', transactionError)
+        
+        // RPC 함수가 없으면 폴백으로 기존 방식 사용
+        if (transactionError.code === '42883') {
+          console.log('🔄 RPC 함수 없음, 기존 방식으로 폴백')
+          return await createStudyRoomFallback(supabase, roomData)
+        }
+        
+        return NextResponse.json(
+          { error: '스터디룸 생성에 실패했습니다.' },
+          { status: 500 }
+        )
+      }
+
+      const roomData_result = Array.isArray(room) ? room[0] : room
+      console.log('트랜잭션으로 스터디룸 생성 성공:', roomData_result?.room_id)
+      
+      return NextResponse.json(roomData_result)
+      
+    } catch (error) {
+      console.error('❌ 트랜잭션 처리 중 오류:', error)
+      // 폴백: 기존 방식으로 룸 생성
+      return await createStudyRoomFallback(supabase, roomData)
+    }
+
+  } catch (error) {
+    console.error('=== 스터디룸 생성 API 에러 ===')
+    console.error('에러 타입:', typeof error)
+    console.error('에러 메시지:', error)
+    console.error('에러 스택:', error instanceof Error ? error.stack : '스택 없음')
+    return NextResponse.json(
+      { error: '스터디룸 생성에 실패했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// 폴백 함수: RPC 함수가 없을 때 사용하는 기존 방식
+async function createStudyRoomFallback(supabase: any, roomData: any) {
+  console.log('🔄 폴백 모드로 스터디룸 생성 중...')
+  
+  try {
+    // 1. 스터디룸 생성
     const { data: room, error: createError } = await supabase
       .from('study_rooms')
       .insert({
@@ -244,53 +299,42 @@ export async function POST(request: NextRequest) {
         max_participants: roomData.max_participants,
         session_type: roomData.session_type,
         goal_minutes: roomData.goal_minutes,
+        current_participants: 1, // 호스트가 첫 참가자
         is_active: true
       })
       .select()
       .single()
 
-    console.log('생성 결과:', { room, createError })
-
     if (createError || !room) {
-      console.error('스터디룸 생성 실패:', createError)
+      console.error('폴백 스터디룸 생성 실패:', createError)
       return NextResponse.json(
         { error: '스터디룸 생성에 실패했습니다.' },
         { status: 500 }
       )
     }
 
-    console.log('스터디룸 생성 성공:', room.room_id)
-
-    // 방장을 참가자로 추가
+    // 2. 방장을 참가자로 추가
     const { error: joinError } = await supabase
       .from('room_participants')
       .insert({
         room_id: room.room_id,
         user_id: roomData.host_id,
-        is_host: true
+        is_host: true,
+        is_connected: true,
+        joined_at: new Date().toISOString(),
+        last_activity: new Date().toISOString()
       })
-      .single()
 
-    if (joinError) {
-      console.error('방장 참가자 추가 실패:', joinError)
-      // 중복 참가 에러가 아닌 경우에만 실패로 처리
-      if (!joinError.message?.includes('duplicate')) {
-        console.error('방장 참가자 추가 실패:', joinError)
-      } else {
-        console.log('방장이 이미 참가자로 등록되어 있습니다.')
-      }
-    } else {
-      console.log('방장 참가자 추가 성공')
+    if (joinError && !joinError.message?.includes('duplicate')) {
+      console.error('폴백 방장 참가자 추가 실패:', joinError)
+      // 룸은 생성되었으므로 경고만 로그
     }
 
-    console.log('=== 스터디룸 생성 API 완료 ===')
-    console.log('반환할 룸 데이터:', room)
+    console.log('✅ 폴백으로 스터디룸 생성 성공:', room.room_id)
     return NextResponse.json(room)
+    
   } catch (error) {
-    console.error('=== 스터디룸 생성 API 에러 ===')
-    console.error('에러 타입:', typeof error)
-    console.error('에러 메시지:', error)
-    console.error('에러 스택:', error instanceof Error ? error.stack : '스택 없음')
+    console.error('❌ 폴백 스터디룸 생성 실패:', error)
     return NextResponse.json(
       { error: '스터디룸 생성에 실패했습니다.' },
       { status: 500 }
