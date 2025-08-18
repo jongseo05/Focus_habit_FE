@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { title, description, type, target_value, unit, duration_days } = body
+    const { title, description, type, target_value, unit, duration_days, min_session_duration } = body
 
     // 필수 필드 검증
     if (!title || !type || !target_value || !unit || !duration_days) {
@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
         start_date: new Date().toISOString(),
         end_date: endDate.toISOString(),
         is_active: true,
-        is_completed: false
+        is_completed: false,
+        min_session_duration: type === 'study_sessions' ? min_session_duration : null
       })
       .select()
       .single()
