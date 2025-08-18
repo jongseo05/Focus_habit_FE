@@ -1,5 +1,10 @@
 import OpenAI from "openai"
 import { NextResponse } from "next/server"
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  handleAPIError
+} from '../../../lib/api/standardResponse'
 
 // OpenAI API 키가 있을 때만 클라이언트 초기화
 const openai = process.env.OPENAI_API_KEY 
@@ -13,21 +18,25 @@ export async function POST(req: Request) {
     const { transcript } = await req.json()
 
     if (!transcript || typeof transcript !== 'string') {
-      return NextResponse.json({ 
-        error: "발화 텍스트가 필요합니다." 
-      }, { status: 400 })
+      return createErrorResponse(
+        '발화 텍스트가 필요합니다.',
+        400
+      )
     }
 
     // OpenAI API 키가 없으면 키워드 기반 분석만 사용
     if (!openai) {
       const isStudyRelated = analyzeStudyRelatedByKeywords(transcript)
-      return NextResponse.json({
-        isStudyRelated: isStudyRelated,
-        confidence: 0.5,
-        reasoning: '키워드 기반 분석 (OpenAI API 키 없음)',
-        method: 'keyword_only',
-        transcript: transcript
-      })
+      return createSuccessResponse(
+        {
+          isStudyRelated: isStudyRelated,
+          confidence: 0.5,
+          reasoning: '키워드 기반 분석 (OpenAI API 키 없음)',
+          method: 'keyword_only',
+          transcript: transcript
+        },
+        '키워드 기반으로 발화를 분석했습니다.'
+      )
     }
 
     const prompt = `
@@ -62,22 +71,28 @@ export async function POST(req: Request) {
     if (result !== 'study' && result !== 'no_study') {
       console.error('GPT 응답이 예상 형식과 다름:', result)
       const isStudyRelated = analyzeStudyRelatedByKeywords(transcript)
-      return NextResponse.json({
-        isStudyRelated: isStudyRelated,
-        confidence: 0.5,
-        reasoning: '키워드 기반 분석 (GPT 응답 형식 오류)',
-        method: 'keyword_fallback',
-        original_gpt_response: result
-      })
+      return createSuccessResponse(
+        {
+          isStudyRelated: isStudyRelated,
+          confidence: 0.5,
+          reasoning: '키워드 기반 분석 (GPT 응답 형식 오류)',
+          method: 'keyword_fallback',
+          original_gpt_response: result
+        },
+        'GPT 오류로 키워드 기반 분석을 사용했습니다.'
+      )
     }
 
-    return NextResponse.json({
-      isStudyRelated: result === 'study',
-      confidence: 0.9,
-      reasoning: result === 'study' ? 'GPT 분석: 공부 관련 발화' : 'GPT 분석: 공부와 무관한 발화',
-      method: 'gpt',
-      transcript: transcript
-    })
+    return createSuccessResponse(
+      {
+        isStudyRelated: result === 'study',
+        confidence: 0.9,
+        reasoning: result === 'study' ? 'GPT 분석: 공부 관련 발화' : 'GPT 분석: 공부와 무관한 발화',
+        method: 'gpt',
+        transcript: transcript
+      },
+      'GPT로 발화를 성공적으로 분석했습니다.'
+    )
 
   } catch (error) {
     console.error('GPT 발화분석 API 오류:', error)
@@ -86,18 +101,18 @@ export async function POST(req: Request) {
       const { transcript } = await req.json()
       const isStudyRelated = analyzeStudyRelatedByKeywords(transcript)
       
-      return NextResponse.json({
-        isStudyRelated: isStudyRelated,
-        confidence: 0.5,
-        reasoning: '키워드 기반 분석 (GPT API 호출 실패)',
-        method: 'keyword_fallback',
-        error: 'GPT API 호출 실패'
-      })
+      return createSuccessResponse(
+        {
+          isStudyRelated: isStudyRelated,
+          confidence: 0.5,
+          reasoning: '키워드 기반 분석 (GPT API 호출 실패)',
+          method: 'keyword_fallback',
+          error: 'GPT API 호출 실패'
+        },
+        'GPT 오류로 키워드 기반 분석을 사용했습니다.'
+      )
     } catch (fallbackError) {
-      return NextResponse.json({ 
-        error: "발화 분석 처리 중 오류가 발생했습니다.",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }, { status: 500 })
+      return handleAPIError(fallbackError, '발화 분석 폴백')
     }
   }
 }
