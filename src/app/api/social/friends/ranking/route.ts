@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError 
+} from '@/lib/api/standardResponse'
 import type { 
   FriendRankingResponse, 
   FriendRanking 
@@ -12,15 +18,12 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    // 표준 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
 
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period') || 'weekly'
@@ -30,10 +33,7 @@ export async function GET(request: NextRequest) {
 
     // 기간 유효성 검증
     if (!['daily', 'weekly', 'monthly'].includes(period)) {
-      return NextResponse.json(
-        { error: '유효하지 않은 기간입니다.' },
-        { status: 400 }
-      )
+      return createErrorResponse('유효하지 않은 기간입니다.', 400)
     }
 
     // 기간별 시작/끝 날짜 계산
@@ -90,10 +90,7 @@ export async function GET(request: NextRequest) {
 
     if (friends1Error || friends2Error) {
       console.error('친구 목록 조회 실패:', { friends1Error, friends2Error })
-      return NextResponse.json(
-        { error: '친구 목록을 불러오는데 실패했습니다.' },
-        { status: 500 }
-      )
+      throw friends1Error || friends2Error
     }
 
     // 친구 ID 목록 생성 (중복 제거)
@@ -126,10 +123,7 @@ export async function GET(request: NextRequest) {
 
     if (statsError) {
       console.error('집중도 통계 조회 실패:', statsError)
-      return NextResponse.json(
-        { error: '집중도 통계를 불러오는데 실패했습니다.' },
-        { status: 500 }
-      )
+      throw statsError
     }
 
     // 실제 조회된 데이터 로그 출력
@@ -150,10 +144,7 @@ export async function GET(request: NextRequest) {
 
     if (profilesError) {
       console.error('프로필 조회 실패:', profilesError)
-      return NextResponse.json(
-        { error: '사용자 프로필을 불러오는데 실패했습니다.' },
-        { status: 500 }
-      )
+      throw profilesError
     }
 
     // 통계 데이터 집계
@@ -232,14 +223,12 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('=== 친구 랭킹 조회 완료 ===')
-    return NextResponse.json(response)
+    return createSuccessResponse(
+      response,
+      `${rankings.length}명의 친구 랭킹을 조회했습니다.`
+    )
 
   } catch (error) {
-    console.error('=== 친구 랭킹 조회 실패 ===')
-    console.error('에러:', error)
-    return NextResponse.json(
-      { error: '친구 랭킹을 불러오는데 실패했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '친구 랭킹 조회')
   }
 }

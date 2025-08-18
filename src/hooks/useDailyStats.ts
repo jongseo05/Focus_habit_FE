@@ -32,7 +32,15 @@ const fetchDailyStats = async (days: number = 30): Promise<DailyStatsResponse> =
     throw new Error('Failed to fetch daily stats')
   }
   
-  return response.json()
+  const result = await response.json()
+  
+  // 표준 API 응답 구조 처리
+  if (result.success && result.data) {
+    return result.data
+  }
+  
+  // 기존 응답 구조와의 호환성 유지
+  return result
 }
 
 export const useDailyStats = (days: number = 30) => {

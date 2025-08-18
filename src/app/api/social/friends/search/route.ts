@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError 
+} from '@/lib/api/standardResponse'
 import type { 
   FriendSearchResponse,
   FriendSearchResult 
@@ -12,15 +18,12 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    // 표준 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') || searchParams.get('q')
@@ -29,10 +32,7 @@ export async function GET(request: NextRequest) {
     console.log('검색 파라미터:', { search, limit })
 
     if (!search || search.trim().length < 2) {
-      return NextResponse.json(
-        { error: '검색어는 최소 2자 이상이어야 합니다.' },
-        { status: 400 }
-      )
+      return createErrorResponse('검색어는 최소 2자 이상이어야 합니다.', 400)
     }
 
     // 사용자 검색 (자기 자신 제외) - display_name 우선 검색
@@ -54,17 +54,14 @@ export async function GET(request: NextRequest) {
 
     if (usersError) {
       console.error('사용자 검색 실패:', usersError)
-      return NextResponse.json(
-        { error: '사용자 검색에 실패했습니다.' },
-        { status: 500 }
-      )
+      throw usersError
     }
 
     if (!users || users.length === 0) {
-      return NextResponse.json({
+      return createSuccessResponse({
         results: [],
         total_count: 0
-      })
+      }, '검색 결과가 없습니다.')
     }
 
     // 각 사용자에 대해 친구 관계 및 요청 상태 확인 (배치 처리로 N+1 쿼리 해결)
@@ -133,14 +130,12 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('=== 친구 검색 완료 ===')
-    return NextResponse.json(response)
+    return createSuccessResponse(
+      response,
+      `${results.length}명의 사용자를 찾았습니다.`
+    )
 
   } catch (error) {
-    console.error('=== 친구 검색 실패 ===')
-    console.error('에러:', error)
-    return NextResponse.json(
-      { error: '사용자 검색에 실패했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '친구 검색')
   }
 }

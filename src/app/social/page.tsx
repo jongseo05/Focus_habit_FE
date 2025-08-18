@@ -142,9 +142,25 @@ function SocialPageContent() {
       console.log('API 응답 상태:', response.status)
       
       if (response.ok) {
-        const rooms = await response.json()
-        console.log('받은 룸 목록:', rooms)
-        setActiveRooms(rooms)
+        const result = await response.json()
+        console.log('받은 API 응답:', result)
+        
+        // API 응답 구조에 따른 데이터 추출
+        if (result.success && result.data) {
+          // 페이지네이션 응답인 경우
+          if (result.data.items) {
+            setActiveRooms(Array.isArray(result.data.items) ? result.data.items : [])
+          } else if (Array.isArray(result.data)) {
+            // 직접 배열 응답인 경우
+            setActiveRooms(result.data)
+          } else {
+            // 기타 경우 빈 배열로 초기화
+            setActiveRooms([])
+          }
+        } else {
+          console.warn('API 응답에 data가 없음:', result)
+          setActiveRooms([])
+        }
       } else {
         const errorData = await response.json()
         console.error('API 에러 상세:', {
@@ -154,6 +170,7 @@ function SocialPageContent() {
           errorMessage: errorData.error,
           errorDetails: errorData.details
         })
+        setActiveRooms([])
       }
     } catch (error) {
       console.error('스터디룸 목록 조회 실패:', {
@@ -161,13 +178,14 @@ function SocialPageContent() {
         errorMessage: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : 'No stack'
       })
+      setActiveRooms([])
     } finally {
       setLoading(false)
     }
   }
 
   // 필터링된 룸 목록 (활성 세션만)
-  const filteredRooms = activeRooms.filter(room => {
+  const filteredRooms = Array.isArray(activeRooms) ? activeRooms.filter(room => {
     // 활성 세션이 아니면 제외
     if (!room.is_active) return false
     
@@ -175,7 +193,7 @@ function SocialPageContent() {
                          room.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesFilter = filterType === 'all' || room.session_type === filterType
     return matchesSearch && matchesFilter
-  })
+  }) : []
 
   const handleRoomSelect = async (room: StudyRoomType) => {
     try {
