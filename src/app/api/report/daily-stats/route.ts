@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
 
-    console.log('📅 Daily stats 조회 범위:', {
+    console.log('Daily stats 조회 범위:', {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       days
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log('✅ Session data 조회 성공:', {
+    console.log('Session data 조회 성공:', {
       sessionsCount: sessionStats?.length || 0
     })
 
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
         : 0
     }
 
-    console.log('📊 Daily stats 계산 완료:', {
+    console.log('Daily stats 계산 완료:', {
       totalDays: totalStats.totalDays,
       activeDays: totalStats.activeDays,
       totalSessions: totalStats.totalSessions,

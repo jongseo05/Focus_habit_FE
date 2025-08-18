@@ -246,9 +246,9 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="sm" asChild>
-                <Link href={`/report/daily/date/${new Date(session.started_at).toISOString().split('T')[0]}`} className="flex items-center gap-2" aria-label="일일 리포트로 돌아가기">
+                <Link href="/report" className="flex items-center gap-2" aria-label="오늘 리포트로 돌아가기">
                   <ArrowLeft className="w-4 h-4" />
-                  <span className="text-slate-600">일일 리포트</span>
+                  <span className="text-slate-600">오늘 리포트</span>
                 </Link>
               </Button>
               
