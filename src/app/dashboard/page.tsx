@@ -59,6 +59,7 @@ import { useSignOut, useAuth } from "@/hooks/useAuth"
 import { useQuery } from "@tanstack/react-query"
 import { SessionEndNotification } from "@/components/SessionEndNotification"
 import ChallengeProgressCard from "@/components/social/ChallengeProgressCard"
+import RealtimeFocusChart from "@/components/RealtimeFocusChart"
 
 import { useFriendRanking, useStudyRoomChallenges } from "@/hooks/useSocial"
 
@@ -166,17 +167,31 @@ function DashboardContent() {
   // elapsed 시간 업데이트
   useEffect(() => {
     let interval: NodeJS.Timeout
+    
     if (sessionStateState.isRunning && !sessionStateState.isPaused) {
+      console.log('🕒 타이머 시작:', {
+        isRunning: sessionStateState.isRunning,
+        isPaused: sessionStateState.isPaused,
+        startTime: sessionStateState.startTime
+      })
+      
       interval = setInterval(() => {
         sessionActions.updateElapsed()
       }, 1000)
+    } else {
+      console.log('🛑 타이머 중지 조건:', {
+        isRunning: sessionStateState.isRunning,
+        isPaused: sessionStateState.isPaused
+      })
     }
+    
     return () => {
       if (interval) {
+        console.log('🔄 타이머 정리')
         clearInterval(interval)
       }
     }
-  }, [sessionStateState.isRunning, sessionStateState.isPaused, sessionActions])
+  }, [sessionStateState.isRunning, sessionStateState.isPaused])
   
 
   
@@ -1447,6 +1462,14 @@ function DashboardContent() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* 실시간 집중도 차트 */}
+                    <RealtimeFocusChart
+                      focusScores={focusScores}
+                      maxDisplayPoints={30}
+                      showTrend={true}
+                      className="border-0 shadow-none bg-transparent p-0"
+                    />
+                    
                     {/* 웹캠 분석 결과 - 집중도만 표시 */}
                     <WebcamAnalysisDisplay
                       analysisResult={mediaStream.webcamAnalysisResult}
@@ -1454,13 +1477,6 @@ function DashboardContent() {
                       lastFocusScore={mediaStream.lastFocusScore}
                       isConnected={mediaStream.gestureWebSocketConnected}
                     />
-                    
-                    {/* 간단한 상태 표시 */}
-                    <div className="text-center py-4 text-slate-500">
-                      <Activity className="w-6 h-6 mx-auto mb-2 text-slate-400" />
-                      <div className="text-sm">웹캠을 통한 집중도 분석</div>
-                      <div className="text-xs">실시간으로 집중 상태를 모니터링합니다</div>
-                    </div>
                   </CardContent>
                 </Card>
               )}

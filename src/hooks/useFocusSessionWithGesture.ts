@@ -232,50 +232,37 @@ export function useFocusSessionWithGesture(
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedScoreRef = useRef<number | null>(null)
 
-  // 집중도 점수를 데이터베이스에 저장하는 함수 (2초 디바운싱)
+  // 집중도 점수를 데이터베이스에 저장하는 함수 (2초마다 저장)
   const saveFocusScoreToDatabase = useCallback(async (
     sessionId: string, 
     focusScore: number, 
     confidence: number, 
     timestamp: number
   ) => {
-    // 이전 타이머가 있으면 취소
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-
-    // 마지막 저장된 점수와 같으면 저장하지 않음 (5점 이상 차이나면 저장)
-    if (lastSavedScoreRef.current !== null && Math.abs(lastSavedScoreRef.current - focusScore) < 5) {
-      console.log('📊 점수 변화 미미, 저장 건너뜀:', { last: lastSavedScoreRef.current, current: focusScore })
-      return
-    }
-
-    // 1초 후에 저장 (디바운싱 시간 단축)
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const response = await fetch('/api/focus-score', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-                      body: JSON.stringify({
-              sessionId,
-              focusScore,
-              timestamp: new Date(timestamp).toISOString(),
-              confidence,
-              analysisMethod: 'webcam_analysis'
-            })
+    try {
+      const response = await fetch('/api/focus-score', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          focusScore,
+          timestamp: new Date(timestamp).toISOString(),
+          confidence,
+          analysisMethod: 'webcam_analysis'
         })
+      })
 
-        if (response.ok) {
-          lastSavedScoreRef.current = focusScore
-        } else {
-          console.warn('웹캠 집중도 점수 저장 실패:', response.status)
-        }
-      } catch (error) {
-        console.error('웹캠 집중도 점수 저장 오류:', error)
+      if (response.ok) {
+        lastSavedScoreRef.current = focusScore
+        console.log('✅ 웹캠 집중도 점수 저장 성공:', focusScore)
+      } else {
+        console.warn('⚠️ 웹캠 집중도 점수 저장 실패:', response.status)
       }
-    }, 2000) // 2초 디바운싱
+    } catch (error) {
+      console.error('❌ 웹캠 집중도 점수 저장 오류:', error)
+    }
   }, [])
 
   // WebSocket 메시지 처리를 위한 직접 핸들러
@@ -840,6 +827,26 @@ export function useFocusSessionWithGesture(
     isGestureActive
   ])
   
+  // 2초마다 집중도 점수 정기 저장
+  useEffect(() => {
+    if (!isRunning || !sessionId) return
+
+    const interval = setInterval(() => {
+      // 최신 집중도 점수 가져오기
+      const currentScore = lastSavedScoreRef.current || 75 // 기본값
+      const timestamp = Date.now()
+      const confidence = 0.8 // 기본 신뢰도
+
+      console.log('⏰ 정기 집중도 저장:', { score: currentScore, sessionId })
+      saveFocusScoreToDatabase(sessionId, currentScore, confidence, timestamp)
+    }, 2000) // 2초마다
+
+    return () => {
+      clearInterval(interval)
+      console.log('⏰ 정기 집중도 저장 타이머 정리')
+    }
+  }, [isRunning, sessionId, saveFocusScoreToDatabase])
+
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {

@@ -18,6 +18,7 @@ import {
 import Link from "next/link"
 import { useSessionReport } from "@/hooks/useReport"
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts"
+import { compressFocusData, generateTimeLabels } from "@/lib/utils/dataCompression"
 
 // 집중력 추이 그래프 컴포넌트
 const FocusTrendChart = ({ samples }: { samples: any[] }) => {
@@ -33,35 +34,28 @@ const FocusTrendChart = ({ samples }: { samples: any[] }) => {
     )
   }
 
-  // 데이터 포맷팅 및 시간 간격 조정
+  // 새로운 데이터 압축 로직 적용
   const formatChartData = (data: any[]) => {
     if (data.length === 0) return []
 
-         // 시간 간격에 따라 데이터 포인트 조정
-     let interval = 1 // 기본 1초 간격
-     let maxPoints = 20 // 최대 20개 포인트
+    // 데이터를 적절한 형태로 변환
+    const focusData = data.map(sample => ({
+      ts: sample.ts,
+      score: sample.focus_score || sample.score || 0,
+      confidence: sample.score_conf || 0.8
+    }))
 
-    if (data.length > maxPoints) {
-      interval = Math.ceil(data.length / maxPoints)
-    }
+    // 집중도 특화 압축 적용 (최대 30개 포인트)
+    const compressedData = compressFocusData(focusData, 30)
+    const timeLabels = generateTimeLabels(compressedData, 'time')
 
-    return data
-      .filter((_, index) => index % interval === 0)
-      .map((sample, index) => {
-        const timestamp = new Date(sample.ts)
-        const focusScore = sample.focus_score || sample.score || 0
-        
-        return {
-          time: timestamp.toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          }),
-          timestamp: timestamp.getTime(),
-          focusScore: Math.round(focusScore),
-          originalIndex: index * interval
-        }
-      })
+    return compressedData.map((item, index) => ({
+      time: timeLabels[index],
+      timestamp: new Date(item.ts).getTime(),
+      focusScore: Math.round(item.score),
+      confidence: item.confidence,
+      originalData: item
+    }))
   }
 
   const chartData = formatChartData(samples)
@@ -76,9 +70,8 @@ const FocusTrendChart = ({ samples }: { samples: any[] }) => {
         <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg">
           <p className="font-medium text-slate-900">{`시간: ${label}`}</p>
           <p className="text-emerald-600 font-bold">{`집중도: ${data.focusScore}점`}</p>
-          {data.originalIndex !== undefined && (
-            <p className="text-xs text-slate-500">{`데이터 포인트: ${data.originalIndex + 1}`}</p>
-          )}
+          <p className="text-blue-600">{`신뢰도: ${Math.round(data.confidence * 100)}%`}</p>
+          <p className="text-xs text-slate-500">압축된 데이터 포인트</p>
         </div>
       )
     }

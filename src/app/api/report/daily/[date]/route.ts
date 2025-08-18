@@ -23,12 +23,18 @@ export async function GET(
 
     const { date } = await params
     
-    // 해당 날짜의 모든 세션 가져오기
+    // 해당 날짜의 모든 세션 가져오기 (시간대 보정)
     const startOfDay = new Date(date)
     startOfDay.setHours(0, 0, 0, 0)
     
     const endOfDay = new Date(date)
     endOfDay.setHours(23, 59, 59, 999)
+
+    console.log('🔍 Daily Report 세션 조회 범위:', {
+      date,
+      startOfDay: startOfDay.toISOString(),
+      endOfDay: endOfDay.toISOString()
+    })
 
     const { data: sessions, error: sessionsError } = await supabase
       .from('focus_session')
@@ -48,12 +54,23 @@ export async function GET(
       .order('started_at', { ascending: true })
 
     if (sessionsError) {
-      console.error('Sessions fetch error:', sessionsError)
+      console.error('❌ Sessions fetch error:', sessionsError)
       return NextResponse.json(
         { error: 'Failed to fetch sessions' },
         { status: 500 }
       )
     }
+
+    console.log('✅ Daily Report 세션 조회 결과:', {
+      date,
+      sessionsCount: sessions?.length || 0,
+      sessions: sessions?.map(s => ({
+        id: s.session_id,
+        started_at: s.started_at,
+        ended_at: s.ended_at,
+        focus_score: s.focus_score
+      }))
+    })
 
     // daily_summary에서 해당 날짜 데이터 가져오기
     const { data: dailySummary, error: summaryError } = await supabase
