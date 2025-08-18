@@ -65,7 +65,14 @@ export function useTodayStats() {
     queryKey: dashboardKeys.todayStats(),
     queryFn: async (): Promise<DashboardStats['today']> => {
       const supabase = supabaseBrowser()
-      const today = new Date().toISOString().split('T')[0]
+      // 한국 시간대 기준으로 오늘 날짜 계산
+      const today = (() => {
+        const now = new Date()
+        const year = now.getFullYear()
+        const month = String(now.getMonth() + 1).padStart(2, '0')
+        const day = String(now.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+      })()
       
       // 오늘의 집중 세션 데이터 조회
       const { data: sessions, error } = await supabase

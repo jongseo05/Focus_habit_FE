@@ -51,7 +51,7 @@ export async function GET(
       .eq('user_id', user.id)
       .gte('started_at', startOfDay.toISOString())
       .lte('started_at', endOfDay.toISOString())
-      .order('started_at', { ascending: true })
+      .order('started_at', { ascending: false })
 
     if (sessionsError) {
       console.error('❌ Sessions fetch error:', sessionsError)

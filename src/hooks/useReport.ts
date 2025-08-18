@@ -460,11 +460,8 @@ export function useTodaySessions(date: string) {
       }
 
       // 오늘 날짜의 집중 세션 조회 (시간대 보정)
-      const startOfDay = new Date(date)
-      startOfDay.setHours(0, 0, 0, 0)
-      
-      const endOfDay = new Date(date)
-      endOfDay.setHours(23, 59, 59, 999)
+      const startOfDay = new Date(date + 'T00:00:00')
+      const endOfDay = new Date(date + 'T23:59:59')
 
       console.log('🔍 세션 조회 범위:', {
         date,

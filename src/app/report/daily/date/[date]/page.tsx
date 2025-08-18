@@ -262,7 +262,9 @@ export default function DailyDateReportPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {dailyReport.sessions.map((session, index) => {
+              {dailyReport.sessions
+                .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+                .map((session, index) => {
                 const startTime = new Date(session.started_at)
                 const endTime = session.ended_at ? new Date(session.ended_at) : null
                 const duration = endTime 

@@ -131,15 +131,15 @@ export default function DateSelectPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/report/daily" className="flex items-center gap-2">
+                <Link href="/report" className="flex items-center gap-2">
                   <ArrowLeft className="w-4 h-4" />
-                  <span className="text-slate-600">일일 리포트 목록</span>
+                  <span className="text-slate-600">오늘 리포트</span>
                 </Link>
               </Button>
               
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">날짜별 리포트</h1>
-                <p className="text-slate-600">원하는 날짜의 집중 리포트를 확인해보세요</p>
+                <h1 className="text-2xl font-bold text-slate-900">과거 집중 기록</h1>
+                <p className="text-slate-600">이전 날짜의 집중 활동을 되돌아보세요</p>
               </div>
             </div>
 

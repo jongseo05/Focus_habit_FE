@@ -927,16 +927,22 @@ export default function WeeklyReportPage() {
             </div>
             <div className="flex items-center gap-4">
               <Link 
+                href="/report" 
+                className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                오늘 리포트
+              </Link>
+              <Link 
                 href="/report/weekly" 
                 className="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 transition-colors"
               >
-                주간 리포트
+                주간 트렌드
               </Link>
               <Link 
-                href="/report/daily" 
+                href="/report/daily/select" 
                 className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
               >
-                일일 리포트
+                과거 기록
               </Link>
             </div>
           </div>
