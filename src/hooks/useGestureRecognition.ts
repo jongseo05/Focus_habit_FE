@@ -68,10 +68,14 @@ export function useGestureRecognition(
   const streamRef = useRef<MediaStream | null>(null)
   const frameStreamerRef = useRef<FrameStreamer | null>(null)
 
-  // WebSocket 연결
-  const { sendFrame, isConnected } = useWebSocket({}, {
+  // WebSocket 연결 - 웹캠 분석용 URL 사용 (사용자 ID 포함)
+  const { sendFrame, isConnected } = useWebSocket({
+    url: 'wss://focushabit.site/ws/analysis'
+  }, {
     onMessage: (message: any) => {
       try {
+        console.log('📨 제스처 인식 WebSocket 메시지 수신:', message)
+        
         // 프레임 분석 결과 처리
         if (message.type === 'frame_analysis_result') {
           const analysisData = message.data
@@ -105,7 +109,7 @@ export function useGestureRecognition(
           ])
         }
       } catch (error) {
-        // 에러 로그 제거
+        console.error('제스처 인식 메시지 처리 오류:', error)
       }
     }
   })

@@ -11,7 +11,7 @@ import {
 
 export class WebSocketClient {
   private ws: WebSocket | null = null
-  private config: WebSocketConfig
+  public config: WebSocketConfig
   private eventHandlers: WebSocketEventHandlers
   private reconnectAttempts = 0
   private reconnectTimeoutId: any = null
@@ -40,7 +40,25 @@ export class WebSocketClient {
     this.setStatus(WebSocketStatus.CONNECTING)
     
     try {
+      // URL 검증
+      if (!this.config.url) {
+        throw new Error('WebSocket URL이 설정되지 않았습니다.')
+      }
+      
+      // URL 형식 검증
+      try {
+        new URL(this.config.url)
+      } catch (urlError) {
+        throw new Error(`잘못된 WebSocket URL 형식: ${this.config.url}`)
+      }
+      
+      // WebSocket 연결 시도
+      
       // WebSocket 연결 생성
+      console.log('🔗 WebSocket 연결 시도:', {
+        url: this.config.url,
+        protocols: this.config.protocols
+      })
       this.ws = new WebSocket(this.config.url, this.config.protocols)
       
       // 이벤트 리스너 설정
@@ -60,6 +78,7 @@ export class WebSocketClient {
       }
 
     } catch (error) {
+      console.error('WebSocket 연결 생성 실패:', error)
       this.setStatus(WebSocketStatus.ERROR)
       this.eventHandlers.onError?.(error as Event)
     }
@@ -72,7 +91,20 @@ export class WebSocketClient {
 
   // 연결 상태 확인
   isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN
+    const isOpen = this.ws?.readyState === WebSocket.OPEN
+    const isStatusConnected = this.status === WebSocketStatus.CONNECTED
+    const result = isOpen && isStatusConnected
+    
+    console.log('🔍 WebSocket 연결 상태 확인:', {
+      hasWs: !!this.ws,
+      readyState: this.ws?.readyState,
+      isOpen,
+      status: this.status,
+      isStatusConnected,
+      result
+    })
+    
+    return result
   }
 
   // 메시지 전송 (메모리 관리 개선)
@@ -99,20 +131,15 @@ export class WebSocketClient {
     }
   }
 
-  // 프레임 전송
+  // 프레임 전송 (raw base64 데이터만 전송)
   sendFrame(frameData: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return
     }
 
     try {
-      const frameMessage: FrameMessage = {
-        type: 'frame',
-        data: frameData, // Base64 인코딩된 프레임 데이터
-        timestamp: Date.now()
-      }
-      
-      this.ws.send(JSON.stringify(frameMessage))
+      // JSON 래핑 없이 raw base64 데이터만 전송
+      this.ws.send(frameData)
     } catch (error) {
       // 에러 처리
     }
@@ -223,8 +250,15 @@ export class WebSocketClient {
     }
 
     this.ws.onmessage = (event) => {
+      console.log('📨 WebSocket 메시지 수신됨:', {
+        dataType: typeof event.data,
+        dataLength: event.data?.length,
+        timestamp: new Date().toISOString()
+      })
+      
       try {
         const message: WebSocketMessage = JSON.parse(event.data)
+        console.log('📨 파싱된 메시지:', message)
         
         // Pong 메시지 처리
         if (message.type === 'pong') {
@@ -237,13 +271,22 @@ export class WebSocketClient {
           this.isAuthenticated = true
         }
 
-        this.eventHandlers.onMessage?.(message)
+        try {
+          console.log('📨 WebSocket 클라이언트에서 이벤트 핸들러 호출:', message)
+          this.eventHandlers.onMessage?.(message)
+        } catch (error) {
+          console.error('이벤트 핸들러 호출 실패:', error)
+        }
       } catch (error) {
+        console.error('WebSocket 메시지 파싱 실패:', error)
+        console.log('📨 원본 데이터:', event.data)
         // 파싱 에러 처리
       }
     }
 
     this.ws.onclose = (event) => {
+      // WebSocket 연결 종료
+      
       this.setStatus(WebSocketStatus.DISCONNECTED)
       this.clearPingInterval()
       this.isAuthenticated = false
@@ -258,6 +301,7 @@ export class WebSocketClient {
     }
 
     this.ws.onerror = (event) => {
+      console.error('WebSocket 연결 오류:', event)
       this.setStatus(WebSocketStatus.ERROR)
       this.recordConnectionAttempt(false)
       this.eventHandlers.onError?.(event)
@@ -284,5 +328,10 @@ export class WebSocketClient {
     setTimeout(() => {
       this.connect()
     }, 1000)
+  }
+
+  // 이벤트 핸들러 업데이트
+  updateEventHandlers(newHandlers: WebSocketEventHandlers): void {
+    this.eventHandlers = { ...this.eventHandlers, ...newHandlers }
   }
 }

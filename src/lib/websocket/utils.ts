@@ -258,56 +258,10 @@ class AdaptiveCompressionManager {
   }
 }
 
-// 배치 전송 관리자
-class BatchTransmissionManager {
-  private frameBatch: string[] = []
-  private batchSize = 5 // 기본 배치 크기
-  private lastTransmissionTime = Date.now()
-  private readonly maxBatchSize = 10
-  private readonly minBatchSize = 1
-  private readonly maxWaitTime = 2000 // 최대 대기 시간 (2초)
-
-  addFrame(base64Frame: string): boolean {
-    this.frameBatch.push(base64Frame)
-    
-    // 배치가 가득 찼거나 최대 대기 시간 초과 시 전송 필요
-    const timeElapsed = Date.now() - this.lastTransmissionTime
-    const shouldTransmit = this.frameBatch.length >= this.batchSize || timeElapsed >= this.maxWaitTime
-    
-    return shouldTransmit
-  }
-
-  getBatchAndClear(): string[] {
-    const batch = [...this.frameBatch]
-    this.frameBatch = []
-    this.lastTransmissionTime = Date.now()
-    return batch
-  }
-
-  adjustBatchSize(networkCondition: 'good' | 'medium' | 'poor'): void {
-    switch (networkCondition) {
-      case 'good':
-        this.batchSize = Math.min(this.maxBatchSize, this.batchSize + 1)
-        break
-      case 'poor':
-        this.batchSize = Math.max(this.minBatchSize, this.batchSize - 1)
-        break
-      // medium은 그대로 유지
-    }
-  }
-
-  getCurrentBatchSize(): number {
-    return this.batchSize
-  }
-
-  getPendingFramesCount(): number {
-    return this.frameBatch.length
-  }
-
-  cleanup(): void {
-    this.frameBatch = []
-  }
-}
+// 배치 전송 관리자 (raw 데이터 전송으로 인해 제거됨)
+// class BatchTransmissionManager {
+//   // 배치 전송 로직 제거 - raw base64 데이터만 개별 전송
+// }
 
 // 프레임 스트리밍 상태 관리 (고급 최적화 버전)
 export class FrameStreamer {
@@ -319,7 +273,6 @@ export class FrameStreamer {
   // 고급 최적화 관리자들
   private networkMonitor = new NetworkPerformanceMonitor()
   private compressionManager = new AdaptiveCompressionManager()
-  private batchManager = new BatchTransmissionManager()
   
   // 동적 프레임레이트 관리
   private lastFrameRateAdjustment = Date.now()
@@ -401,14 +354,8 @@ export class FrameStreamer {
         const frameProcessTime = Date.now() - frameStartTime
         this.networkMonitor.recordThroughput(result.stats.sizeKB * 1024, frameProcessTime)
         
-        // 배치 전송 관리
-        const shouldTransmit = this.batchManager.addFrame(result.base64)
-        
-        if (shouldTransmit) {
-          const frameBatch = this.batchManager.getBatchAndClear()
-          // 배치로 전송 (기존 단일 프레임 전송 대신)
-          this.onFrame(frameBatch.join('|')) // 구분자로 연결
-        }
+        // raw base64 데이터 전송
+        this.onFrame(result.base64)
         
         // 동적 프레임레이트 조정 (5초마다)
         const now = Date.now()
@@ -465,8 +412,7 @@ export class FrameStreamer {
       this.setFrameRate(recommendedFrameRate)
     }
     
-    // 배치 크기 조정
-    this.batchManager.adjustBatchSize(networkCondition)
+    // 배치 크기 조정 제거 (raw 데이터 전송으로 인해)
     
     // 연결 품질 점수 계산 및 기록
     const qualityScore = this.calculateConnectionQuality(networkCondition)
@@ -528,7 +474,6 @@ export class FrameStreamer {
     // 모든 관리자 메모리 정리
     this.networkMonitor.cleanup()
     this.compressionManager.cleanup()
-    this.batchManager.cleanup()
     
     // 기본 통계 데이터 정리
     this.frameSizes = []
@@ -588,14 +533,14 @@ export class FrameStreamer {
     return this.compressionManager.getCompressionStats()
   }
 
-  // 배치 전송 정보 반환
+  // 배치 전송 정보 반환 (raw 데이터 전송으로 인해 제거됨)
   getBatchInfo(): {
     currentBatchSize: number;
     pendingFrames: number;
   } {
     return {
-      currentBatchSize: this.batchManager.getCurrentBatchSize(),
-      pendingFrames: this.batchManager.getPendingFramesCount()
+      currentBatchSize: 1, // raw 데이터는 항상 1개씩 전송
+      pendingFrames: 0
     }
   }
   

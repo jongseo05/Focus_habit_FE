@@ -1258,23 +1258,10 @@ function DashboardContent() {
 
   // ML 피쳐값 로드 함수
   const loadMLFeatures = useCallback(async () => {
-    if (!activeSession?.session_id) return
-    
-    setIsLoadingFeatures(true)
-    try {
-      const response = await fetch(`/api/ml-features?sessionId=${activeSession.session_id}`)
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          setMlFeatures(result.data || [])
-        }
-      }
-    } catch (error) {
-      // ML 피쳐값 로드 실패 시 조용히 처리
-    } finally {
-      setIsLoadingFeatures(false)
-    }
-  }, [activeSession?.session_id])
+    // ML Features API 호출 비활성화 (서버 오류로 인해)
+    console.log('ML Features API 호출 비활성화됨')
+    setIsLoadingFeatures(false)
+  }, [])
 
   // 활성 세션이 변경될 때마다 ML 피쳐값 로드
   useEffect(() => {

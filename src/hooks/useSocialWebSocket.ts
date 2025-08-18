@@ -66,7 +66,6 @@ export function useSocialWebSocket(options: UseSocialWebSocketOptions = {}) {
     // 정리 함수
     return () => {
       if (socialHandlerRef.current) {
-        console.log('Social WebSocket 핸들러 정리 중...')
         socialHandlerRef.current = null
       }
     }
@@ -91,11 +90,9 @@ export function useSocialWebSocket(options: UseSocialWebSocketOptions = {}) {
     },
     onOpen: () => {
       setIsConnected(true)
-      console.log('Social WebSocket connected')
     },
     onClose: () => {
       setIsConnected(false)
-      console.log('Social WebSocket disconnected')
     },
     onError: (error) => {
       console.error('Social WebSocket error:', error)

@@ -51,7 +51,7 @@ export function useSignaling({
               return
             }
 
-            console.log('시그널링 메시지 수신:', message)
+            // 시그널링 메시지 수신
 
             switch (message.type) {
               case 'offer':
@@ -72,8 +72,6 @@ export function useSignaling({
             }
           })
           .subscribe((status: string) => {
-            console.log('Supabase Realtime 채널 상태:', status)
-            
             if (status === 'SUBSCRIBED') {
               // 룸 입장 메시지 전송
               const message: SignalingMessage = {
@@ -91,7 +89,6 @@ export function useSignaling({
               })
               
               roomJoined.current = true
-              console.log(`룸 ${roomId}에 입장했습니다.`)
             }
           })
 
@@ -125,8 +122,6 @@ export function useSignaling({
         await supabase.removeChannel(channelRef.current)
         channelRef.current = null
         roomJoined.current = false
-        
-        console.log(`룸 ${roomId}에서 퇴장했습니다.`)
       } catch (error) {
         console.error('룸 퇴장 실패:', error)
       }

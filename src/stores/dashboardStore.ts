@@ -122,6 +122,11 @@ export const useDashboardStore = create<DashboardState>()(
       },
       
       updateFocusScore: (score: number) => {
+        console.log('🔄 대시보드 스토어 updateFocusScore 호출:', {
+          oldScore: get().focusScore,
+          newScore: score,
+          clampedScore: Math.max(0, Math.min(100, score))
+        })
         set({ focusScore: Math.max(0, Math.min(100, score)) })
       },
       

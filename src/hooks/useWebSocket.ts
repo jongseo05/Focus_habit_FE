@@ -14,6 +14,7 @@ import {
 // 전역 WebSocket 연결 관리 (페이지 이동 시에도 유지)
 let globalWebSocketClient: WebSocketClient | null = null
 let globalConnectionCount = 0
+let globalEventHandlers: WebSocketEventHandlers | null = null
 
 // WebSocket 훅 반환 타입 정의
 interface UseWebSocketReturn {
@@ -33,7 +34,7 @@ interface UseWebSocketReturn {
 
 // 기본 WebSocket 설정
 const defaultConfig: WebSocketConfig = {
-  url: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:3001',
+  url: 'wss://focushabit.site/ws/analysis',
   reconnectInterval: parseInt(process.env.NEXT_PUBLIC_WEBSOCKET_RECONNECT_INTERVAL || '5000'),
   maxReconnectAttempts: parseInt(process.env.NEXT_PUBLIC_WEBSOCKET_MAX_RECONNECT_ATTEMPTS || '5'),
   enablePing: true,
@@ -55,6 +56,25 @@ export function useWebSocket(
   const connectionStartTime = useRef<number | null>(null)
   const lastDisconnectionTime = useRef<number | null>(null)
   const isComponentMounted = useRef(true)
+  
+  // eventHandlers를 ref로 저장하여 최신 값을 유지
+  const eventHandlersRef = useRef<Partial<WebSocketEventHandlers> | undefined>(eventHandlers)
+  
+  // eventHandlers가 변경될 때마다 ref 업데이트 및 WebSocket 클라이언트 이벤트 핸들러 업데이트
+  useEffect(() => {
+    eventHandlersRef.current = eventHandlers
+    console.log('🔧 eventHandlers 업데이트:', {
+      hasEventHandlers: !!eventHandlers,
+      hasOnMessage: !!eventHandlers?.onMessage,
+      keys: eventHandlers ? Object.keys(eventHandlers) : []
+    })
+    
+    // WebSocket 클라이언트가 연결되어 있으면 이벤트 핸들러 업데이트
+    if (wsClientRef.current && eventHandlers) {
+      console.log('🔄 WebSocket 클라이언트 이벤트 핸들러 업데이트')
+      wsClientRef.current.updateEventHandlers(eventHandlers)
+    }
+  }, [eventHandlers])
 
   // 집중 세션 에러 핸들러
   const { handleError: handleSessionError, classifyError } = useFocusSessionErrorHandler({
@@ -91,11 +111,24 @@ export function useWebSocket(
 
   // WebSocket 이벤트 핸들러 설정
   const handleMessage = useCallback((message: WebSocketMessage) => {
+    
     if (isComponentMounted.current) {
       setLastMessage(message)
-      eventHandlers?.onMessage?.(message)
+      // raw 데이터를 그대로 전달 (WebSocketMessage 타입이 아닌 실제 데이터)
+      console.log('📨 useWebSocket handleMessage 호출:', {
+        message,
+        hasEventHandlers: !!eventHandlersRef.current,
+        hasOnMessage: !!eventHandlersRef.current?.onMessage,
+        eventHandlersKeys: eventHandlersRef.current ? Object.keys(eventHandlersRef.current) : []
+      })
+      if (eventHandlersRef.current?.onMessage) {
+        console.log('✅ eventHandlersRef.current.onMessage 호출')
+        eventHandlersRef.current.onMessage(message as any)
+      } else {
+        console.warn('❌ eventHandlersRef.current?.onMessage가 없음')
+      }
     }
-  }, [eventHandlers])
+  }, [])
 
   const handleOpen = useCallback(() => {
     if (isComponentMounted.current) {
@@ -104,64 +137,114 @@ export function useWebSocket(
       setReconnectAttempts(0)
       connectionStartTime.current = Date.now()
       // onOpen 이벤트 핸들러 호출 시 이벤트 객체 전달
-      eventHandlers?.onOpen?.(new Event('open'))
+      eventHandlersRef.current?.onOpen?.(new Event('open'))
     }
-  }, [eventHandlers])
+  }, [])
 
   const handleClose = useCallback((event: CloseEvent) => {
     if (isComponentMounted.current) {
       setStatus(WebSocketStatus.DISCONNECTED)
       setConnectionStable(false)
       lastDisconnectionTime.current = Date.now()
-      eventHandlers?.onClose?.(event)
+      eventHandlersRef.current?.onClose?.(event)
     }
-  }, [eventHandlers])
+  }, [])
 
   const handleError = useCallback((error: Event) => {
     if (isComponentMounted.current) {
       setStatus(WebSocketStatus.ERROR)
       setConnectionStable(false)
-      eventHandlers?.onError?.(error)
+      eventHandlersRef.current?.onError?.(error)
     }
-  }, [eventHandlers])
+  }, [])
 
   // WebSocket 클라이언트 생성 및 연결
   const createWebSocketClient = useCallback(async () => {
     try {
       const token = await getAuthToken()
       if (!token) {
-        console.warn('WebSocket 연결 실패: 인증 토큰 없음')
         return null
       }
 
-      // 전역 클라이언트가 있으면 재사용
-      if (globalWebSocketClient && globalWebSocketClient.isConnected()) {
-        console.log('기존 전역 WebSocket 클라이언트 재사용')
-        return globalWebSocketClient
+      // 사용자 UID가 없으면 연결하지 않음
+      if (!user?.id) {
+        return null
       }
 
-      // 새 클라이언트 생성
-      const client = new WebSocketClient(configRef.current, {
+      // 사용자 UID를 포함한 URL 생성
+      const baseUrl = configRef.current.url
+      const urlWithUserId = `${baseUrl}?user_id=${encodeURIComponent(user.id)}`
+      
+      console.log('🔗 WebSocket URL 생성:', {
+        baseUrl,
+        userId: user.id,
+        urlWithUserId,
+        hasUserId: !!user.id,
+        configUrl: configRef.current.url
+      })
+      
+      // 전역 클라이언트가 있고 같은 사용자 UID로 연결되어 있으면 재사용
+      if (globalWebSocketClient && globalWebSocketClient.isConnected()) {
+        // 현재 연결된 URL에서 user_id 추출
+        const currentUrl = globalWebSocketClient.config?.url || ''
+        const currentUserId = new URLSearchParams(currentUrl.split('?')[1] || '').get('user_id')
+        
+        if (currentUserId === user.id) {
+          // 전역 이벤트 핸들러 업데이트
+          globalEventHandlers = {
+            onMessage: handleMessage,
+            onOpen: handleOpen,
+            onClose: handleClose,
+            onError: handleError
+          }
+          
+          // 기존 클라이언트의 이벤트 핸들러 업데이트
+          globalWebSocketClient.updateEventHandlers(globalEventHandlers)
+          
+          // 연결 상태를 올바르게 설정
+          setStatus(WebSocketStatus.CONNECTED)
+          setConnectionStable(true)
+          return globalWebSocketClient
+        } else {
+          globalWebSocketClient.disconnect()
+          globalWebSocketClient = null
+          globalEventHandlers = null
+          globalConnectionCount = 0
+        }
+      }
+
+      // 새 클라이언트 생성 (동적 URL 사용)
+      const client = new WebSocketClient({
+        ...configRef.current,
+        url: urlWithUserId
+      }, {
         onMessage: handleMessage,
         onOpen: handleOpen,
         onClose: handleClose,
         onError: handleError
       })
 
+      // 전역 이벤트 핸들러 설정
+      globalEventHandlers = {
+        onMessage: handleMessage,
+        onOpen: handleOpen,
+        onClose: handleClose,
+        onError: handleError
+      }
+
       // 클라이언트 생성 후 즉시 연결
       client.connect(token)
 
       return client
     } catch (error) {
-      console.error('WebSocket 클라이언트 생성 실패:', error)
       return null
     }
-  }, [getAuthToken, handleMessage, handleOpen, handleClose, handleError])
+  }, [getAuthToken, handleMessage, handleOpen, handleClose, handleError, user?.id])
 
   // 연결
   const connect = useCallback(async () => {
-    if (wsClientRef.current?.isConnected()) {
-      console.log('WebSocket 이미 연결됨')
+    // 실제 연결 상태를 더 정확하게 확인
+    if (wsClientRef.current?.isConnected() && status === WebSocketStatus.CONNECTED) {
       return
     }
 
@@ -182,12 +265,33 @@ export function useWebSocket(
       }
       globalConnectionCount++
 
-      // 클라이언트가 이미 생성되고 연결됨 (createWebSocketClient에서 처리)
-    } catch (error) {
-      console.error('WebSocket 연결 실패:', error)
+      // 연결 완료 대기 (최대 5초)
+      let attempts = 0
+      const maxAttempts = 50 // 5초 (100ms * 50)
+      
+      while (attempts < maxAttempts) {
+        if (client.isConnected()) {
+          setStatus(WebSocketStatus.CONNECTED)
+          setConnectionStable(true)
+          return
+        }
+        await new Promise(resolve => setTimeout(resolve, 100))
+        attempts++
+      }
+      
+      // 연결 타임아웃
       setStatus(WebSocketStatus.ERROR)
+      wsClientRef.current = null
+      
+    } catch (error) {
+      setStatus(WebSocketStatus.ERROR)
+      
+      // 연결 실패 시 클라이언트 정리
+      if (wsClientRef.current) {
+        wsClientRef.current = null
+      }
     }
-  }, [createWebSocketClient])
+  }, [createWebSocketClient, status])
 
   // 연결 해제
   const disconnect = useCallback(() => {
@@ -196,14 +300,13 @@ export function useWebSocket(
       
       // 마지막 사용자가 아니면 실제로 연결을 끊지 않음
       if (globalConnectionCount <= 0) {
-        console.log('마지막 WebSocket 사용자, 연결 해제')
         if (globalWebSocketClient) {
           globalWebSocketClient.disconnect()
           globalWebSocketClient = null
         }
+        globalEventHandlers = null
         wsClientRef.current = null
       } else {
-        console.log('다른 사용자가 WebSocket을 사용 중, 연결 유지')
         wsClientRef.current = null
       }
       
@@ -228,14 +331,40 @@ export function useWebSocket(
 
   // 원시 텍스트 전송 (제스처 인식용)
   const sendRawText = useCallback((text: string) => {
+    console.log('📤 sendRawText 호출:', {
+      hasClient: !!wsClientRef.current,
+      isConnected: wsClientRef.current?.isConnected(),
+      textLength: text.length
+    })
+    
     if (!wsClientRef.current?.isConnected()) {
+      console.warn('❌ WebSocket 클라이언트가 연결되지 않음')
       return
     }
 
-    // WebSocket 클라이언트에 직접 접근해서 원시 텍스트 전송
-    const ws = (wsClientRef.current as any).ws
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(text)
+    try {
+      // WebSocket 클라이언트에 직접 접근해서 원시 텍스트 전송
+      const ws = (wsClientRef.current as any).ws
+      console.log('📤 WebSocket 상태:', {
+        hasWs: !!ws,
+        readyState: ws?.readyState,
+        isOpen: ws?.readyState === WebSocket.OPEN
+      })
+      
+             if (ws && ws.readyState === WebSocket.OPEN) {
+         console.log('📤 서버로 전송되는 데이터:', {
+           dataType: typeof text,
+           dataLength: text.length,
+           dataPreview: text.substring(0, 100) + '...',
+           timestamp: new Date().toISOString()
+         })
+         ws.send(text)
+         console.log('✅ WebSocket으로 데이터 전송 완료')
+       } else {
+         console.warn('❌ WebSocket이 OPEN 상태가 아님')
+       }
+    } catch (error) {
+      console.error('❌ WebSocket 전송 오류:', error)
     }
   }, [])
 
@@ -248,22 +377,14 @@ export function useWebSocket(
       // 새로 연결
       connect()
     }
-  }, [connect])
+  }, [])
 
-  // 사용자 로그인 상태 변경 시 처리
-  useEffect(() => {
-    if (user) {
-      connect()
-    } else {
-      disconnect()
-    }
-  }, [user, connect, disconnect])
+  
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       isComponentMounted.current = false
-      console.log('WebSocket 훅 정리 중...')
       disconnect()
     }
   }, [disconnect])

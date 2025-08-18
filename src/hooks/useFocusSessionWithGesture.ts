@@ -102,11 +102,9 @@ export function useFocusSessionWithGesture(
       }
     },
     onRecoveryFailed: (error) => {
-      console.error('[FOCUS_SESSION] 집중 세션 복구 실패:', error)
       setIsGestureActive(false)
     },
     onSessionInterrupted: () => {
-      console.warn('[FOCUS_SESSION] 집중 세션이 중단되었습니다')
       setIsGestureActive(false)
     },
     onFallbackMode: () => {
@@ -199,6 +197,11 @@ export function useFocusSessionWithGesture(
   const [webcamAnalysisResult, setWebcamAnalysisResult] = useState<WebcamFrameAnalysisResult | null>(null)
   const [focusFeatures, setFocusFeatures] = useState<FocusAnalysisFeatures | null>(null)
   const [lastFocusScore, setLastFocusScore] = useState<number>(85)
+
+  // lastFocusScore 업데이트 로깅
+  useEffect(() => {
+    console.log('📊 lastFocusScore 업데이트:', lastFocusScore)
+  }, [lastFocusScore])
   
   // 제스처 인식 상태 추가
   const [currentGesture, setCurrentGesture] = useState<string>('neutral')
@@ -263,80 +266,108 @@ export function useFocusSessionWithGesture(
         })
 
         if (response.ok) {
-          console.log('✅ 웹캠 집중도 점수 저장 성공:', focusScore)
           lastSavedScoreRef.current = focusScore
         } else {
-          console.warn('⚠️ 웹캠 집중도 점수 저장 실패:', response.status)
+          console.warn('웹캠 집중도 점수 저장 실패:', response.status)
         }
       } catch (error) {
-        console.error('❌ 웹캠 집중도 점수 저장 오류:', error)
+        console.error('웹캠 집중도 점수 저장 오류:', error)
       }
     }, 2000) // 2초 디바운싱
   }, [])
 
-  // 제스처 인식을 위한 WebSocket
-  const { sendRawText, isConnected } = useWebSocket({}, {
-    onMessage: useCallback((rawData: any) => {
-      try {
-        // 새로운 웹캠 프레임 분석 결과 처리
-        if (rawData && typeof rawData === 'object' && 'timestamp' in rawData && 'prediction_result' in rawData) {
-          const analysisResult = rawData as WebcamFrameAnalysisResult
-          console.log('🎥 웹캠 프레임 분석 결과 수신:', analysisResult)
+  // WebSocket 메시지 처리를 위한 직접 핸들러
+  const handleWebSocketMessage = useCallback((rawData: any) => {
+    console.log('🎯 handleWebSocketMessage 호출됨!', rawData)
+    
+    try {
+      console.log('📨 WebSocket 메시지 수신 시작:', {
+        type: typeof rawData,
+        isObject: typeof rawData === 'object',
+        keys: rawData && typeof rawData === 'object' ? Object.keys(rawData) : 'N/A',
+        timestamp: new Date().toISOString(),
+        hasPredictionResult: rawData && typeof rawData === 'object' && 'prediction_result' in rawData
+      })
+      
+      // rawData가 문자열인 경우 JSON 파싱 시도
+      let parsedData = rawData
+      if (typeof rawData === 'string') {
+        try {
+          parsedData = JSON.parse(rawData)
+          console.log('📨 JSON 파싱 성공:', parsedData)
+        } catch (parseError) {
+          console.log('📨 JSON 파싱 실패, 원본 데이터:', rawData)
+          return
+        }
+      }
+      
+      console.log('📨 파싱된 데이터:', parsedData)
+      console.log('📨 조건 확인:', {
+        hasTimestamp: 'timestamp' in parsedData,
+        hasPredictionResult: 'prediction_result' in parsedData,
+        keys: Object.keys(parsedData)
+      })
+      
+              // 새로운 웹캠 프레임 분석 결과 처리 (prediction_result가 있는 경우)
+        if (parsedData && typeof parsedData === 'object' && 'timestamp' in parsedData && 'prediction_result' in parsedData) {
+          console.log('🎯 웹캠 분석 결과:', parsedData)
           
           // 분석 결과 저장
-          setWebcamAnalysisResult(analysisResult)
+          setWebcamAnalysisResult(parsedData as WebcamFrameAnalysisResult)
           
-          // 집중도 점수 추출 및 변환
-          const focusScore = analysisResult.prediction_result.prediction
-          const confidence = analysisResult.prediction_result.confidence
+          // 집중도 점수 추출 및 변환 (실제 서버
+          const rawFocusScore = parsedData.prediction_result.prediction
+          const confidence = parsedData.prediction_result.confidence
+          
+          // 0~1 범위를 0~100 범위로 변환
+          const focusScore = Math.round(rawFocusScore * 100)
+          
+          console.log('📊 집중도 점수 추출:', {
+            rawFocusScore,
+            focusScore,
+            confidence,
+            timestamp: parsedData.timestamp
+          })
           
           // 기존 형식으로 변환
           const features: FocusAnalysisFeatures = {
             eyeStatus: {
-              isOpen: analysisResult.eye_status.status === 'OPEN',
+              isOpen: parsedData.eye_status.status === 'OPEN',
               confidence: confidence,
-              earValue: analysisResult.eye_status.ear_value
+              earValue: parsedData.eye_status.ear_value
             },
             headPose: {
-              pitch: analysisResult.head_pose.pitch,
-              yaw: analysisResult.head_pose.yaw,
-              roll: analysisResult.head_pose.roll
+              pitch: parsedData.head_pose.pitch,
+              yaw: parsedData.head_pose.yaw,
+              roll: parsedData.head_pose.roll
             },
             focusScore: {
               score: focusScore,
               confidence: confidence
             },
-            timestamp: analysisResult.timestamp
+            timestamp: parsedData.timestamp
           }
           
           setFocusFeatures(features)
+          console.log('📊 setLastFocusScore 호출 (prediction_result 있음):', focusScore)
           setLastFocusScore(focusScore)
-          
-          // 집중도 점수 업데이트 (대시보드 스토어)
-          updateFocusScore(focusScore)
-          
-          // 집중도 점수를 데이터베이스에 저장
-          if (sessionId && isRunning) {
-            saveFocusScoreToDatabase(sessionId, focusScore, confidence, features.timestamp)
-          }
-          
-          // 제스처 인식 결과도 처리 (기존 로직 유지)
-          if (analysisResult.head_pose) {
-            const gestureData = {
-              gesture: determineGestureFromHeadPose(analysisResult.head_pose),
-              timestamp: new Date(analysisResult.timestamp).toISOString()
-            }
-            setCurrentGesture(gestureData.gesture)
-            setLastGestureTime(gestureData.timestamp)
-            setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
-              gestureData,
-              ...prev.slice(0, 49)
-            ])
-          }
+        
+        // 집중도 점수 업데이트 (대시보드 스토어)
+        console.log('🔄 대시보드 스토어 업데이트 시도:', focusScore)
+        updateFocusScore(focusScore)
+        
+        // 집중도 점수를 데이터베이스에 저장
+        if (sessionId && isRunning) {
+          console.log('💾 데이터베이스 저장 시도:', { sessionId, focusScore, confidence })
+          saveFocusScoreToDatabase(sessionId, focusScore, confidence, parsedData.timestamp)
         }
-        // 기존 제스처 인식 응답 처리 (하위 호환성)
-        else if (rawData && typeof rawData === 'object' && 'gesture' in rawData && 'timestamp' in rawData) {
-          const gestureData = rawData as { gesture: string; timestamp: string }
+        
+        // 제스처 인식 결과도 처리 (기존 로직 유지)
+        if (parsedData.head_pose) {
+          const gestureData = {
+            gesture: determineGestureFromHeadPose(parsedData.head_pose),
+            timestamp: new Date(parsedData.timestamp).toISOString()
+          }
           setCurrentGesture(gestureData.gesture)
           setLastGestureTime(gestureData.timestamp)
           setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
@@ -344,192 +375,327 @@ export function useFocusSessionWithGesture(
             ...prev.slice(0, 49)
           ])
         }
-        // 기존 응답 구조 처리 (하위 호환성)
-        else if (rawData && typeof rawData === 'object') {
-          const data = rawData as any
-          
-          // 현재 받고 있는 응답 구조 분석
-          const analysis = {
-            timestamp: data.timestamp || 'N/A',
-            eyeStatus: data.eye_status?.status || 'N/A',
-            eyeValue: data.eye_status?.ear_value || 'N/A',
-            handAction: data.hand_action?.action || 'N/A',
-            handConfidence: data.hand_action?.confidence || 'N/A',
-            headPose: {
-              pitch: data.head_pose?.pitch || 'N/A',
-              roll: data.head_pose?.roll || 'N/A',
-              yaw: data.head_pose?.yaw || 'N/A'
-            }
-          }
-          
-          // 집중 상태 계산을 위한 피쳐 데이터 구성
-          const focusFeatures = {
-            visual: {
-              eyeStatus: data.eye_status?.status || 'OPEN',
-              earValue: data.eye_status?.ear_value || 0.3,
-              headPose: {
-                pitch: data.head_pose?.pitch || 0,
-                yaw: data.head_pose?.yaw || 0,
-                roll: data.head_pose?.roll || 0
-              },
-              gazeDirection: 'FORWARD' as const
-            },
-            // 기본값들 (실제로는 다른 센서에서 받아와야 함)
-            audio: {
-              isSpeaking: false,
-              speechContent: '',
-              isStudyRelated: true,
-              confidence: 0.8,
-              audioLevel: 20
-            },
-            behavior: {
-              mouseActivity: true,
-              keyboardActivity: true,
-              tabSwitches: 0,
-              idleTime: 0
-            },
-            time: {
-              sessionDuration: 0,
-              lastBreakTime: 0,
-              consecutiveFocusTime: 0
-            }
-          }
-          
-          // 집중 상태 계산
-          const focusStatusResult = determineFocusStatus(focusFeatures)
-          
-          // 제스처 인식 결과를 DB에 저장 (집중 상태 포함)
-          if (data.timestamp) {
-            const features = {
-              frameNumber: gestureFramesSent,
-              eyeStatus: data.eye_status?.status?.substring(0, 10), // 10자로 제한
-              earValue: data.eye_status?.ear_value,
-              headPose: {
-                pitch: data.head_pose?.pitch,
-                roll: data.head_pose?.roll,
-                yaw: data.head_pose?.yaw
-              },
-              focusStatus: focusStatusResult.status,
-              focusConfidence: focusStatusResult.confidence,
-              focusScore: focusStatusResult.score
-            }
-            
-            saveGestureFeatures(features)
-          } else {
-            console.warn('⚠️ 데이터 저장 조건 미충족:', {
-              sessionId: !!sessionId,
-              timestamp: !!data.timestamp,
-              sessionIdValue: sessionId,
-              timestampValue: data.timestamp
-            })
-          }
-          
-        }
-      } catch (error) {
-        // 응답 파싱 오류를 제스처 서버 오류로 분류
-        const gestureError = classifyError(error, 'gesture')
-        handleError(gestureError)
       }
-    }, [sessionId, gestureFramesSent, saveGestureFeatures]),
+              // 새로운 서버 응답 구조 처리 (prediction_result가 없는 경우)
+        else if (parsedData && typeof parsedData === 'object' && 'timestamp' in parsedData && 'eye_status' in parsedData && 'head_pose' in parsedData) {
+          console.log('🎯 새로운 웹캠 분석 결과 (prediction_result 없음):', parsedData)
+          
+          // 분석 결과 저장
+          setWebcamAnalysisResult(parsedData as WebcamFrameAnalysisResult)
+          
+          // 집중도 점수 계산 (기본값 또는 계산 로직)
+          const confidence = 0.8 // 기본 신뢰도
+          const focusScore = 75 // 기본 집중도 점수
+          
+          console.log('📊 기본 집중도 점수 설정:', {
+            focusScore,
+            confidence,
+            timestamp: parsedData.timestamp
+          })
+          
+          // 기존 형식으로 변환
+          const features: FocusAnalysisFeatures = {
+            eyeStatus: {
+              isOpen: parsedData.eye_status.status === 'OPEN',
+              confidence: confidence,
+              earValue: parsedData.eye_status.ear_value
+            },
+            headPose: {
+              pitch: parsedData.head_pose.pitch,
+              yaw: parsedData.head_pose.yaw,
+              roll: parsedData.head_pose.roll
+            },
+            focusScore: {
+              score: focusScore,
+              confidence: confidence
+            },
+            timestamp: parsedData.timestamp
+          }
+          
+          setFocusFeatures(features)
+          console.log('📊 setLastFocusScore 호출 (prediction_result 없음):', focusScore)
+          setLastFocusScore(focusScore)
+        
+        // 집중도 점수 업데이트 (대시보드 스토어)
+        console.log('🔄 대시보드 스토어 업데이트 시도:', focusScore)
+        updateFocusScore(focusScore)
+        
+        // 집중도 점수를 데이터베이스에 저장
+        if (sessionId && isRunning) {
+          console.log('💾 데이터베이스 저장 시도:', { sessionId, focusScore, confidence })
+          saveFocusScoreToDatabase(sessionId, focusScore, confidence, parsedData.timestamp)
+        }
+        
+        // 제스처 인식 결과도 처리 (기존 로직 유지)
+        if (parsedData.head_pose) {
+          const gestureData = {
+            gesture: determineGestureFromHeadPose(parsedData.head_pose),
+            timestamp: new Date(parsedData.timestamp).toISOString()
+          }
+          setCurrentGesture(gestureData.gesture)
+          setLastGestureTime(gestureData.timestamp)
+          setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
+            gestureData,
+            ...prev.slice(0, 49)
+          ])
+        }
+      }
+      // 기존 제스처 인식 응답 처리 (하위 호환성)
+      else if (parsedData && typeof parsedData === 'object' && 'gesture' in parsedData && 'timestamp' in parsedData) {
+        const gestureData = parsedData as { gesture: string; timestamp: string }
+        setCurrentGesture(gestureData.gesture)
+        setLastGestureTime(gestureData.timestamp)
+        setGestureHistory((prev: Array<{ gesture: string; timestamp: string }>) => [
+          gestureData,
+          ...prev.slice(0, 49)
+        ])
+      }
+      // 기존 응답 구조 처리 (하위 호환성)
+      else if (parsedData && typeof parsedData === 'object') {
+        const data = parsedData as any
+        
+        // 현재 받고 있는 응답 구조 분석
+        const analysis = {
+          timestamp: data.timestamp || 'N/A',
+          eyeStatus: data.eye_status?.status || 'N/A',
+          eyeValue: data.eye_status?.ear_value || 'N/A',
+          handAction: data.hand_action?.action || 'N/A',
+          handConfidence: data.hand_action?.confidence || 'N/A',
+          headPose: {
+            pitch: data.head_pose?.pitch || 'N/A',
+            roll: data.head_pose?.roll || 'N/A',
+            yaw: data.head_pose?.yaw || 'N/A'
+          }
+        }
+        
+        // 집중 상태 계산을 위한 피쳐 데이터 구성
+        const focusFeatures = {
+          visual: {
+            eyeStatus: data.eye_status?.status || 'OPEN',
+            earValue: data.eye_status?.ear_value || 0.3,
+            headPose: {
+              pitch: data.head_pose?.pitch || 0,
+              yaw: data.head_pose?.yaw || 0,
+              roll: data.head_pose?.roll || 0
+            },
+            gazeDirection: 'FORWARD' as const
+          },
+          // 기본값들 (실제로는 다른 센서에서 받아와야 함)
+          audio: {
+            isSpeaking: false,
+            speechContent: '',
+            isStudyRelated: true,
+            confidence: 0.8,
+            audioLevel: 20
+          },
+          behavior: {
+            mouseActivity: true,
+            keyboardActivity: true,
+            tabSwitches: 0,
+            idleTime: 0
+          },
+          time: {
+            sessionDuration: 0,
+            lastBreakTime: 0,
+            consecutiveFocusTime: 0
+          }
+        }
+        
+        // 집중 상태 계산
+        const focusStatusResult = determineFocusStatus(focusFeatures)
+        
+        console.log('📊 기존 응답 구조 집중도 계산:', {
+          focusStatus: focusStatusResult.status,
+          focusConfidence: focusStatusResult.confidence,
+          focusScore: focusStatusResult.score
+        })
+        
+        // 집중도 점수 업데이트 (대시보드 스토어)
+        updateFocusScore(focusStatusResult.score)
+        
+        // 제스처 인식 결과를 DB에 저장 (집중 상태 포함)
+        if (data.timestamp) {
+          const features = {
+            frameNumber: gestureFramesSent,
+            eyeStatus: data.eye_status?.status?.substring(0, 10), // 10자로 제한
+            earValue: data.eye_status?.ear_value,
+            headPose: {
+              pitch: data.head_pose?.pitch,
+              roll: data.head_pose?.roll,
+              yaw: data.head_pose?.yaw
+            },
+            focusStatus: focusStatusResult.status,
+            focusConfidence: focusStatusResult.confidence,
+            focusScore: focusStatusResult.score
+          }
+          
+          saveGestureFeatures(features)
+        } else {
+          // 데이터 저장 조건 미충족
+        }
+        
+      }
+    } catch (error) {
+      // 응답 파싱 오류를 제스처 서버 오류로 분류
+      const gestureError = classifyError(error, 'gesture')
+      handleError(gestureError)
+    }
+  }, [sessionId, isRunning, updateFocusScore, saveFocusScoreToDatabase, handleError, classifyError])
+
+  // 제스처 인식을 위한 WebSocket - 웹캠 분석용 URL 사용 (사용자 ID 포함)
+  const { sendRawText, isConnected, connect, disconnect } = useWebSocket({
+    url: 'wss://focushabit.site/ws/analysis'
+  }, {
+    onMessage: handleWebSocketMessage,
     onOpen: () => {
+      console.log('🔗 WebSocket 연결 성공')
     },
     onClose: () => {
+      console.log('🔌 WebSocket 연결 종료')
     },
     onError: (error) => {
+      console.error('❌ WebSocket 오류:', error)
       // WebSocket 오류를 에러 핸들러에 전달
       const wsError = classifyError(error, 'websocket')
       handleError(wsError)
     }
   })
   
+  // 연결 상태를 ref로 저장하여 클로저 문제 해결
+  const isConnectedRef = useRef(isConnected)
+  isConnectedRef.current = isConnected
+
+  // WebSocket 연결 상태 로깅
+  useEffect(() => {
+    console.log('🔗 WebSocket 연결 상태:', { 
+      isConnected,
+      sessionId,
+      isRunning,
+      enableGestureRecognition
+    })
+  }, [isConnected, sessionId, isRunning, enableGestureRecognition])
+  
   // 제스처 인식 시작
   const startGestureRecognition = useCallback(() => {
-    if (!mediaStream.stream || !isConnected || !enableGestureRecognition) {
+    console.log('🎯 제스처 인식 시작 시도:', {
+      hasStream: !!mediaStream.stream,
+      enableGestureRecognition,
+      isConnected,
+      isGestureActive
+    })
+    
+    if (!mediaStream.stream || !enableGestureRecognition) {
+      console.log('❌ 제스처 인식 시작 조건 미충족')
       return
     }
     
     // 이미 실행 중이면 리턴
-    if (frameStreamerRef.current && frameStreamerRef.current.getIsStreaming()) {
+    if (isGestureActive) {
+      console.log('❌ 제스처 인식이 이미 활성화됨')
       return
     }
     
-    // 이미 실행 중이면 중지
+    // 기존 프레임 스트리머 정리
     if (frameStreamerRef.current) {
       frameStreamerRef.current.stop()
       frameStreamerRef.current = null
     }
     
-    // 숨겨진 비디오 엘리먼트 생성 또는 재사용
-    if (!hiddenVideoRef.current) {
-      hiddenVideoRef.current = document.createElement('video')
-      hiddenVideoRef.current.style.display = 'none'
-      hiddenVideoRef.current.style.position = 'fixed'
-      hiddenVideoRef.current.style.top = '-9999px'
-      hiddenVideoRef.current.style.left = '-9999px'
-      hiddenVideoRef.current.autoplay = true
-      hiddenVideoRef.current.playsInline = true
-      hiddenVideoRef.current.muted = true
-      // 웹캠 원본 해상도 사용 (고정 크기 제거)
-      document.body.appendChild(hiddenVideoRef.current)
+    // 기존 비디오 엘리먼트 정리
+    if (hiddenVideoRef.current) {
+      hiddenVideoRef.current.srcObject = null
+      hiddenVideoRef.current.remove()
+      hiddenVideoRef.current = null
     }
+    
+    // 숨겨진 비디오 엘리먼트 생성
+    hiddenVideoRef.current = document.createElement('video')
+    hiddenVideoRef.current.style.display = 'none'
+    hiddenVideoRef.current.style.position = 'fixed'
+    hiddenVideoRef.current.style.top = '-9999px'
+    hiddenVideoRef.current.style.left = '-9999px'
+    hiddenVideoRef.current.autoplay = true
+    hiddenVideoRef.current.playsInline = true
+    hiddenVideoRef.current.muted = true
+    document.body.appendChild(hiddenVideoRef.current)
     
     // 스트림 연결
     hiddenVideoRef.current.srcObject = mediaStream.stream
     
-    hiddenVideoRef.current.onloadedmetadata = () => {
-      // 비디오 재생 시도
-      if (hiddenVideoRef.current) {
-        hiddenVideoRef.current.play().catch(error => {
-          console.warn('[VIDEO] 비디오 자동 재생 실패:', error)
-        })
-      }
+    // 비디오 로드 완료 후 프레임 스트리머 시작
+    const handleVideoReady = () => {
+      console.log('비디오 로드 완료, 프레임 스트리머 시작')
       
-      if (!frameStreamerRef.current && hiddenVideoRef.current) {
-        // 프레임 스트리머 생성 및 시작
+      if (!hiddenVideoRef.current) return
+      
+      // 비디오 재생 시도
+      hiddenVideoRef.current.play().catch(error => {
+        console.warn('비디오 자동 재생 실패:', error)
+      })
+      
+                    // 프레임 스트리머 생성 및 시작
         frameStreamerRef.current = new FrameStreamer(
           hiddenVideoRef.current,
           (base64) => {
-            sendRawText(base64)
-            setGestureFramesSent(prev => prev + 1)
-          },
-          (error) => {
-            console.error('[GESTURE] 프레임 스트리밍 오류:', error)
-            setIsGestureActive(false)
+            // 최신 연결 상태 확인
+            const currentConnectionStatus = isConnectedRef.current
             
-            // 제스처 서버 오류로 분류하여 에러 핸들러에 전달
-            const gestureError = classifyError(error, 'gesture')
-            handleError(gestureError)
+            console.log('📤 프레임 전송 시도:', { 
+              isConnected: currentConnectionStatus, 
+              base64Length: base64.length,
+              frameCount: gestureFramesSent + 1
+            })
+            
+            // WebSocket이 연결된 경우에만 전송
+            if (currentConnectionStatus) {
+              sendRawText(base64)
+              setGestureFramesSent((prev) => prev + 1)
+            } else {
+              console.warn('⚠️ WebSocket 연결되지 않음, 프레임 전송 건너뜀')
+            }
           },
-          gestureJpegQuality
-        )
-        
-        frameStreamerRef.current.setFrameRate(frameRate)
-        frameStreamerRef.current.start()
-        setIsGestureActive(true)
-        setGestureFramesSent(0)
-      }
+        (error) => {
+          console.error('프레임 스트리머 오류:', error)
+          setIsGestureActive(false)
+          
+          // 제스처 서버 오류로 분류하여 에러 핸들러에 전달
+          const gestureError = classifyError(error, 'gesture')
+          handleError(gestureError)
+        },
+        gestureJpegQuality
+      )
+      
+      frameStreamerRef.current.setFrameRate(frameRate)
+      frameStreamerRef.current.start()
+      setIsGestureActive(true)
+      setGestureFramesSent(0)
+      console.log('제스처 인식 시작 완료')
     }
     
+    // 이벤트 리스너 설정
+    hiddenVideoRef.current.onloadedmetadata = handleVideoReady
+    hiddenVideoRef.current.oncanplay = handleVideoReady
+    
     hiddenVideoRef.current.onerror = (error) => {
-      console.error('[VIDEO] 숨겨진 비디오 엘리먼트 오류:', error)
+      console.error('비디오 엘리먼트 오류:', error)
       setIsGestureActive(false)
       
       // 비디오 엘리먼트 오류를 카메라 오류로 분류
       const cameraError = classifyError(error, 'camera')
       handleError(cameraError)
     }
-  }, [
-    mediaStream.stream, 
-    isConnected, 
-    enableGestureRecognition, 
-    frameRate, 
-    gestureJpegQuality,
-    sendRawText,
-    setGestureFramesSent
-  ])
+     }, [
+     mediaStream.stream, 
+     enableGestureRecognition, 
+     frameRate, 
+     gestureJpegQuality,
+     sendRawText,
+     isGestureActive
+   ])
   
   // 제스처 인식 중지
   const stopGestureRecognition = useCallback(() => {
+    console.log('제스처 인식 중지')
     
     if (frameStreamerRef.current) {
       frameStreamerRef.current.stop()
@@ -542,44 +708,125 @@ export function useFocusSessionWithGesture(
       hiddenVideoRef.current = null
     }
     
-    if (isGestureActive) {
-      setIsGestureActive(false)
-      setGestureFramesSent(0)
-    }
-  }, [isGestureActive])
+    setIsGestureActive(false)
+    setGestureFramesSent(0)
+  }, [])
   
   // 세션 상태에 따른 자동 제어
   useEffect(() => {
+    console.log('🔄 세션 상태 변화:', {
+      isRunning,
+      hasStream: !!mediaStream.stream,
+      isPermissionGranted: mediaStream.isPermissionGranted,
+      sessionId
+    })
     
     if (isRunning && mediaStream.stream && mediaStream.isPermissionGranted) {
-      // 약간의 지연을 두어 스트림이 안정화되도록 함
-      const timer = setTimeout(() => {
-        startGestureRecognition()
-      }, 1000)
-      
-      return () => clearTimeout(timer)
+      console.log('🔗 WebSocket 연결 시작')
+      // WebSocket 연결 시작
+      connect()
     } else {
+      console.log('🛑 제스처 인식 중지')
       stopGestureRecognition()
+      // 일시정지 시에는 WebSocket 연결 유지, 완전 종료 시에만 연결 해제
+      if (!isRunning && !sessionId) {
+        console.log('🔌 WebSocket 연결 해제')
+        disconnect()
+      }
     }
   }, [
     isRunning, 
     mediaStream.stream, 
     mediaStream.isPermissionGranted,
-    isConnected,
-    enableGestureRecognition
-    // startGestureRecognition, stopGestureRecognition 제거하여 무한 루프 방지
+    sessionId
+  ])
+
+  // WebSocket 연결 완료 시 제스처 인식 시작 (안정화된 연결만 처리)
+  const [stableConnection, setStableConnection] = useState(false)
+  const connectionStableTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
+  useEffect(() => {
+    console.log('🔗 WebSocket 연결 상태 변화:', {
+      isRunning,
+      hasStream: !!mediaStream.stream,
+      isPermissionGranted: mediaStream.isPermissionGranted,
+      enableGestureRecognition,
+      isConnected,
+      isGestureActive,
+      stableConnection
+    })
+    
+    // 이전 타이머 정리
+    if (connectionStableTimerRef.current) {
+      clearTimeout(connectionStableTimerRef.current)
+      connectionStableTimerRef.current = null
+    }
+    
+    if (isConnected) {
+      // 연결이 되면 3초 후에 안정화된 것으로 간주
+      connectionStableTimerRef.current = setTimeout(() => {
+        setStableConnection(true)
+        console.log('✅ WebSocket 연결 안정화 완료')
+      }, 3000)
+    } else {
+      setStableConnection(false)
+      // 연결이 끊어지면 제스처 인식도 중지
+      if (isGestureActive) {
+        console.log('🔌 WebSocket 연결 끊어짐, 제스처 인식 중지')
+        stopGestureRecognition()
+      }
+    }
+    
+    return () => {
+      if (connectionStableTimerRef.current) {
+        clearTimeout(connectionStableTimerRef.current)
+        connectionStableTimerRef.current = null
+      }
+    }
+  }, [isConnected])
+  
+  // 안정화된 연결에서 제스처 인식 시작
+  useEffect(() => {
+    if (
+      isRunning &&
+      mediaStream.stream &&
+      mediaStream.isPermissionGranted &&
+      enableGestureRecognition &&
+      stableConnection &&
+      !isGestureActive
+    ) {
+      console.log('🎯 안정화된 WebSocket 연결에서 제스처 인식 시작')
+      const timer = setTimeout(() => {
+        startGestureRecognition()
+      }, 1000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isRunning,
+    mediaStream.stream,
+    mediaStream.isPermissionGranted,
+    enableGestureRecognition,
+    stableConnection,
+    isGestureActive
   ])
   
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
+      console.log('컴포넌트 언마운트, 정리 작업 수행')
       stopGestureRecognition()
+      disconnect()
       // 저장 타이머 정리
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
+      // 연결 안정화 타이머 정리
+      if (connectionStableTimerRef.current) {
+        clearTimeout(connectionStableTimerRef.current)
+      }
     }
-  }, []) // 의존성 배열을 비워서 언마운트 시에만 실행
+  }, [stopGestureRecognition, disconnect]) // 의존성 배열 추가
   
   // MediaStream의 모든 기능을 그대로 노출하면서 제스처 관련 기능 추가
   return {

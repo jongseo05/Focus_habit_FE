@@ -21,9 +21,21 @@ const WebcamAnalysisDisplay: React.FC<WebcamAnalysisDisplayProps> = ({
 }) => {
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
 
+  // 디버깅을 위한 로깅
+  useEffect(() => {
+    console.log('🎯 WebcamAnalysisDisplay props 업데이트:', {
+      analysisResult: !!analysisResult,
+      focusFeatures: !!focusFeatures,
+      lastFocusScore,
+      isConnected,
+      timestamp: new Date().toISOString()
+    })
+  }, [analysisResult, focusFeatures, lastFocusScore, isConnected])
+
   useEffect(() => {
     if (analysisResult) {
       setLastUpdateTime(new Date())
+      console.log('📊 웹캠 분석 결과 업데이트:', analysisResult)
     }
   }, [analysisResult])
 
