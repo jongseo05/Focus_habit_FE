@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer } from '../../../lib/supabase/server'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError,
+  parsePaginationParams,
+  createPaginatedResponse
+} from '../../../lib/api/standardResponse'
 
 // AI 모델이 판단한 집중도 점수 저장
 export async function POST(request: NextRequest) {
@@ -21,31 +29,29 @@ export async function POST(request: NextRequest) {
         focusScore: typeof focusScore, 
         timestamp: !!timestamp 
       })
-      return NextResponse.json(
-        { error: 'sessionId, focusScore, and timestamp are required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId, focusScore, timestamp는 필수 항목입니다.',
+        400
       )
     }
 
     // 점수 범위 검증 (0-100)
     if (focusScore < 0 || focusScore > 100) {
-      return NextResponse.json(
-        { error: 'focusScore must be between 0 and 100' },
-        { status: 400 }
+      return createErrorResponse(
+        '집중도 점수는 0-100 사이의 값이어야 합니다.',
+        400
       )
     }
 
-    // 현재 사용자 정보 가져오기
+    // 표준 인증 확인
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      console.error('❌ 인증 오류:', authError)
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     console.log('✅ 사용자 인증 성공:', user.id)
 
@@ -59,9 +65,9 @@ export async function POST(request: NextRequest) {
 
     if (sessionError || !session) {
       console.error('❌ 세션 조회 오류:', sessionError)
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
@@ -94,9 +100,9 @@ export async function POST(request: NextRequest) {
         score_conf: confidence || 0.8,
         topic_tag: analysisMethod || 'ai_analysis'
       })
-      return NextResponse.json(
-        { error: 'Failed to save focus score sample', details: sampleError.message },
-        { status: 500 }
+      return createErrorResponse(
+        `집중도 샘플 저장에 실패했습니다: ${sampleError.message}`,
+        500
       )
     }
 
@@ -158,23 +164,18 @@ export async function POST(request: NextRequest) {
       timestamp
     })
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return createSuccessResponse(
+      {
         sample: sampleData,
         event: eventData,
         focusScore,
         timestamp
       },
-      message: '집중도 점수가 성공적으로 저장되었습니다.'
-    })
+      '집중도 점수가 성공적으로 저장되었습니다.'
+    )
 
   } catch (error) {
-    console.error('❌ 집중도 점수 저장 중 예외 발생:', error)
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '집중도 점수 저장')
   }
 }
 
@@ -182,25 +183,24 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     const { searchParams } = new URL(request.url)
     const sessionId = searchParams.get('sessionId')
     const startTime = searchParams.get('startTime')
     const endTime = searchParams.get('endTime')
-    const limit = parseInt(searchParams.get('limit') || '100')
+    const pagination = parsePaginationParams(searchParams)
 
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId is required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId는 필수 항목입니다.',
+        400
       )
     }
 
@@ -213,19 +213,19 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
-    // 집중도 점수 조회 쿼리 구성
+    // 집중도 점수 조회 쿼리 구성 (페이지네이션 적용)
     let query = supabase
       .from('focus_sample')
       .select('ts, score, score_conf, topic_tag')
       .eq('session_id', sessionId)
       .order('ts', { ascending: true })
-      .limit(limit)
+      .range(pagination.offset, pagination.offset + pagination.limit - 1)
 
     // 시간 범위 필터 적용
     if (startTime) {
@@ -239,9 +239,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Database error:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch focus scores' },
-        { status: 500 }
+      return createErrorResponse(
+        '집중도 점수 조회에 실패했습니다.',
+        500
       )
     }
 
@@ -257,9 +257,8 @@ export async function GET(request: NextRequest) {
       ? Math.min(...validScores.map(s => s.score))
       : 0
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return createSuccessResponse(
+      {
         scores: scores || [],
         statistics: {
           count: validScores.length,
@@ -267,14 +266,11 @@ export async function GET(request: NextRequest) {
           max: maxScore,
           min: minScore
         }
-      }
-    })
+      },
+      `${validScores.length}개의 집중도 점수를 조회했습니다.`
+    )
 
   } catch (error) {
-    console.error('API error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '집중도 점수 조회')
   }
 }

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
-import { ReportService } from '@/lib/database/reportService'
+import { supabaseServer } from '../../../../lib/supabase/server'
+import { ReportService } from '../../../../lib/database/reportService'
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '../../../../lib/api/standardResponse'
 
 // 세션 종료 및 리포트 생성 API
 export async function POST(request: NextRequest) {
@@ -11,23 +17,21 @@ export async function POST(request: NextRequest) {
     
     // 요청 데이터 검증
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId is required' },
-        { status: 400 }
+      return createErrorResponse(
+        'sessionId는 필수 항목입니다.',
+        400
       )
     }
 
-    // 현재 사용자 정보 가져오기
+    // 표준 인증 확인
     const supabase = await supabaseServer()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authResult = await requireAuth(supabase)
     
-    if (authError || !user) {
-      console.error('❌ 인증 오류:', authError?.message)
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    
+    const { user } = authResult
 
     // 세션이 해당 사용자의 것인지 확인
     const { data: session, error: sessionError } = await supabase
@@ -39,13 +43,13 @@ export async function POST(request: NextRequest) {
 
     if (sessionError || !session) {
       console.error('❌ 세션 조회 오류:', sessionError?.message)
-      return NextResponse.json(
-        { error: 'Session not found or access denied' },
-        { status: 404 }
+      return createErrorResponse(
+        '세션을 찾을 수 없거나 접근 권한이 없습니다.',
+        404
       )
     }
 
-    // 🚀 최적화: 세션 종료와 관련 데이터 조회를 병렬로 처리
+    //  최적화: 세션 종료와 관련 데이터 조회를 병렬로 처리
     const [
       endResult,
       samplesResult,
@@ -81,9 +85,9 @@ export async function POST(request: NextRequest) {
     if (endResult.status === 'rejected' || endResult.value.error) {
       const error = endResult.status === 'rejected' ? endResult.reason : endResult.value.error
       console.error('❌ 세션 종료 실패:', error)
-      return NextResponse.json(
-        { error: `세션 종료 실패: ${error.message || error}` },
-        { status: 500 }
+      return createErrorResponse(
+        `세션 종료에 실패했습니다: ${error.message || error}`,
+        500
       )
     }
 
@@ -136,17 +140,12 @@ export async function POST(request: NextRequest) {
 
 
 
-    return NextResponse.json({
-      success: true,
-      data: reportData,
-      message: '세션이 성공적으로 종료되고 리포트가 생성되었습니다.'
-    })
+    return createSuccessResponse(
+      reportData,
+      '세션이 성공적으로 종료되고 리포트가 생성되었습니다.'
+    )
 
   } catch (error) {
-    console.error('❌ 세션 종료 API 중 예외 발생:', error)
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '세션 종료')
   }
 }
