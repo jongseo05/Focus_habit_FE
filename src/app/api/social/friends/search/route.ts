@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
+    const search = searchParams.get('search') || searchParams.get('q')
     const limit = parseInt(searchParams.get('limit') || '20')
 
     console.log('검색 파라미터:', { search, limit })

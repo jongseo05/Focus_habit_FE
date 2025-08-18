@@ -26,7 +26,9 @@ export function useStudyRooms() {
       if (!response.ok) {
         throw new Error('스터디룸 목록을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
     },
     staleTime: 30000, // 30초
     refetchInterval: false, // 자동 새로고침 비활성화 (대시보드에서 사용 시)
@@ -55,7 +57,9 @@ export function useCreateStudyRoom() {
         throw new Error('스터디룸 생성에 실패했습니다.')
       }
       
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     onSuccess: () => {
       // 성공 시 관련 쿼리만 무효화 (전체 캐시 무효화 방지)
@@ -139,7 +143,9 @@ export function useRoomParticipants(roomId: string) {
       if (!response.ok) {
         throw new Error('참가자 목록을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
     },
     enabled: !!roomId, // roomId가 있을 때만 실행
     staleTime: 15000, // 15초
@@ -173,7 +179,9 @@ export function useCreateChallenge() {
         throw new Error('챌린지 생성에 실패했습니다.')
       }
       
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     onSuccess: () => {
       // 성공 시 관련 쿼리만 무효화
@@ -239,7 +247,9 @@ export function useFriendsList() {
       if (!response.ok) {
         throw new Error('친구 목록을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || { friends: [] }
     },
     staleTime: 60000, // 1분
     refetchInterval: false, // 자동 새로고침 비활성화
@@ -259,7 +269,9 @@ export function useFriendRequests() {
       if (!response.ok) {
         throw new Error('친구 요청 목록을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
     },
     staleTime: 30000, // 30초
     refetchInterval: false, // 자동 새로고침 비활성화
@@ -288,7 +300,9 @@ export function useCreateFriendRequest() {
         throw new Error('친구 요청 생성에 실패했습니다.')
       }
       
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     onSuccess: () => {
       // 성공 시 관련 쿼리만 무효화
@@ -355,7 +369,9 @@ export function useSocialStats() {
         throw new Error('소셜 통계를 불러오는데 실패했습니다.')
       }
 
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || null
     },
     enabled: !!user,
     staleTime: 300000, // 5분
@@ -428,7 +444,9 @@ export function useStudyRoomChallenges(options?: { enabled?: boolean }) {
       if (!response.ok) {
         throw new Error('스터디룸 챌린지를 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
     },
     enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
     staleTime: 30000, // 30초
@@ -456,7 +474,9 @@ export function useFriendRanking(
       if (!response.ok) {
         throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || { friends: [], user_rank: null }
     },
     enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
     staleTime: 10000, // 10초

@@ -52,11 +52,13 @@ export async function generateLearningInsights(
     })
 
     if (!response.ok) {
-      throw new Error('Failed to generate insights')
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to generate insights')
     }
 
-    const data = await response.json()
-    return data.insights
+    const result = await response.json()
+    // 표준 API 응답에서 data 필드만 반환
+    return result.data || result.insights
   } catch (error) {
     console.error('Error generating learning insights:', error)
     // 기본 인사이트 반환

@@ -163,6 +163,16 @@ export const useFocusSessionErrorHandler = (
 
   // 에러 처리
   const handleError = useCallback(async (sessionError: FocusSessionError) => {
+    // 세션이 종료되고 있는 중이거나 이미 종료된 상태에서는 특정 오류들을 무시
+    if (!state.isRunning && (
+      sessionError.message.includes('Video not ready') ||
+      sessionError.message.includes('Frame streaming failed') ||
+      sessionError.type === FocusSessionErrorType.CAMERA_DISCONNECTED
+    )) {
+      console.log('[FOCUS_SESSION] 세션 종료 중 발생한 자연스러운 오류, 무시함:', sessionError.message)
+      return
+    }
+    
     console.error('[FOCUS_SESSION] 집중 세션 오류 발생:', sessionError)
 
     setState(prev => ({
@@ -186,7 +196,7 @@ export const useFocusSessionErrorHandler = (
         onFallbackMode?.()
       }
     }
-  }, [config.autoRecovery, config.fallbackMode, onError, onSessionInterrupted, onFallbackMode])
+  }, [state.isRunning, config.autoRecovery, config.fallbackMode, onError, onSessionInterrupted, onFallbackMode])
 
   // 복구 시도
   const attemptRecovery = useCallback(async (error: FocusSessionError) => {

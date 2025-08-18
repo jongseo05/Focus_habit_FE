@@ -41,14 +41,16 @@ export function usePersonalChallenges(): UsePersonalChallengesReturn {
 
     try {
       const response = await fetch('/api/challenges/personal')
-      const data = await response.json()
-
+      
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch personal challenges')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch personal challenges')
       }
 
+      const result = await response.json()
       setLastFetchTime(now)
-      return data.challenges || []
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || result.challenges || []
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('개인 챌린지 조회 실패:', err)
@@ -122,12 +124,13 @@ export function usePersonalChallenges(): UsePersonalChallengesReturn {
       }
 
       // 생성된 챌린지를 즉시 로컬 상태에 추가
-      if (result.challenge) {
-        setChallenges(prev => [result.challenge, ...prev])
+      const newChallenge = result.data || result.challenge
+      if (newChallenge) {
+        setChallenges(prev => [newChallenge, ...prev])
         setLastFetchTime(Date.now())
       }
 
-      return result.challenge
+      return newChallenge
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)

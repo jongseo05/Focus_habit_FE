@@ -41,7 +41,8 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       }
 
       const result = await response.json()
-      const newChallenge = result.challenge
+      // 표준 API 응답에서 data 필드만 반환
+      const newChallenge = result.data || result.challenge
       
       // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
       if (newChallenge && newChallenge.challenge_id) {
@@ -219,7 +220,8 @@ export function useChallenge({ roomId, userId }: UseChallengeProps) {
       }
 
       const result = await response.json()
-      const challenges = result.challenges || []
+      // 표준 API 응답에서 data 필드만 반환
+      const challenges = result.data || result.challenges || []
       
       // challenge_id가 UUID 객체인 경우를 대비하여 문자열로 변환
       challenges.forEach((challenge: Challenge) => {
