@@ -60,6 +60,7 @@ import { useQuery } from "@tanstack/react-query"
 import { SessionEndNotification } from "@/components/SessionEndNotification"
 import ChallengeProgressCard from "@/components/social/ChallengeProgressCard"
 import RealtimeFocusChart from "@/components/RealtimeFocusChart"
+import { usePersonalChallenges } from "@/hooks/usePersonalChallenges"
 
 import { useFriendRanking, useStudyRoomChallenges } from "@/hooks/useSocial"
 
@@ -102,6 +103,9 @@ function DashboardContent() {
   const sessionSync = useFocusSessionSync()
   const signOut = useSignOut()
   const router = useRouter()
+  
+  // 개인 챌린지 훅 추가
+  const { syncFocusSessionProgress } = usePersonalChallenges()
   
 
   
@@ -398,6 +402,14 @@ function DashboardContent() {
                 mlFeatureCount: 0, // ML 피쳐는 더 이상 사용하지 않음
                 sessionId: activeSession.session_id
               })
+              
+              // 개인 챌린지 진행률 자동 업데이트
+              try {
+                await syncFocusSessionProgress(sessionDuration, result.data.summary.averageFocusScore || sessionStateState.focusScore)
+                console.log('개인 챌린지 진행률 업데이트 완료')
+              } catch (error) {
+                console.error('개인 챌린지 진행률 업데이트 실패:', error)
+              }
               
               // 알림 표시
               setShowSessionEndNotification(true)

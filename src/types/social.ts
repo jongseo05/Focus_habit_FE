@@ -136,6 +136,7 @@ export interface GroupChallenge {
   created_by: UUID
   created_at: Timestamp
   updated_at: Timestamp
+  min_session_duration?: number // 공부 세션 챌린지용 최소 세션 시간 (분)
 }
 
 export interface GroupChallengeParticipant {

@@ -11,6 +11,7 @@ interface UsePersonalChallengesReturn {
   updateProgress: (challengeId: string, progressValue: number) => Promise<boolean>
   deleteChallenge: (challengeId: string) => Promise<boolean>
   refreshChallenges: () => Promise<void>
+  syncFocusSessionProgress: (sessionDuration: number, focusScore: number) => Promise<void>
 }
 
 interface CreatePersonalChallengeData {
@@ -20,6 +21,7 @@ interface CreatePersonalChallengeData {
   target_value: number
   unit: string
   duration_days: number
+  min_session_duration?: number
 }
 
 export function usePersonalChallenges(): UsePersonalChallengesReturn {
@@ -33,7 +35,7 @@ export function usePersonalChallenges(): UsePersonalChallengesReturn {
   const fetchPersonalChallenges = useCallback(async (forceRefresh = false) => {
     if (!user) return []
 
-    // 강제 새로고침이 아니고, 마지막 fetch로부터 30초가 지나지 않았다면 캐시된 데이터 사용
+    // 마지막 fetch로부터 30초가 지나지 않았다면 캐시된 데이터 사용
     const now = Date.now()
     if (!forceRefresh && now - lastFetchTime < 30000) {
       return challenges
@@ -185,32 +187,100 @@ export function usePersonalChallenges(): UsePersonalChallengesReturn {
 
     try {
       setLoading(true)
-      setError(null)
+      const supabase = supabaseBrowser()
+      
+      const { error } = await supabase
+        .from('group_challenge')
+        .delete()
+        .eq('challenge_id', challengeId)
+        .eq('created_by', user.id)
+        .eq('challenge_type', 'personal')
 
-      const response = await fetch(`/api/challenges/personal?id=${challengeId}`, {
-        method: 'DELETE',
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to delete personal challenge')
+      if (error) {
+        throw error
       }
 
-      // 로컬 상태에서 즉시 제거
-      setChallenges(prev => prev.filter(challenge => challenge.challenge_id !== challengeId))
+      // 로컬 상태에서 제거
+      setChallenges(prev => prev.filter(c => c.challenge_id !== challengeId))
       setLastFetchTime(Date.now())
 
       return true
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      setError(errorMessage)
       console.error('개인 챌린지 삭제 실패:', err)
       return false
     } finally {
       setLoading(false)
     }
   }, [user])
+
+  // 집중 세션과 개인 챌린지 진행 상황 연동
+  const syncFocusSessionProgress = useCallback(async (sessionDuration: number, focusScore: number) => {
+    if (!user) return
+
+    try {
+      // 내 활성 개인 챌린지들 가져오기
+      const activeChallenges = challenges.filter(challenge => {
+        const now = new Date()
+        const endDate = new Date(challenge.end_date)
+        return now <= endDate && challenge.is_active
+      })
+
+      if (activeChallenges.length === 0) return
+
+      console.log('개인 챌린지 진행률 업데이트 시작:', {
+        sessionDuration,
+        focusScore,
+        activeChallengesCount: activeChallenges.length
+      })
+
+      // 각 챌린지에 대해 진행 상황 업데이트
+      for (const challenge of activeChallenges) {
+        let progressValue = 0
+
+                 switch (challenge.type) {
+           case 'focus_time':
+             // 집중 시간 (분 단위)
+             progressValue = sessionDuration
+             break
+           case 'study_sessions':
+             // 학습 세션 수 (최소 시간 기준 확인 후 1회 추가)
+             const minDuration = challenge.min_session_duration || 30 // 기본값 30분
+             if (sessionDuration >= minDuration) {
+               progressValue = 1
+               console.log(`공부 세션 챌린지 조건 충족: ${sessionDuration}분 >= ${minDuration}분`)
+             } else {
+               console.log(`공부 세션 챌린지 조건 미충족: ${sessionDuration}분 < ${minDuration}분`)
+               continue // 다음 챌린지로
+             }
+             break
+           case 'focus_score':
+             // 집중도 점수 (현재 점수로 업데이트)
+             progressValue = focusScore
+             break
+           case 'streak_days':
+             // 연속 학습일 (세션 완료 시 1일 추가)
+             progressValue = 1
+             break
+         }
+
+        if (progressValue > 0) {
+          await updateProgress(challenge.challenge_id, progressValue)
+          console.log(`챌린지 ${challenge.title} 진행률 업데이트:`, {
+            type: challenge.type,
+            progressValue,
+            currentValue: challenge.current_value,
+            targetValue: challenge.target_value
+          })
+        }
+      }
+
+      // 챌린지 목록 새로고침
+      await refreshChallenges()
+    } catch (error) {
+      console.error('집중 세션과 개인 챌린지 연동 실패:', error)
+    }
+  }, [user, challenges, updateProgress, refreshChallenges])
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -223,9 +293,10 @@ export function usePersonalChallenges(): UsePersonalChallengesReturn {
     challenges,
     loading,
     error,
+    refreshChallenges,
     createChallenge,
-    updateProgress,
     deleteChallenge,
-    refreshChallenges
+    updateProgress,
+    syncFocusSessionProgress
   }
 }
