@@ -184,8 +184,13 @@ export function FriendSearch({ onClose, mode = 'search' }: FriendSearchProps) {
       try {
         const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(value.trim())}`)
         if (response.ok) {
-          const data = await response.json()
-          setSearchResults(data.results || [])
+          const result = await response.json()
+          // 표준 API 응답 구조에 맞게 데이터 추출
+          if (result.success && result.data) {
+            setSearchResults(Array.isArray(result.data.results) ? result.data.results : Array.isArray(result.data) ? result.data : [])
+          } else {
+            setSearchResults([])
+          }
         } else {
           setSearchResults([])
         }

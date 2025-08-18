@@ -476,7 +476,7 @@ export function useFriendRanking(
       }
       const result = await response.json()
       // 표준 API 응답에서 data 필드만 반환
-      return result.data || { friends: [], user_rank: null }
+      return result.data || { rankings: [], user_rank: null, period }
     },
     enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
     staleTime: 10000, // 10초
@@ -512,8 +512,13 @@ export function useFriendSearch() {
     try {
       const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(query)}`)
       if (response.ok) {
-        const data = await response.json()
-        setSearchResults(data)
+        const result = await response.json()
+        // 표준 API 응답 구조에 맞게 데이터 추출
+        if (result.success && result.data) {
+          setSearchResults(Array.isArray(result.data.results) ? result.data.results : Array.isArray(result.data) ? result.data : [])
+        } else {
+          setSearchResults([])
+        }
       } else {
         setSearchResults([])
       }
