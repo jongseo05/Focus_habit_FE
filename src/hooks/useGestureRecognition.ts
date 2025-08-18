@@ -263,6 +263,11 @@ export function useGestureRecognition(
       videoRef.current,
       sendFrameToServer,
       (error) => {
+        // 스트리밍이 이미 중단된 상태에서 발생하는 오류는 무시
+        if (!isStreaming || error.message.includes('Video not ready')) {
+          console.log('[FRAME_STREAMING] 스트리밍 종료 중 발생한 자연스러운 오류, 무시함:', error.message)
+          return
+        }
         console.error('[FRAME_STREAMING] Frame streaming error:', error)
         setIsStreaming(false)
       }
@@ -276,11 +281,13 @@ export function useGestureRecognition(
 
   // 스트리밍 중지
   const stopStreaming = useCallback(() => {
+    // 먼저 상태를 false로 설정하여 추가 프레임 전송 방지
+    setIsStreaming(false)
+    
     if (frameStreamerRef.current) {
       frameStreamerRef.current.stop()
       frameStreamerRef.current = null
     }
-    setIsStreaming(false)
   }, [])
 
   // 프레임 레이트 설정

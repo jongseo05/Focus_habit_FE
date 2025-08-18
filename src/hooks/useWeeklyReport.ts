@@ -82,9 +82,10 @@ export function useWeeklyReport(year?: number, week?: number) {
         throw new Error(errorData.error || '주간 리포트를 불러오는데 실패했습니다.')
       }
       
-      const data = await response.json()
-      console.log('✅ 주간 리포트 데이터 반환:', data)
-      return data
+      const result = await response.json()
+      console.log('✅ 주간 리포트 응답:', result)
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || result
     },
     staleTime: 10 * 60 * 1000, // 10분
     gcTime: 30 * 60 * 1000, // 30분

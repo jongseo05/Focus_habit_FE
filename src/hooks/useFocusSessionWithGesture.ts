@@ -666,6 +666,12 @@ export function useFocusSessionWithGesture(
           console.error('프레임 스트리머 오류:', error)
           setIsGestureActive(false)
           
+          // 세션 종료 과정에서 발생하는 자연스러운 오류는 무시
+          if (!isRunning || error.message.includes('Video not ready')) {
+            console.log('세션 종료 중 발생한 자연스러운 오류, 무시함:', error.message)
+            return
+          }
+          
           // 제스처 서버 오류로 분류하여 에러 핸들러에 전달
           const gestureError = classifyError(error, 'gesture')
           handleError(gestureError)
@@ -705,18 +711,33 @@ export function useFocusSessionWithGesture(
   const stopGestureRecognition = useCallback(() => {
     console.log('제스처 인식 중지')
     
+    // 1. 먼저 상태를 inactive로 설정하여 추가 프레임 전송 방지
+    setIsGestureActive(false)
+    
+    // 2. FrameStreamer 중지 (에러 콜백 제거하여 cleanup 과정에서 오류 방지)
     if (frameStreamerRef.current) {
       frameStreamerRef.current.stop()
       frameStreamerRef.current = null
     }
     
+    // 3. 비디오 엘리먼트 정리 (약간의 지연 후)
     if (hiddenVideoRef.current) {
+      // 이벤트 리스너 제거
+      hiddenVideoRef.current.onloadedmetadata = null
+      hiddenVideoRef.current.oncanplay = null
+      hiddenVideoRef.current.onerror = null
+      
+      // 비디오 일시정지 후 스트림 해제
+      hiddenVideoRef.current.pause()
       hiddenVideoRef.current.srcObject = null
-      hiddenVideoRef.current.remove()
+      
+      // DOM에서 제거
+      if (hiddenVideoRef.current.parentNode) {
+        hiddenVideoRef.current.parentNode.removeChild(hiddenVideoRef.current)
+      }
       hiddenVideoRef.current = null
     }
     
-    setIsGestureActive(false)
     setGestureFramesSent(0)
   }, [])
   

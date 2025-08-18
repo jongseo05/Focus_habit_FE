@@ -23,51 +23,30 @@ export function useFocusSessions(filters: FocusSessionFilters = {}) {
   return useQuery({
     queryKey: focusSessionKeys.list(filters),
     queryFn: async (): Promise<FocusSession[]> => {
-      const supabase = supabaseBrowser()
+      // 쿼리 파라미터 생성
+      const searchParams = new URLSearchParams()
       
-      let query = supabase
-        .from('focus_session')
-        .select('*')
-        .order('started_at', { ascending: false })
-
-      // 필터 적용
-      if (filters.user_id) {
-        query = query.eq('user_id', filters.user_id)
-      }
+      if (filters.user_id) searchParams.set('user_id', filters.user_id)
+      if (filters.start_date) searchParams.set('start_date', filters.start_date)
+      if (filters.end_date) searchParams.set('end_date', filters.end_date)
+      if (filters.session_type) searchParams.set('session_type', filters.session_type)
+      if (filters.context_tag) searchParams.set('context_tag', filters.context_tag)
+      if (filters.limit) searchParams.set('limit', filters.limit.toString())
+      if (filters.offset) searchParams.set('offset', filters.offset.toString())
       
-      if (filters.start_date) {
-        query = query.gte('started_at', `${filters.start_date}T00:00:00`)
-      }
+      const response = await fetch(`/api/focus-session?${searchParams.toString()}`)
       
-      if (filters.end_date) {
-        query = query.lte('started_at', `${filters.end_date}T23:59:59`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '집중 세션 목록을 불러오는데 실패했습니다.')
       }
       
-      if (filters.session_type) {
-        query = query.eq('session_type', filters.session_type)
-      }
-      
-      if (filters.context_tag) {
-        query = query.eq('context_tag', filters.context_tag)
-      }
-      
-      if (filters.limit) {
-        query = query.limit(filters.limit)
-      }
-      
-      if (filters.offset) {
-        query = query.range(filters.offset, filters.offset + (filters.limit || 10) - 1)
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return data as FocusSession[]
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
     },
     staleTime: 2 * 60 * 1000, // 2분
+    gcTime: 5 * 60 * 1000, // 5분
   })
 }
 
@@ -76,18 +55,16 @@ export function useFocusSession(sessionId: string) {
   return useQuery({
     queryKey: focusSessionKeys.detail(sessionId),
     queryFn: async (): Promise<FocusSession> => {
-      const supabase = supabaseBrowser()
-      const { data, error } = await supabase
-        .from('focus_session')
-        .select('*')
-        .eq('session_id', sessionId)
-        .single()
-
-      if (error) {
-        throw new Error(error.message)
+      const response = await fetch(`/api/focus-session/${sessionId}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '집중 세션을 불러오는데 실패했습니다.')
       }
-
-      return data as FocusSession
+      
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     enabled: !!sessionId,
     staleTime: 1 * 60 * 1000, // 1분

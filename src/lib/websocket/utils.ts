@@ -452,23 +452,36 @@ export class FrameStreamer {
 
   // 연속 실패 처리
   private handleContinuousFailure(reason: string): void {
+    // 이미 스트리밍이 중단된 상태면 오류 리포트하지 않음
+    if (!this.isRunning) {
+      return
+    }
+    
     this.consecutiveFailures++
     
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
       console.error('[FRAME_STREAMING] 연속', this.consecutiveFailures, '회 실패. 스트리밍 중단:', reason)
       this.stop()
-      this.onError?.(new Error(`Frame streaming failed: ${reason}`))
+      
+      // "Video not ready" 오류는 세션 종료 과정에서 자연스럽게 발생할 수 있으므로 
+      // 에러 핸들러에 전달하지 않음
+      if (reason !== 'Video not ready') {
+        this.onError?.(new Error(`Frame streaming failed: ${reason}`))
+      }
     }
   }
   
   // 스트리밍 중지 (고급 메모리 정리 포함)
   stop(): void {
+    // 먼저 실행 상태를 false로 설정하여 진행 중인 작업들이 중단되도록 함
+    this.isRunning = false
+    this.isStreaming = false
+    
     if (this.intervalId) {
       clearInterval(this.intervalId)
       this.intervalId = null
     }
     
-    this.isStreaming = false
     this.consecutiveFailures = 0
     
     // 모든 관리자 메모리 정리

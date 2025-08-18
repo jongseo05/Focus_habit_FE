@@ -19,11 +19,13 @@ export function useProfile(userId?: string) {
       
       const response = await fetch('/api/profile')
       if (!response.ok) {
-        throw new Error('프로필을 불러오는데 실패했습니다.')
+        const errorData = await response.json()
+        throw new Error(errorData.error || '프로필을 불러오는데 실패했습니다.')
       }
       
-      const data = await response.json()
-      return data as UserProfile
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data as UserProfile
     },
     enabled: !!userId,
     staleTime: 5 * 60 * 1000, // 5분
@@ -45,10 +47,13 @@ export function useUpdateProfile() {
       })
       
       if (!response.ok) {
-        throw new Error('프로필 업데이트에 실패했습니다.')
+        const errorData = await response.json()
+        throw new Error(errorData.error || '프로필 업데이트에 실패했습니다.')
       }
       
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     onSuccess: (data) => {
       // 캐시 업데이트
@@ -68,11 +73,13 @@ export function useFocusSummary(userId?: string) {
       
       const response = await fetch('/api/profile/focus-summary')
       if (!response.ok) {
-        throw new Error('집중 요약을 불러오는데 실패했습니다.')
+        const errorData = await response.json()
+        throw new Error(errorData.error || '집중 요약을 불러오는데 실패했습니다.')
       }
       
-      const data = await response.json()
-      return data as FocusSummary
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data as FocusSummary
     },
     enabled: !!userId,
     staleTime: 2 * 60 * 1000, // 2분
@@ -88,11 +95,13 @@ export function useWeeklyStats(userId?: string) {
       
       const response = await fetch('/api/profile/weekly-stats')
       if (!response.ok) {
-        throw new Error('주간 통계를 불러오는데 실패했습니다.')
+        const errorData = await response.json()
+        throw new Error(errorData.error || '주간 통계를 불러오는데 실패했습니다.')
       }
       
-      const data = await response.json()
-      return data
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     enabled: !!userId,
     staleTime: 5 * 60 * 1000, // 5분

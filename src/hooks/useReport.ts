@@ -20,43 +20,19 @@ export function useDailyReport(date: string) {
   return useQuery({
     queryKey: reportKeys.daily(date),
     queryFn: async (): Promise<DailyReportData> => {
-      console.log('🚀 Supabase 직접 요청 시작:', date)
+      console.log('🚀 일일 리포트 API 요청 시작:', date)
       
-      try {
-        // Supabase 클라이언트 직접 사용
-        const { ReportService } = await import('@/lib/database/reportService')
-        const { supabaseBrowser } = await import('@/lib/supabase/client')
-        
-        const supabase = supabaseBrowser()
-        
-        // 사용자 인증 확인
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        
-        if (authError || !user) {
-          console.error('❌ 인증 오류:', authError)
-          throw new Error('인증이 필요합니다')
-        }
-        
-        console.log('✅ 인증 성공, 사용자 ID:', user.id)
-        
-        // ReportService 직접 호출
-        const result = await ReportService.generateDailyReport(user.id, date)
-        
-        console.log('📊 리포트 생성 결과:', result)
-        
-        if (!result.success) {
-          throw new Error(result.error || '리포트 생성에 실패했습니다')
-        }
-        
-        console.log('✅ 리포트 데이터 반환:', result.data)
-        if (!result.data) {
-          throw new Error('리포트 데이터가 없습니다')
-        }
-        return result.data
-      } catch (error) {
-        console.error('❌ 리포트 요청 중 오류:', error)
-        throw error
+      const response = await fetch(`/api/report/daily/${date}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '일일 리포트를 불러오는데 실패했습니다.')
       }
+      
+      const result = await response.json()
+      console.log('✅ 일일 리포트 응답:', result)
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     staleTime: 5 * 60 * 1000, // 5분
     gcTime: 10 * 60 * 1000, // 10분
@@ -103,7 +79,9 @@ export function useDailySummary(date: string) {
         throw new Error(errorData.error || '일일 요약을 불러오는데 실패했습니다.')
       }
       
-      return response.json()
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || result
     },
     staleTime: 2 * 60 * 1000, // 2분
     gcTime: 5 * 60 * 1000, // 5분
