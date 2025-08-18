@@ -48,15 +48,20 @@ export class ReportService {
         throw new Error(`샘플 데이터 조회 실패: ${samplesError.message}`)
       }
 
-      // 3. 해당 날짜의 ML 피쳐 데이터 조회 (집중 상태 포함)
-      const { data: mlFeatures, error: mlFeaturesError } = await supabase
-        .from('ml_features')
-        .select('*')
-        .in('session_id', sessions?.map(s => s.session_id) || [])
-        .order('ts', { ascending: true })
+      // 3. ML 피쳐 데이터 조회 (선택적)
+      let mlFeatures: any[] = []
+      try {
+        const { data: mlFeaturesData, error: mlFeaturesError } = await supabase
+          .from('ml_features')
+          .select('*')
+          .in('session_id', sessions?.map(s => s.session_id) || [])
+          .order('ts', { ascending: true })
 
-      if (mlFeaturesError) {
-        throw new Error(`ML 피쳐 데이터 조회 실패: ${mlFeaturesError.message}`)
+        if (!mlFeaturesError && mlFeaturesData) {
+          mlFeatures = mlFeaturesData
+        }
+      } catch (error) {
+        console.log('⚠️ ML 피쳐 테이블이 존재하지 않습니다. 기본 데이터로 처리합니다.')
       }
 
       // 4. 해당 날짜의 이벤트 데이터 조회
@@ -143,15 +148,20 @@ export class ReportService {
         throw new Error(`이벤트 데이터 조회 실패: ${eventsError.message}`)
       }
 
-      // 4. ML 피쳐 데이터 조회
-      const { data: mlFeatures, error: mlFeaturesError } = await supabaseClient
-        .from('ml_features')
-        .select('*')
-        .in('session_id', sessions?.map((s: any) => s.session_id) || [])
-        .order('ts', { ascending: true })
+      // 4. ML 피쳐 데이터 조회 (선택적)
+      let mlFeatures: any[] = []
+      try {
+        const { data: mlFeaturesData, error: mlFeaturesError } = await supabaseClient
+          .from('ml_features')
+          .select('*')
+          .in('session_id', sessions?.map((s: any) => s.session_id) || [])
+          .order('ts', { ascending: true })
 
-      if (mlFeaturesError) {
-        throw new Error(`ML 피쳐 데이터 조회 실패: ${mlFeaturesError.message}`)
+        if (!mlFeaturesError && mlFeaturesData) {
+          mlFeatures = mlFeaturesData
+        }
+      } catch (error) {
+        console.log('⚠️ ML 피쳐 테이블이 존재하지 않습니다. 기본 데이터로 처리합니다.')
       }
 
       // 5. 집중 상태 통계 계산

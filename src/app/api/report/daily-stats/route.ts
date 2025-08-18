@@ -21,36 +21,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '30')
     
-    // 최근 N일간의 daily_summary 데이터 가져오기
+    // 최근 N일간의 focus_session 데이터 가져오기
     const endDate = new Date()
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
 
-    const { data: dailyStats, error } = await supabase
-      .from('daily_summary')
-      .select(`
-        date,
-        focus_min,
-        avg_score,
-        sessions_count,
-        phone_min,
-        quiet_ratio,
-        longest_streak
-      `)
-      .eq('user_id', user.id)
-      .gte('date', startDate.toISOString().split('T')[0])
-      .lte('date', endDate.toISOString().split('T')[0])
-      .order('date', { ascending: false })
+    console.log('📅 Daily stats 조회 범위:', {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      days
+    })
 
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch daily stats' },
-        { status: 500 }
-      )
-    }
-
-    // focus_session 테이블에서도 추가 데이터 가져오기 (daily_summary가 없는 경우를 위해)
+    // focus_session 테이블에서 데이터 가져오기
     const { data: sessionStats, error: sessionError } = await supabase
       .from('focus_session')
       .select(`
@@ -59,7 +41,8 @@ export async function GET(request: NextRequest) {
         ended_at,
         focus_score,
         goal_min,
-        context_tag
+        context_tag,
+        distractions
       `)
       .eq('user_id', user.id)
       .gte('started_at', startDate.toISOString())
@@ -68,48 +51,26 @@ export async function GET(request: NextRequest) {
 
     if (sessionError) {
       console.error('Session fetch error:', sessionError)
+      return NextResponse.json(
+        { error: 'Failed to fetch session data' },
+        { status: 500 }
+      )
     }
 
-    // ML 피쳐 데이터 가져오기 (집중 상태 포함)
-    const sessionIds = sessionStats?.map(s => s.session_id) || []
-    let mlFeaturesData: any[] = []
-    
-    if (sessionIds.length > 0) {
-      const { data: mlFeatures, error: mlFeaturesError } = await supabase
-        .from('ml_features')
-        .select('session_id, focus_status, focus_score')
-        .in('session_id', sessionIds)
-
-      if (mlFeaturesError) {
-        console.error('ML features fetch error:', mlFeaturesError)
-      } else {
-        mlFeaturesData = mlFeatures || []
-      }
-    }
+    console.log('✅ Session data 조회 성공:', {
+      sessionsCount: sessionStats?.length || 0
+    })
 
     // 날짜별로 데이터 정리
     const dateStatsMap = new Map()
     
-    // daily_summary 데이터 처리
-    dailyStats?.forEach(stat => {
-      dateStatsMap.set(stat.date, {
-        date: stat.date,
-        sessions: stat.sessions_count || 0,
-        totalTime: stat.focus_min || 0,
-        averageScore: stat.avg_score || 0,
-        hasData: true,
-        phoneMin: stat.phone_min || 0,
-        quietRatio: stat.quiet_ratio || 0,
-        longestStreak: stat.longest_streak || 0
-      })
-    })
-
-    // focus_session 데이터로 보완 (daily_summary에 없는 날짜들)
+    // focus_session 데이터를 날짜별로 그룹화하여 통계 계산
     sessionStats?.forEach(session => {
       const sessionDate = new Date(session.started_at).toISOString().split('T')[0]
       
-      if (!dateStatsMap.has(sessionDate)) {
-        const existing = dateStatsMap.get(sessionDate) || {
+      let existing = dateStatsMap.get(sessionDate)
+      if (!existing) {
+        existing = {
           date: sessionDate,
           sessions: 0,
           totalTime: 0,
@@ -118,54 +79,40 @@ export async function GET(request: NextRequest) {
           phoneMin: 0,
           quietRatio: 0,
           longestStreak: 0,
-          focusedCount: 0,
-          normalCount: 0,
-          distractedCount: 0,
-          averageMlScore: 0
+          totalScores: 0,
+          validScores: 0
         }
-        
-        existing.sessions += 1
-        existing.totalTime += session.goal_min || 0
-        existing.averageScore = session.focus_score || 0
-        existing.hasData = true
-        
         dateStatsMap.set(sessionDate, existing)
+      }
+      
+      // 세션 수 증가
+      existing.sessions += 1
+      existing.hasData = true
+      
+      // 실제 세션 시간 계산 (목표 시간 대신 실제 경과 시간)
+      if (session.ended_at) {
+        const startTime = new Date(session.started_at)
+        const endTime = new Date(session.ended_at)
+        const actualDuration = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60)) // 분 단위
+        existing.totalTime += actualDuration
+      } else if (session.goal_min) {
+        // 진행 중인 세션은 목표 시간으로 계산
+        existing.totalTime += session.goal_min
+      }
+      
+      // 집중도 점수 계산
+      if (session.focus_score && session.focus_score > 0) {
+        existing.totalScores += session.focus_score
+        existing.validScores += 1
       }
     })
 
-    // ML 피쳐 데이터로 집중 상태 통계 추가
-    mlFeaturesData.forEach(feature => {
-      // 해당 피쳐의 세션 날짜 찾기
-      const session = sessionStats?.find(s => s.session_id === feature.session_id)
-      if (session) {
-        const sessionDate = new Date(session.started_at).toISOString().split('T')[0]
-        const existing = dateStatsMap.get(sessionDate)
-        
-        if (existing) {
-          // 집중 상태 카운트
-          if (feature.focus_status) {
-            switch (feature.focus_status) {
-              case 'focused':
-                existing.focusedCount = (existing.focusedCount || 0) + 1
-                break
-              case 'normal':
-                existing.normalCount = (existing.normalCount || 0) + 1
-                break
-              case 'distracted':
-                existing.distractedCount = (existing.distractedCount || 0) + 1
-                break
-            }
-          }
-          
-          // ML 점수 누적 (평균 계산을 위해)
-          if (feature.focus_score) {
-            const currentTotal = (existing.averageMlScore || 0) * (existing.mlScoreCount || 0)
-            existing.mlScoreCount = (existing.mlScoreCount || 0) + 1
-            existing.averageMlScore = (currentTotal + feature.focus_score) / existing.mlScoreCount
-          }
-        }
+    // 각 날짜별 평균 점수 계산
+    for (const [date, stats] of dateStatsMap.entries()) {
+      if (stats.validScores > 0) {
+        stats.averageScore = Math.round(stats.totalScores / stats.validScores)
       }
-    })
+    }
 
     // 최근 N일간의 모든 날짜에 대해 데이터 생성
     const allDates = []
@@ -182,26 +129,30 @@ export async function GET(request: NextRequest) {
         hasData: false,
         phoneMin: 0,
         quietRatio: 0,
-        longestStreak: 0,
-        focusedCount: 0,
-        normalCount: 0,
-        distractedCount: 0,
-        averageMlScore: 0
+        longestStreak: 0
       }
       
       allDates.push(stats)
     }
 
     // 전체 통계 계산
+    const activeDates = allDates.filter(d => d.hasData)
     const totalStats = {
       totalDays: allDates.length,
-      activeDays: allDates.filter(d => d.hasData).length,
-      totalSessions: allDates.reduce((sum, d) => sum + d.sessions, 0),
-      totalFocusTime: allDates.reduce((sum, d) => sum + d.totalTime, 0),
-      averageScore: allDates.length > 0 
-        ? Math.round(allDates.reduce((sum, d) => sum + d.averageScore, 0) / allDates.length)
+      activeDays: activeDates.length,
+      totalSessions: activeDates.reduce((sum, d) => sum + d.sessions, 0),
+      totalFocusTime: activeDates.reduce((sum, d) => sum + d.totalTime, 0),
+      averageScore: activeDates.length > 0 
+        ? Math.round(activeDates.reduce((sum, d) => sum + d.averageScore, 0) / activeDates.length)
         : 0
     }
+
+    console.log('📊 Daily stats 계산 완료:', {
+      totalDays: totalStats.totalDays,
+      activeDays: totalStats.activeDays,
+      totalSessions: totalStats.totalSessions,
+      averageScore: totalStats.averageScore
+    })
 
     return NextResponse.json({
       dailyStats: allDates,

@@ -845,10 +845,10 @@ const WeeklyLearningPatterns = ({ weeklyData }: { weeklyData: any }) => {
                 <h4 className="text-lg font-semibold text-indigo-900">개인화된 학습 팁</h4>
               </div>
               <div className="space-y-2 text-sm text-indigo-800">
-                {insights.personalizedTips.map((tip, index) => (
+                {insights.personalizedTips.map((tipObj, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="text-pink-500 mt-1">•</span>
-                    <p>{tip}</p>
+                    <p>{typeof tipObj === 'string' ? tipObj : tipObj.tip}</p>
                   </div>
                 ))}
               </div>
