@@ -57,6 +57,16 @@ export function useWebSocket(
   const lastDisconnectionTime = useRef<number | null>(null)
   const isComponentMounted = useRef(true)
   
+  // customConfig가 변경될 때마다 configRef 업데이트
+  useEffect(() => {
+    configRef.current = { ...defaultConfig, ...customConfig }
+    console.log('🔧 configRef 업데이트:', {
+      defaultUrl: defaultConfig.url,
+      customUrl: customConfig?.url,
+      finalUrl: configRef.current.url
+    })
+  }, [customConfig])
+  
   // eventHandlers를 ref로 저장하여 최신 값을 유지
   const eventHandlersRef = useRef<Partial<WebSocketEventHandlers> | undefined>(eventHandlers)
   
@@ -177,17 +187,29 @@ export function useWebSocket(
         return null
       }
 
-      // 사용자 UID를 포함한 URL 생성
-      const baseUrl = configRef.current.url
-      const urlWithUserId = `${baseUrl}?user_id=${encodeURIComponent(user.id)}`
+             // URL을 그대로 사용 (user_id는 이미 포함되어 있음)
+       let urlWithUserId = configRef.current.url
+       
+       // URL에 user_id가 없으면 추가
+       if (!urlWithUserId.includes('user_id=')) {
+         urlWithUserId = `${urlWithUserId}${urlWithUserId.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(user.id)}`
+         console.log('URL에 user_id 추가:', { original: configRef.current.url, final: urlWithUserId })
+       }
       
-      console.log('🔗 WebSocket URL 생성:', {
-        baseUrl,
-        userId: user.id,
-        urlWithUserId,
-        hasUserId: !!user.id,
-        configUrl: configRef.current.url
+      // 디버깅을 위한 로그 추가
+      console.log('useWebSocket - user 정보:', {
+        hasUser: !!user,
+        userId: user?.id,
+        userObject: user
       })
+      
+             console.log('🔗 WebSocket URL 생성:', {
+         baseUrl: configRef.current.url,
+         userId: user.id,
+         urlWithUserId,
+         hasUserId: !!user.id,
+         configUrl: configRef.current.url
+       })
       
       // 전역 클라이언트가 있고 같은 사용자 UID로 연결되어 있으면 재사용
       if (globalWebSocketClient && globalWebSocketClient.isConnected()) {
@@ -331,7 +353,14 @@ export function useWebSocket(
   // 프레임 전송
   const sendFrame = useCallback((frameData: string) => {
     if (wsClientRef.current?.isConnected()) {
+      // 순수한 base64 데이터만 전송
       wsClientRef.current.sendFrame(frameData)
+      console.log('useWebSocket 프레임 전송:', {
+        dataLength: frameData.length,
+        timestamp: new Date().toISOString()
+      })
+    } else {
+      console.warn('WebSocket이 연결되지 않아 프레임을 전송할 수 없습니다.')
     }
   }, [])
 
@@ -362,6 +391,8 @@ export function useWebSocket(
            dataType: typeof text,
            dataLength: text.length,
            dataPreview: text.substring(0, 100) + '...',
+           dataStart: text.substring(0, 50),
+           dataEnd: text.substring(text.length - 50),
            timestamp: new Date().toISOString()
          })
          ws.send(text)

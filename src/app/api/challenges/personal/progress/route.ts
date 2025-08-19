@@ -20,13 +20,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '챌린지 ID와 진행 상황 값이 필요합니다.' }, { status: 400 })
     }
 
-    // 챌린지 존재 확인 및 권한 확인 (개인 챌린지만 - challenge_type이 'personal')
+    // 챌린지 존재 확인 및 권한 확인 (개인 챌린지 테이블에서 조회)
     const { data: challenge, error: challengeError } = await supabase
-      .from('group_challenge')
+      .from('personal_challenge')
       .select('*')
       .eq('challenge_id', challenge_id)
-      .eq('created_by', user.id) // created_by로 권한 확인
-      .eq('challenge_type', 'personal') // 개인 챌린지만 (challenge_type으로 구분)
+      .eq('user_id', user.id) // user_id로 권한 확인
       .single()
 
     if (challengeError || !challenge) {
@@ -34,15 +33,18 @@ export async function POST(request: NextRequest) {
     }
 
     // 진행 상황 업데이트
-    const newCurrentValue = (challenge.current_value || 0) + progress_value
-    const isCompleted = newCurrentValue >= challenge.target_value
+    const newProgress = (challenge.current_progress || 0) + progress_value
+    const completionPercentage = Math.min((newProgress / challenge.target_value) * 100, 100)
+    const isCompleted = newProgress >= challenge.target_value
 
     const { data: updatedChallenge, error: updateError } = await supabase
-      .from('group_challenge')
+      .from('personal_challenge')
       .update({
-        current_value: newCurrentValue,
+        current_progress: newProgress,
+        completion_percentage: completionPercentage,
         is_completed: isCompleted,
-        is_active: !isCompleted
+        completed_at: isCompleted ? new Date().toISOString() : null,
+        last_updated: new Date().toISOString()
       })
       .eq('challenge_id', challenge_id)
       .select()

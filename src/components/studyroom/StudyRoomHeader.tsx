@@ -33,6 +33,7 @@ interface StudyRoomHeaderProps {
   }
   onLeaveRoom: () => void
   onEndRoom: () => void
+  onClose?: () => void
 }
 
 export function StudyRoomHeader({
@@ -44,7 +45,8 @@ export function StudyRoomHeader({
   currentUserId,
   videoRoom,
   onLeaveRoom,
-  onEndRoom
+  onEndRoom,
+  onClose
 }: StudyRoomHeaderProps) {
   console.log('StudyRoomHeader 렌더링:', { 
     participantsCount: participants.length, 

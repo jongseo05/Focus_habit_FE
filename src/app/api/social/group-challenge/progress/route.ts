@@ -203,7 +203,7 @@ export async function GET(request: NextRequest) {
 
     console.log('챌린지 정보 조회 성공:', challenge)
 
-    // 참가자들의 진행 상황 조회 (조인 없이)
+    // 참가자들의 진행 상황 조회
     const { data: participants, error: participantsError } = await supabase
       .from('group_challenge_participant')
       .select('*')
@@ -257,18 +257,23 @@ export async function GET(request: NextRequest) {
 
     const challengeProgress = {
       challenge_id,
-      goal_type: challenge.type,
-      goal_value: challenge.target_value,
-      total_progress: totalProgress,
-      average_progress: averageProgress,
-      progress_percentage: progressPercentage,
-      user_progress: userProgress,
-      participants_count: participants?.length || 0,
-      participants: participants?.map(p => ({
+      total_participants: participants?.length || 0,
+      active_participants: participants?.length || 0,
+      total_contribution: totalProgress,
+      average_contribution: participants && participants.length > 0 ? totalProgress / participants.length : 0,
+      completion_percentage: progressPercentage,
+      top_contributors: participants
+        ?.sort((a, b) => (b.contribution || 0) - (a.contribution || 0))
+        .slice(0, 3)
+        .map(p => ({
+          user_id: p.user_id,
+          name: '사용자', // 기본값으로 설정
+          contribution: p.contribution || 0,
+          avatar_url: null
+        })) || [],
+      all_participants: participants?.map(p => ({
         user_id: p.user_id,
-        name: 'Unknown', // 사용자 이름은 별도로 조회 필요
-        avatar_url: undefined, // 아바타는 별도로 조회 필요
-        current_progress: p.contribution || 0,
+        contribution: p.contribution || 0,
         joined_at: p.joined_at
       })) || []
     }

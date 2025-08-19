@@ -86,18 +86,19 @@ export function useSocialRealtime(options: UseSocialRealtimeOptions = {}) {
   const onGroupChallengeCompletedRef = useRef(onGroupChallengeCompleted)
   const onGroupChallengeDeletedRef = useRef(onGroupChallengeDeleted)
   
-  // ref 업데이트
+  // ref 업데이트 (최적화)
   useEffect(() => {
-    onErrorRef.current = onError
-    onRoomJoinRef.current = onRoomJoin
-    onRoomLeaveRef.current = onRoomLeave
-    onEncouragementRef.current = onEncouragement
-    onFocusUpdateRef.current = onFocusUpdate
-    onChallengeEventRef.current = onChallengeEvent
-    onChallengeInvitationCreatedRef.current = onChallengeInvitationCreated
-    onChallengeInvitationResponseRef.current = onChallengeInvitationResponse
-    onChallengeInvitationExpiredRef.current = onChallengeInvitationExpired
-    onChallengeStartedRef.current = onChallengeStarted
+    // 콜백 함수들이 실제로 변경된 경우에만 ref 업데이트
+    if (onErrorRef.current !== onError) onErrorRef.current = onError
+    if (onRoomJoinRef.current !== onRoomJoin) onRoomJoinRef.current = onRoomJoin
+    if (onRoomLeaveRef.current !== onRoomLeave) onRoomLeaveRef.current = onRoomLeave
+    if (onEncouragementRef.current !== onEncouragement) onEncouragementRef.current = onEncouragement
+    if (onFocusUpdateRef.current !== onFocusUpdate) onFocusUpdateRef.current = onFocusUpdate
+    if (onChallengeEventRef.current !== onChallengeEvent) onChallengeEventRef.current = onChallengeEvent
+    if (onChallengeInvitationCreatedRef.current !== onChallengeInvitationCreated) onChallengeInvitationCreatedRef.current = onChallengeInvitationCreated
+    if (onChallengeInvitationResponseRef.current !== onChallengeInvitationResponse) onChallengeInvitationResponseRef.current = onChallengeInvitationResponse
+    if (onChallengeInvitationExpiredRef.current !== onChallengeInvitationExpired) onChallengeInvitationExpiredRef.current = onChallengeInvitationExpired
+    if (onChallengeStartedRef.current !== onChallengeStarted) onChallengeStartedRef.current = onChallengeStarted
     onChallengeEndedRef.current = onChallengeEnded
     onFocusSessionStartedRef.current = onFocusSessionStarted
     onFocusSessionEndedRef.current = onFocusSessionEnded

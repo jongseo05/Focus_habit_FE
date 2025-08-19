@@ -1,21 +1,22 @@
 'use client'
 
-import { useState } from 'react'
-import { useFriends, useRemoveFriend, useFriendSearch, useSendFriendRequest } from '@/hooks/useSocial'
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Search, UserMinus, Users, UserPlus, Check, X } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Users, UserPlus, UserMinus, Search } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useFriendsOnlineStatus } from '@/stores/onlineStatusStore'
 
 interface FriendsListProps {
   onAddFriend?: () => void
   onFriendAdded?: () => void
 }
 
-// 검색 결과 영역을 별도 컴포넌트로 분리
+// 친구 검색 결과 컴포넌트
 function AddFriendResults({ 
   searchTerm, 
   searchResults, 
@@ -44,7 +45,7 @@ function AddFriendResults({
   if (searchResults && searchResults.length > 0) {
     return (
       <div className="space-y-3">
-        {searchResults.map((user: any) => (
+        {searchResults.map((user) => (
           <div
             key={user.user_id}
             className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -58,108 +59,116 @@ function AddFriendResults({
               </Avatar>
               
               <div>
-                <h4 className="font-medium">{user.display_name}</h4>
-                <p className="text-sm text-gray-500">
-                  @{user.handle}
-                </p>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-medium">{user.display_name}</h4>
+                  <Badge variant="secondary" className="text-xs">
+                    @{user.handle}
+                  </Badge>
+                </div>
                 {user.bio && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    {user.bio}
-                  </p>
+                  <p className="text-sm text-gray-500">{user.bio}</p>
                 )}
               </div>
             </div>
             
-            <div className="flex flex-col gap-2">
-              {user.is_friend ? (
-                <Badge variant="outline" className="text-green-600 border-green-600">
-                  <Check className="h-3 w-3 mr-1" />
-                  친구
-                </Badge>
-              ) : user.has_pending_request ? (
-                <Badge variant="outline" className="text-orange-600 border-orange-600">
-                  요청 대기 중
-                </Badge>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={() => handleSendRequest(user.user_id, user.display_name)}
-                  disabled={sendRequestMutation.isPending}
-                >
-                  <UserPlus className="h-4 w-4 mr-1" />
-                  친구 요청
-                </Button>
-              )}
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSendRequest(user.user_id, user.display_name)}
+              disabled={sendRequestMutation.isPending}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              친구 추가
+            </Button>
           </div>
         ))}
       </div>
     )
   }
 
-  if (searchTerm.trim().length >= 2 && searchResults && searchResults.length === 0) {
+  if (searchTerm.trim().length >= 2 && !isSearching) {
     return (
-      <div className="text-center py-8">
-        <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-        <p className="text-gray-500">검색 결과가 없습니다.</p>
+      <div className="min-h-[200px] flex items-center justify-center">
+        <div className="text-center">
+          <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-500">검색 결과가 없습니다.</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="text-center py-8">
-      <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-      <p className="text-gray-500">추가할 친구를 검색해보세요.</p>
+    <div className="min-h-[200px] flex items-center justify-center">
+      <div className="text-center">
+        <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <p className="text-gray-500">친구를 검색해보세요.</p>
+      </div>
     </div>
   )
 }
 
 export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
   const [showAddFriendMode, setShowAddFriendMode] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
-  
-  const { data: friendsData, isLoading, error } = useFriends()
-  const removeFriendMutation = useRemoveFriend()
-  const sendRequestMutation = useSendFriendRequest()
+  const [isSearching, setIsSearching] = useState(false)
+  const queryClient = useQueryClient()
 
-  const handleRemoveFriend = async (friendId: string, friendName: string) => {
-    try {
-      await removeFriendMutation.mutateAsync({ friendId })
-      toast.success(`${friendName}님을 친구 목록에서 삭제했습니다.`)
-      onFriendAdded?.() // 친구 목록 새로고침
-    } catch (error) {
-      toast.error('친구 삭제에 실패했습니다.')
+  // 전역 친구 온라인 상태 사용
+  const { 
+    friends, 
+    setFriends, 
+    getFriendStatus,
+    isFriendOnline 
+  } = useFriendsOnlineStatus()
+
+  // 친구 목록 조회
+  const { data: friendsData, isLoading, error } = useQuery({
+    queryKey: ['friends'],
+    queryFn: async () => {
+      const response = await fetch('/api/social/friends')
+      if (!response.ok) {
+        throw new Error('친구 목록을 불러오는데 실패했습니다.')
+      }
+      return response.json()
     }
-  }
+  })
 
-  const handleAddFriendMode = () => {
-    setShowAddFriendMode(true)
-    setSearchTerm('')
-  }
+  // 친구 목록을 전역 스토어에 동기화
+  useEffect(() => {
+    if (friendsData?.friends && friendsData.friends.length > 0) {
+      const friendsWithStatus = friendsData.friends.map((friend: any) => ({
+        user_id: friend.friend_id,
+        activity_status: friend.activity_status || 'offline',
+        current_focus_score: friend.current_focus_score,
+        last_activity: friend.last_activity || new Date().toISOString(),
+        current_session_id: friend.current_session_id,
+        user: {
+          name: friend.friend_name,
+          avatar_url: friend.friend_avatar,
+          handle: friend.friend_handle
+        }
+      }))
+      setFriends(friendsWithStatus)
+    }
+  }, [friendsData, setFriends])
 
-  // 실시간 검색을 위한 처리
+  // 친구 검색
   const handleSearchChange = async (value: string) => {
     setSearchTerm(value)
     
     if (value.trim().length >= 2) {
       setIsSearching(true)
       try {
-        const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(value.trim())}`)
+        const response = await fetch(`/api/social/friends/search?search=${encodeURIComponent(value)}`)
         if (response.ok) {
-          const result = await response.json()
-          // 표준 API 응답 구조에 맞게 데이터 추출
-          if (result.success && result.data) {
-            setSearchResults(Array.isArray(result.data.results) ? result.data.results : Array.isArray(result.data) ? result.data : [])
-          } else {
-            setSearchResults([])
-          }
+          const data = await response.json()
+          setSearchResults(data.results || [])
         } else {
           setSearchResults([])
         }
       } catch (error) {
-        console.error('친구 검색 중 오류 발생:', error)
+        console.error('친구 검색 실패:', error)
         setSearchResults([])
       } finally {
         setIsSearching(false)
@@ -180,6 +189,48 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
     handleSearchChange(value)
   }
 
+  // 친구 요청 전송
+  const sendRequestMutation = useMutation({
+    mutationFn: async ({ to_user_id, message }: { to_user_id: string; message?: string }) => {
+      const response = await fetch('/api/social/friends/requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ to_user_id, message }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '친구 요청 전송에 실패했습니다.')
+      }
+      
+      return response.json()
+    }
+  })
+
+  // 친구 삭제
+  const removeFriendMutation = useMutation({
+    mutationFn: async (friendId: string) => {
+      const response = await fetch(`/api/social/friends/${friendId}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 삭제에 실패했습니다.')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['friends'] })
+      toast.success('친구가 삭제되었습니다.')
+    },
+    onError: (error: any) => {
+      toast.error(error.message || '친구 삭제에 실패했습니다.')
+    }
+  })
+
   const handleSendRequest = async (userId: string, userName: string) => {
     try {
       await sendRequestMutation.mutateAsync({
@@ -196,7 +247,22 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
     }
   }
 
-  const getStatusColor = (status?: string) => {
+  const handleRemoveFriend = async (friendId: string, friendName: string) => {
+    if (confirm(`${friendName}님을 친구 목록에서 삭제하시겠습니까?`)) {
+      removeFriendMutation.mutate(friendId)
+    }
+  }
+
+  const handleAddFriendMode = () => {
+    setShowAddFriendMode(true)
+    setSearchTerm('')
+    setSearchResults([])
+    onAddFriend?.()
+  }
+
+  // 상태 색상 및 텍스트 함수 (전역 상태 사용)
+  const getStatusColor = (userId: string) => {
+    const status = getFriendStatus(userId)
     switch (status) {
       case 'focusing':
         return 'bg-red-500'
@@ -211,7 +277,8 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
     }
   }
 
-  const getStatusText = (status?: string) => {
+  const getStatusText = (userId: string) => {
+    const status = getFriendStatus(userId)
     switch (status) {
       case 'focusing':
         return '집중 중'
@@ -288,36 +355,27 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
             <Users className="h-5 w-5" />
             친구 목록 ({friendsData?.total_count || 0})
           </CardTitle>
-          {/* 친구가 있을 때만 오른쪽 위에 버튼 표시 */}
-          {friendsData?.friends && friendsData.friends.length > 0 && !showAddFriendMode && onAddFriend && (
-            <Button onClick={handleAddFriendMode} size="sm" variant="outline">
+          {!showAddFriendMode && onAddFriend && (
+            <Button onClick={handleAddFriendMode} variant="outline" size="sm">
               <UserPlus className="h-4 w-4 mr-2" />
               친구 추가
             </Button>
           )}
-          {showAddFriendMode && (
-            <Button onClick={() => setShowAddFriendMode(false)} size="sm" variant="outline">
-              <X className="h-4 w-4 mr-2" />
-              취소
-            </Button>
-          )}
         </div>
         
-        <div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder={showAddFriendMode ? "추가할 친구를 검색하세요..." : "친구 검색..."}
-              value={inputValue}
-              onChange={handleInputChange}
-              className="pl-10"
-              disabled={false}
-            />
-          </div>
-          {inputValue.trim().length > 0 && inputValue.trim().length < 2 && showAddFriendMode && (
-            <p className="text-sm text-gray-500 mt-1">최소 2자 이상 입력해주세요</p>
-          )}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder={showAddFriendMode ? "추가할 친구를 검색하세요..." : "친구 검색..."}
+            value={inputValue}
+            onChange={handleInputChange}
+            className="pl-10"
+            disabled={false}
+          />
         </div>
+        {inputValue.trim().length > 0 && inputValue.trim().length < 2 && showAddFriendMode && (
+          <p className="text-sm text-gray-500 mt-1">최소 2자 이상 입력해주세요</p>
+        )}
       </CardHeader>
       
       <CardContent>
@@ -334,7 +392,7 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
           </div>
         ) : friendsData?.friends && friendsData.friends.length > 0 ? (
           <div className="space-y-3">
-            {friendsData.friends.map((friend) => (
+            {friendsData.friends.map((friend: any) => (
               <div
                 key={friend.friendship_id}
                 className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -347,14 +405,14 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
                         {friend.friend_name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white ${getStatusColor(friend.activity_status)}`} />
+                    <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white ${getStatusColor(friend.friend_id)}`} />
                   </div>
                   
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-medium">{friend.friend_name}</h4>
                       <Badge variant="secondary" className="text-xs">
-                        {getStatusText(friend.activity_status)}
+                        {getStatusText(friend.friend_id)}
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-500">

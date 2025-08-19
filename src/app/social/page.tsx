@@ -209,8 +209,14 @@ function SocialPageContent() {
       const result = await response.json()
 
       if (!response.ok) {
-        alert(result.error || '룸 참가에 실패했습니다.')
-        return
+        // 중복 참가 에러인 경우 특별 처리
+        if (response.status === 409 || result.error?.includes('이미')) {
+          console.log('이미 참가한 스터디룸입니다. 바로 이동합니다.')
+        } else {
+          console.error('룸 참가 실패:', result.error)
+          alert(result.error || '룸 참가에 실패했습니다.')
+          return
+        }
       }
 
       // 참가 성공 시 룸 페이지로 이동 (이미 참가 중인 경우도 포함)

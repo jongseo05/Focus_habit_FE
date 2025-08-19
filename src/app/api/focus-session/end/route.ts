@@ -100,6 +100,20 @@ export async function POST(request: NextRequest) {
       final_focus_score: updatedSession.focus_score
     })
 
+    // 세션 지속 시간 계산 (분 단위)
+    const startTime = new Date(updatedSession.started_at)
+    const endTime = new Date(updatedSession.ended_at)
+    const sessionDurationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+
+    // 스터디룸 자동 챌린지 업데이트를 위한 이벤트 데이터 준비
+    const sessionCompleteData = {
+      duration: sessionDurationMinutes,
+      focusScore: updatedSession.focus_score,
+      sessionType: 'focus',
+      sessionId: updatedSession.session_id,
+      userId: user.id
+    }
+
     // 샘플 데이터 처리
     const samples = samplesResult.status === 'fulfilled' && !samplesResult.value.error 
       ? samplesResult.value.data || []
@@ -130,6 +144,14 @@ export async function POST(request: NextRequest) {
       ? Math.round(samples.reduce((sum, sample) => sum + (sample.score || 0), 0) / samples.length)
       : finalFocusScore || 0
 
+    // 개인 챌린지 업데이트 (개인 세션에서도 챌린지 진행률 반영)
+    try {
+      await updatePersonalChallenges(supabase, user.id, sessionDurationMinutes, averageFocusScore)
+      console.log('개인 챌린지 업데이트 완료')
+    } catch (challengeError) {
+      console.error('개인 챌린지 업데이트 실패:', challengeError)
+    }
+
     // 6. 세션 리포트 데이터 반환
     const reportData = {
       session: updatedSession,
@@ -154,5 +176,88 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     return handleAPIError(error, '세션 종료')
+  }
+}
+
+// 개인 챌린지 업데이트 함수
+async function updatePersonalChallenges(supabase: any, userId: string, durationMin: number, focusScore: number) {
+  try {
+    console.log('개인 챌린지 업데이트 시작:', { userId, durationMin, focusScore })
+
+    // 활성 개인 챌린지 조회
+    const { data: personalChallenges, error: challengesError } = await supabase
+      .from('personal_challenge')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .is('completed_at', null)
+
+    if (challengesError) {
+      console.error('개인 챌린지 조회 실패:', challengesError)
+      return
+    }
+
+    if (!personalChallenges || personalChallenges.length === 0) {
+      console.log('활성 개인 챌린지가 없음')
+      return
+    }
+
+    // 각 개인 챌린지 업데이트
+    for (const challenge of personalChallenges) {
+      let progress = 0
+      let shouldUpdate = false
+
+      switch (challenge.type) {
+        case 'focus_time':
+          progress = durationMin
+          shouldUpdate = true
+          break
+        case 'study_sessions':
+          progress = 1
+          shouldUpdate = true
+          break
+        case 'focus_score':
+          if (focusScore > 0) {
+            progress = focusScore
+            shouldUpdate = true
+          }
+          break
+        case 'streak_days':
+          // 오늘 이미 업데이트했는지 확인
+          const today = new Date().toISOString().split('T')[0]
+          if (challenge.last_updated !== today) {
+            progress = 1
+            shouldUpdate = true
+          }
+          break
+      }
+
+      if (shouldUpdate) {
+        const newProgress = (challenge.current_progress || 0) + progress
+        const completionPercentage = Math.min((newProgress / challenge.target_value) * 100, 100)
+        const isCompleted = newProgress >= challenge.target_value
+
+        await supabase
+          .from('personal_challenge')
+          .update({
+            current_progress: newProgress,
+            completion_percentage: completionPercentage,
+            is_completed: isCompleted,
+            completed_at: isCompleted ? new Date().toISOString() : null,
+            last_updated: new Date().toISOString()
+          })
+          .eq('challenge_id', challenge.challenge_id)
+
+        console.log(`개인 챌린지 업데이트: ${challenge.title}`, {
+          type: challenge.type,
+          progress,
+          newProgress,
+          completionPercentage,
+          isCompleted
+        })
+      }
+    }
+  } catch (error) {
+    console.error('개인 챌린지 업데이트 실패:', error)
   }
 }

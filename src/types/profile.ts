@@ -1,4 +1,25 @@
-// 프로필 페이지 관련 타입 정의
+// 프로필 페이지 관련 타입 정의 - 메인 타입 정의 파일
+// 이 파일이 프로필 관련 타입들의 Single Source of Truth 입니다.
+
+// =====================================================
+// 1. 기본 타입들 - base.ts에서 re-export
+// =====================================================
+
+export type { 
+  UUID, 
+  Timestamp, 
+  DateString,
+  APIResponse,
+  PaginatedResponse,
+  Insertable,
+  Updatable,
+  ValidationError,
+  ApiError
+} from './base'
+
+// =====================================================
+// 2. 사용자 상태 및 기본 정보
+// =====================================================
 
 // 사용자 상태
 export enum UserStatus {
@@ -8,7 +29,53 @@ export enum UserStatus {
   OFFLINE = 'offline'
 }
 
-// 사용자 프로필 정보
+// 기본 사용자 정보 (인증용)
+export interface User {
+  id: string
+  email: string
+  name: string
+  created_at: string
+  updated_at: string
+  email_confirmed_at?: string
+  last_sign_in_at?: string
+}
+
+// 회원가입 폼 데이터 타입
+export interface SignUpFormData {
+  name: string
+  email: string
+  password: string
+  confirmPassword: string
+  agreeTerms: boolean
+}
+
+// 로그인 폼 데이터 타입
+export interface LoginFormData {
+  email: string
+  password: string
+  rememberMe?: boolean
+}
+
+// 인증 상태 타입 (Supabase User는 외부 라이브러리이므로 별도 import 필요)
+export interface AuthState {
+  user: any | null // SupabaseUser 타입은 사용하는 곳에서 import
+  loading: boolean
+  error: string | null
+}
+
+// 인증 응답 타입
+export interface AuthResponse {
+  success: boolean
+  user?: any | null
+  error?: string
+  message?: string
+}
+
+// =====================================================
+// 3. 프로필 관련 타입
+// =====================================================
+
+// 사용자 프로필 정보 (확장된 프로필 데이터)
 export interface UserProfile {
   id: string
   user_id: string
@@ -22,6 +89,10 @@ export interface UserProfile {
   created_at: string
   updated_at: string
 }
+
+// =====================================================
+// 4. 집중 및 성과 관련 타입
+// =====================================================
 
 // 집중 요약 정보
 export interface FocusSummary {
@@ -68,6 +139,10 @@ export interface Challenge {
   end_date: string
 }
 
+// =====================================================
+// 5. 소셜 관련 타입
+// =====================================================
+
 // 친구 정보
 export interface Friend {
   id: string
@@ -88,6 +163,10 @@ export interface Group {
   member_count: number
   avatar_url?: string
 }
+
+// =====================================================
+// 6. 설정 및 개인화 관련 타입
+// =====================================================
 
 // 리포트 공유 설정
 export interface ReportSharingSettings {
@@ -128,6 +207,10 @@ export interface Reward {
   claimed_at?: string
 }
 
+// =====================================================
+// 7. 복합 상태 및 API 응답 타입
+// =====================================================
+
 // 프로필 페이지 전체 상태
 export interface ProfilePageState {
   profile: UserProfile | null
@@ -145,3 +228,16 @@ export interface ProfilePageState {
   loading: boolean
   error: string | null
 }
+
+// =====================================================
+// 8. 유틸리티 타입들
+// =====================================================
+
+// 데이터베이스 테이블 타입
+export type DatabaseTable = 
+  | 'profiles'
+  | 'focus_session'
+  | 'focus_sample'
+  | 'focus_event'
+  | 'daily_summary'
+  | 'weekly_summary'

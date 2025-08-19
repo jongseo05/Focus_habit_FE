@@ -11,7 +11,7 @@ interface VideoGridProps {
   participants: ParticipantWithUser[]
   currentUserId: string
   localStream: MediaStream | null
-  remoteStreams: Map<string, MediaStream>
+  remoteStreams: Map<string, MediaStream> | null
   onParticipantClick?: (participantId: string) => void
 }
 
@@ -31,13 +31,13 @@ function VideoTile({
   index: number
   currentUserId: string
   localStream: MediaStream | null
-  remoteStreams: Map<string, MediaStream>
+  remoteStreams: Map<string, MediaStream> | null
   gridLayout: '1' | '2' | '3' | '4'
   onParticipantClick?: (participantId: string) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const isLocal = participant.user_id === currentUserId
-  const stream = isLocal ? localStream : remoteStreams.get(participant.user_id)
+  const stream = isLocal ? localStream : (remoteStreams && remoteStreams instanceof Map ? remoteStreams.get(participant.user_id) : null)
 
   // 원격 스트림 연결
   useEffect(() => {
@@ -90,7 +90,7 @@ export function VideoGrid({
   participants, 
   currentUserId, 
   localStream, 
-  remoteStreams, 
+  remoteStreams = new Map(), 
   onParticipantClick 
 }: VideoGridProps) {
   const [gridLayout, setGridLayout] = useState<'1' | '2' | '3' | '4'>('1')
@@ -160,7 +160,7 @@ export function VideoGrid({
               index={index}
               currentUserId={currentUserId}
               localStream={localStream}
-              remoteStreams={remoteStreams}
+              remoteStreams={remoteStreams || new Map()}
               gridLayout={gridLayout}
               onParticipantClick={onParticipantClick}
             />

@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSimpleSuccessResponse, 
+  createSimpleErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '@/lib/api/standardResponse'
 
 // GET: 주간 상세 통계
 export async function GET(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 현재 사용자 정보 가져오기
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    // 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
 
     // 이번 주 시작일과 종료일 계산
     const now = new Date()
@@ -44,26 +47,21 @@ export async function GET(request: NextRequest) {
 
     if (sessionsError) {
       console.error('주간 세션 조회 실패:', sessionsError)
-      return NextResponse.json(
-        { error: '집중 세션 데이터를 불러오는데 실패했습니다.' },
-        { status: 500 }
-      )
+      return createSimpleErrorResponse('집중 세션 데이터를 불러오는데 실패했습니다.', 500)
     }
 
     // 요일별 데이터 계산
     const dailyStats = calculateDailyStats(sessions || [], startOfWeek)
 
-    return NextResponse.json({
+    const result = {
       daily_stats: dailyStats,
       total_sessions: sessions?.length || 0
-    })
+    }
+
+    return createSimpleSuccessResponse(result, '주간 통계를 성공적으로 조회했습니다.')
 
   } catch (error) {
-    console.error('주간 통계 API 오류:', error)
-    return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '주간 통계 조회')
   }
 }
 
