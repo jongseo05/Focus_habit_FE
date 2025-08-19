@@ -69,6 +69,7 @@ export interface AuthResponse {
   user?: any | null
   error?: string
   message?: string
+  warning?: string
 }
 
 // =====================================================

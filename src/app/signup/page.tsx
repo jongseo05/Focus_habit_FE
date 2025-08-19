@@ -56,6 +56,11 @@ function SignUpForm() {
 
       if (result.success) {
         setSuccessMessage(result.message || "메일이 발송되었습니다! 메일을 통해 회원가입을 완료하세요")
+        
+        // warning 메시지가 있으면 함께 표시
+        if (result.warning) {
+          setSuccessMessage(prev => prev + "\n\n" + result.warning)
+        }
 
         setTimeout(() => {
           // redirect 파라미터를 유지하면서 로그인 페이지로 이동

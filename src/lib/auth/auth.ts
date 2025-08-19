@@ -32,16 +32,62 @@ export const signUp = async (
 
     // 사용자 프로필 테이블에 추가 정보 저장 (선택사항)
     if (data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: data.user.id,
-          name: formData.name,
-          email: formData.email
-        })
+      try {
+        // handle 생성 (이메일에서 @ 앞부분 사용, 중복 방지)
+        let handle = formData.email.split('@')[0]
+        let counter = 1
+        
+        // handle 중복 확인 및 수정
+        while (true) {
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('handle')
+            .eq('handle', handle)
+            .single()
+          
+          if (!existingProfile) {
+            break // 중복되지 않는 handle를 찾음
+          }
+          
+          // 중복 시 숫자 추가
+          handle = `${formData.email.split('@')[0]}${counter}`
+          counter++
+          
+          // 무한 루프 방지
+          if (counter > 100) {
+            handle = `${formData.email.split('@')[0]}_${Date.now()}`
+            break
+          }
+        }
+        
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: data.user.id,
+            display_name: formData.name,
+            handle: handle,
+            status: 'offline'
+          })
 
-      if (profileError) {
-        console.warn('프로필 생성 중 오류:', profileError.message)
+        if (profileError) {
+          console.warn('프로필 생성 중 오류:', profileError.message)
+          // 프로필 생성 실패 시에도 회원가입은 성공이지만 사용자에게 알림
+          return {
+            success: true,
+            user: data.user,
+            message: '회원가입이 완료되었습니다. 이메일을 확인해주세요. (프로필 설정은 나중에 완료할 수 있습니다.)',
+            warning: '프로필 설정에 실패했습니다. 나중에 설정 페이지에서 완료해주세요.'
+          }
+        }
+      } catch (profileError) {
+        console.warn('프로필 생성 중 예외 발생:', profileError)
+        // 예외 발생 시에도 회원가입은 성공으로 처리
+        return {
+          success: true,
+          user: data.user,
+          message: '회원가입이 완료되었습니다. 이메일을 확인해주세요. (프로필 설정은 나중에 완료할 수 있습니다.)',
+          warning: '프로필 설정에 실패했습니다. 나중에 설정 페이지에서 완료해주세요.'
+        }
       }
     }
 
