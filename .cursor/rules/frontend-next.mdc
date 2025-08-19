@@ -1,4 +1,745 @@
+---
+alwaysApply: true
+---
+
 # Focus Habit Frontend - 최적화된 Cursor Rules
+
+## 프로젝트 개요
+실시간 집중도 분석과 소셜 기능을 갖춘 습관 관리 웹 애플리케이션
+- **GPT 기반 발화분석**: OpenAI API를 활용한 실시간 음성 분석
+- **실시간 웹캠 분석**: 제스처 및 시선 추적
+- **WebSocket 기반 실시간 통신**: 소셜 스터디룸, 챌린지
+- **ML/AI 통합**: 학습 패턴 분석 및 인사이트 생성
+
+## 핵심 기술 스택
+- **Framework**: Next.js 15 (App Router) + React 19
+- **Language**: TypeScript (Strict Mode)
+- **Styling**: Tailwind CSS 4 + shadcn/ui
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **State Management**: Zustand + React Query
+- **Real-time**: WebSocket + Supabase Realtime
+- **AI/ML**: OpenAI GPT-4o-mini, 브라우저 기반 제스처 인식
+- **Package Manager**: pnpm
+
+## 아키텍처 패턴
+
+### 폴더 구조 규칙
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── api/               # API Routes (kebab-case)
+│   │   ├── classify-speech/   # GPT 발화분석
+│   │   ├── ai/               # AI 관련 API
+│   │   └── focus-session/    # 집중 세션 관리
+│   └── (pages)/           # 페이지 컴포넌트
+├── components/            # 재사용 컴포넌트 (PascalCase)
+│   ├── ui/               # shadcn/ui 베이스 컴포넌트
+│   └── social/           # 소셜 기능 컴포넌트
+├── hooks/                # 커스텀 훅 (camelCase + use prefix)
+├── stores/               # Zustand 스토어 (camelCase + Store suffix)
+├── types/                # TypeScript 타입 정의 (camelCase)
+├── lib/                  # 유틸리티 및 설정
+│   ├── supabase/         # Supabase 설정
+│   ├── websocket/        # WebSocket 관리
+│   └── database/         # 데이터베이스 서비스
+└── middleware/           # Next.js 미들웨어
+```
+
+### 명명 규칙
+- **컴포넌트**: `PascalCase` (예: `HybridAudioPipeline.tsx`)
+- **훅**: `camelCase` + `use` prefix (예: `useFocusSessionWithGesture.ts`)
+- **스토어**: `camelCase` + `Store` suffix (예: `dashboardStore.ts`)
+- **타입**: `camelCase` (예: `focusSession.ts`, `websocket.ts`)
+- **API 라우트**: `kebab-case` (예: `classify-speech`, `focus-session`)
+- **유틸리티**: `camelCase` (예: `utils.ts`, `performance.ts`)
+
+## 코딩 컨벤션
+
+### TypeScript 규칙
+- **엄격한 타입 검사**: `strict: true` 설정
+- **명시적 타입 어노테이션**: 모든 함수 매개변수와 반환값
+- **Interface 우선**: 객체 형태는 `interface` 사용, `I` prefix 금지
+- **타입 분리**: `types/` 폴더에서 중앙 관리
+- **제네릭 활용**: 재사용 가능한 컴포넌트와 훅에서 적극 활용
+
+```typescript
+// ✅ 좋은 예시
+interface FocusSessionData {
+  sessionId: string
+  userId: string
+  startedAt: string
+  focusScore: number
+}
+
+const useFocusSession = (sessionId: string): UseSessionReturn => {
+  // 구현
+}
+
+// ❌ 나쁜 예시
+interface IFocusSession { ... }  // I prefix 사용 금지
+const useFocusSession = (sessionId) => { ... }  // 타입 누락
+```
+
+### 컴포넌트 구조 패턴
+```typescript
+interface ComponentProps {
+  // props 타입 정의
+}
+
+const ComponentName = ({ prop1, prop2 }: ComponentProps) => {
+  // 1. 훅 호출
+  // 2. 상태 정의
+  // 3. 이펙트
+  // 4. 핸들러 함수
+  // 5. 렌더링
+
+  return (
+    // JSX
+  )
+}
+
+export default ComponentName
+```
+
+### 커스텀 훅 패턴
+```typescript
+interface UseHookOptions {
+  // 옵션 타입
+}
+
+interface UseHookReturn {
+  // 반환 타입
+}
+
+export const useCustomHook = (options: UseHookOptions = {}): UseHookReturn => {
+  // 상태와 로직
+  
+  return {
+    // 반환 객체
+  }
+}
+```
+
+## 상태 관리 패턴
+
+### Zustand 스토어 패턴
+```typescript
+interface StoreState {
+  // 상태 정의
+}
+
+interface StoreActions {
+  // 액션 정의
+}
+
+type Store = StoreState & StoreActions
+
+export const useStore = create<Store>()(
+  persist(
+    (set, get) => ({
+      // 초기 상태
+      // 액션 구현
+    }),
+    {
+      name: 'store-name',
+      partialize: (state) => ({
+        // 영속화할 상태만 선택
+      })
+    }
+  )
+)
+```
+
+### React Query 패턴
+```typescript
+// Query Keys 중앙 관리
+export const queryKeys = {
+  all: ['resource'] as const,
+  lists: () => [...queryKeys.all, 'list'] as const,
+  list: (filters: string) => [...queryKeys.lists(), { filters }] as const,
+  details: () => [...queryKeys.all, 'detail'] as const,
+  detail: (id: string) => [...queryKeys.details(), id] as const,
+}
+
+// 커스텀 훅에서 사용
+export const useResource = (id: string) => {
+  return useQuery({
+    queryKey: queryKeys.detail(id),
+    queryFn: () => fetchResource(id),
+    staleTime: 5 * 60 * 1000, // 5분
+  })
+}
+```
+
+## AI/ML 통합 패턴
+
+### GPT 발화분석 패턴
+```typescript
+// API 라우트에서 GPT 호출
+const analyzeWithGPT = async (transcript: string) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0,
+      max_tokens: 10,
+    })
+    
+    // 결과 처리 및 폴백 로직
+  } catch (error) {
+    // 키워드 기반 폴백
+    return analyzeByKeywords(transcript)
+  }
+}
+```
+
+### 실시간 분석 파이프라인 패턴
+```typescript
+// 컴포넌트에서 실시간 처리
+const HybridAnalysisPipeline = () => {
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  
+  const processRealTimeData = useCallback(async (data: AnalysisData) => {
+    if (isAnalyzing) return // 중복 처리 방지
+    
+    setIsAnalyzing(true)
+    try {
+      // GPT API 호출
+      const result = await analyzeWithGPT(data.transcript)
+      // 결과 처리
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }, [isAnalyzing])
+  
+  return // 컴포넌트 렌더링
+}
+```
+
+## WebSocket 관리 패턴
+
+### 전역 연결 관리
+```typescript
+// 전역 WebSocket 클라이언트 관리
+let globalWebSocketClient: WebSocketClient | null = null
+let globalConnectionCount = 0
+
+export const useWebSocket = (config?: WebSocketConfig) => {
+  // 연결 관리 로직
+  // 재연결 로직
+  // 이벤트 핸들러 관리
+  
+  return {
+    status,
+    sendMessage,
+    connect,
+    disconnect,
+    reconnect
+  }
+}
+```
+
+### 실시간 데이터 동기화
+```typescript
+// Supabase Realtime 통합
+const useSocialRealtime = () => {
+  useEffect(() => {
+    const channel = supabase
+      .channel('social-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'study_rooms' 
+      }, (payload) => {
+        // 실시간 업데이트 처리
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+}
+```
+
+## 성능 최적화 패턴
+
+### 메모리 관리
+```typescript
+// 리소스 정리 패턴
+useEffect(() => {
+  const cleanup = () => {
+    // WebSocket 연결 정리
+    // 타이머 정리
+    // 이벤트 리스너 제거
+  }
+  
+  return cleanup
+}, [])
+
+// 컴포넌트 언마운트 감지
+const isComponentMounted = useRef(true)
+useEffect(() => {
+  return () => {
+    isComponentMounted.current = false
+  }
+}, [])
+```
+
+### 최적화된 렌더링
+```typescript
+// React.memo 활용
+const OptimizedComponent = React.memo(({ data }: Props) => {
+  // 컴포넌트 로직
+}, (prevProps, nextProps) => {
+  // 커스텀 비교 로직
+})
+
+// useMemo, useCallback 적절한 사용
+const expensiveValue = useMemo(() => {
+  return computeExpensiveValue(data)
+}, [data])
+
+const memoizedCallback = useCallback((id: string) => {
+  // 콜백 로직
+}, [dependency])
+```
+
+## API 설계 패턴
+
+### Next.js API Routes
+```typescript
+// 표준 API 응답 형태
+interface APIResponse<T = any> {
+  success: boolean
+  data?: T
+  error?: string
+  message?: string
+}
+
+// API 라우트 구조
+export async function POST(request: NextRequest) {
+  try {
+    // 인증 확인
+    const supabase = await supabaseServer()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // 요청 처리
+    const body = await request.json()
+    
+    // 비즈니스 로직
+    
+    return NextResponse.json({
+      success: true,
+      data: result,
+      message: '처리 완료'
+    })
+  } catch (error) {
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+### 에러 처리 패턴
+```typescript
+// 통합 에러 핸들링
+const handleError = (error: unknown, context: string) => {
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+  console.error(`❌ ${context}:`, errorMessage)
+  
+  // 사용자 친화적 에러 메시지
+  return {
+    success: false,
+    error: '처리 중 오류가 발생했습니다.'
+  }
+}
+
+// React 컴포넌트에서 에러 처리
+const { data, error, isLoading } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  retry: (failureCount, error) => {
+    // 커스텀 재시도 로직
+    return failureCount < 3 && !error.message.includes('Unauthorized')
+  }
+})
+```
+
+## 보안 및 인증 패턴
+
+### 보호된 라우트
+```typescript
+// 인증 확인 컴포넌트
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { data: user, isLoading } = useUser()
+  
+  if (isLoading) return <LoadingSpinner />
+  if (!user) return <Navigate to="/login" />
+  
+  return <>{children}</>
+}
+```
+
+### 환경 변수 관리
+```typescript
+// 환경 변수 검증
+const requiredEnvVars = {
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+}
+
+Object.entries(requiredEnvVars).forEach(([key, value]) => {
+  if (!value) {
+    console.warn(`⚠️ ${key} 환경 변수가 설정되지 않았습니다.`)
+  }
+})
+```
+
+## 개발 및 디버깅 패턴
+
+### 로깅 패턴
+```typescript
+// 구조화된 로깅
+const logger = {
+  info: (message: string, data?: any) => {
+    console.log(` ${message}`, data ? data : '')
+  },
+  success: (message: string, data?: any) => {
+    console.log(` ${message}`, data ? data : '')
+  },
+  warning: (message: string, data?: any) => {
+    console.warn(` ${message}`, data ? data : '')
+  },
+  error: (message: string, error?: any) => {
+    console.error(` ${message}`, error ? error : '')
+  }
+}
+```
+
+### 개발 도구 활용
+```typescript
+// React Query DevTools (개발 환경에서만)
+if (process.env.NODE_ENV === 'development') {
+  import('@tanstack/react-query-devtools').then(({ ReactQueryDevtools }) => {
+    // DevTools 설정
+  })
+}
+```
+
+## 특별 고려사항
+
+### 한국어 지원
+- 한국어 코멘트 적극 활용
+- 사용자 대상 메시지는 한국어로 작성
+- 로그 메시지에 이모지 활용 X
+
+### 실시간 기능 최적화
+- WebSocket 연결 상태 모니터링
+- 자동 재연결 로직 구현
+- 연결 실패 시 사용자 피드백 제공
+
+### 모바일 반응형 설계
+- Tailwind CSS 반응형 클래스 활용
+- 터치 인터페이스 고려
+- 성능 최적화 (모바일 환경)
+
+## 코드 품질 체크리스트
+
+### 개발 시 확인사항
+- [ ] TypeScript 타입 정의 완료
+- [ ] 에러 처리 구현
+- [ ] 로딩 상태 처리
+- [ ] 반응형 디자인 적용
+- [ ] 접근성 고려 (ARIA 라벨 등)
+- [ ] 성능 최적화 (메모이제이션 등)
+- [ ] 보안 검토 (인증, 권한)
+- [ ] 테스트 작성 (필요시)
+
+### 배포 전 확인사항
+- [ ] 환경 변수 설정 확인
+- [ ] 빌드 오류 없음
+- [ ] Lighthouse 점수 확인
+- [ ] 크로스 브라우저 테스트
+- [ ] 모바일 테스트
+
+## 주요 라이브러리 사용 가이드
+
+### Framer Motion 애니메이션
+```typescript
+// 페이지 전환 애니메이션
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  in: { opacity: 1, y: 0 },
+  out: { opacity: 0, y: -20 }
+}
+
+// 컴포넌트에서 사용
+<motion.div
+  initial="initial"
+  animate="in"
+  exit="out"
+  variants={pageVariants}
+  transition={{ duration: 0.3 }}
+>
+```
+
+### Date-fns 날짜 처리
+```typescript
+import { format, parseISO, isValid } from 'date-fns'
+import { ko } from 'date-fns/locale'
+
+// 한국어 날짜 포맷팅
+const formatKoreanDate = (dateString: string) => {
+  const date = parseISO(dateString)
+  return isValid(date) ? format(date, 'yyyy년 MM월 dd일', { locale: ko }) : ''
+}
+```
+
+## 빌드 오류 방지 가이드라인
+
+### TypeScript 타입 안전성 강화
+
+#### 1. useRef 초기값 필수 설정
+```typescript
+// ✅ React 19 호환성 - 올바른 초기값 설정
+const timerRef = useRef<NodeJS.Timeout | null>(null)
+const intervalRef = useRef<number | null>(null)
+const elementRef = useRef<HTMLDivElement | null>(null)
+
+// ❌ 초기값 없이 사용 금지
+const timerRef = useRef<NodeJS.Timeout>()  // 오류 발생
+const intervalRef = useRef<number>()       // 오류 발생
+```
+
+#### 2. 타입 정의 일관성 유지
+```typescript
+// ✅ 인터페이스 우선 사용, 명시적 타입 정의
+interface ParticipantWithUser {
+  user_id: string
+  user: User
+  current_focus_score: number | null
+  joined_at: string
+}
+
+// ❌ any 타입 사용 금지, 타입 추론에만 의존 금지
+const participant: any = { ... }  // 오류 발생
+const score = data.score          // 타입 불명확
+```
+
+#### 3. API 응답 타입 통일
+```typescript
+// ✅ 표준 API 응답 형태 사용
+interface APIResponse<T = any> {
+  success: boolean
+  data?: T
+  error?: string
+  message?: string
+}
+
+// ❌ 혼재된 응답 형태 사용 금지
+interface ApiResponse<T> { ... }  // 대문자로 통일
+interface Response<T> { ... }     // 너무 일반적인 이름
+```
+
+### Next.js API Routes 안전성
+
+#### 1. 모듈 export 규칙
+```typescript
+// ✅ 명시적 함수 export
+export async function GET(request: NextRequest) { ... }
+export async function POST(request: NextRequest) { ... }
+
+// ❌ default export 사용 금지
+export default async function handler(req: NextRequest) { ... }  // 오류 발생
+```
+
+#### 2. 타입 import 경로 검증
+```typescript
+// ✅ 절대 경로 사용 권장
+import type { User } from '@/types/user'
+import { supabaseServer } from '@/lib/supabase/server'
+
+// ❌ 상대 경로 오타 주의
+import type { User } from '../../../types/user'  // 경로 오타 위험
+```
+
+### WebSocket 타입 안전성
+
+#### 1. 이벤트 핸들러 타입 매칭
+```typescript
+// ✅ WebSocketEventHandlers 타입과 일치하는 메서드 시그니처
+interface WebSocketEventHandlers {
+  onOpen: (event: Event) => void
+  onClose: (event: CloseEvent) => void
+  onMessage: (message: WebSocketMessage) => void
+  onError: (error: Event) => void
+}
+
+// ❌ 타입 불일치 메서드
+private handleConnect(): void { ... }        // Event 매개변수 누락
+private handleDisconnect(): void { ... }     // CloseEvent 매개변수 누락
+```
+
+#### 2. 메시지 타입 캐스팅 안전성
+```typescript
+// ✅ 타입 가드와 함께 안전한 캐스팅
+private handleMessage(message: WebSocketMessage): void {
+  try {
+    // 타입 가드로 검증
+    if (message.type === 'focus_update' && message.data?.score !== undefined) {
+      const focusMessage = message as FocusUpdateMessage
+      this.handleFocusUpdate(focusMessage)
+    }
+  } catch (error) {
+    console.error('메시지 처리 오류:', error)
+  }
+}
+
+// ❌ 무분별한 타입 캐스팅
+const data = message as any  // 타입 안전성 상실
+```
+
+### 상태 관리 타입 안전성
+
+#### 1. Zustand 스토어 타입 정의
+```typescript
+// ✅ 완전한 상태 타입 정의
+interface DashboardState {
+  isRunning: boolean
+  isPaused: boolean
+  elapsed: number
+  focusScore: number
+  // 모든 사용되는 프로퍼티 포함
+}
+
+// ❌ 부분적 타입 정의
+interface DashboardState {
+  isRunning: boolean
+  // 누락된 프로퍼티들로 인한 오류 발생
+}
+```
+
+#### 2. 스토어 선택자 타입 검증
+```typescript
+// ✅ 올바른 스토어에서 상태 선택
+const focusSession = useFocusSessionStore((state) => ({
+  isRunning: state.isRunning,
+  isPaused: state.isPaused,
+  // focusSessionStore에 실제로 존재하는 프로퍼티만 선택
+}))
+
+// ❌ 존재하지 않는 스토어 사용
+const focusSession = useDashboardStore((state) => ({
+  isRunning: state.isRunning,  // DashboardStore에 없을 수 있음
+}))
+```
+
+### 컴포넌트 Props 타입 안전성
+
+#### 1. 필수 Props 검증
+```typescript
+// ✅ 모든 사용되는 props 타입 정의
+interface FriendSearchProps {
+  onUserSelect?: (user: User) => void
+  mode?: 'search' | 'add'
+  onClose?: () => void  // 사용되는 모든 props 포함
+}
+
+// ❌ 누락된 props 타입
+interface FriendSearchProps {
+  onUserSelect?: (user: User) => void
+  // onClose 누락으로 인한 오류 발생
+}
+```
+
+#### 2. 조건부 렌더링 타입 안전성
+```typescript
+// ✅ 타입 가드를 통한 안전한 조건부 렌더링
+{participant.current_focus_score !== null && 
+ participant.current_focus_score !== undefined && (
+  <span>{Math.round(participant.current_focus_score)}점</span>
+)}
+
+// ❌ 존재하지 않는 프로퍼티 접근
+{participant.focus_score && (  // focus_score는 존재하지 않음
+  <span>{participant.focus_score}점</span>
+)}
+```
+
+### 개발 워크플로우 개선
+
+#### 1. 빌드 전 타입 체크
+```bash
+# ✅ 빌드 전 TypeScript 타입 검증
+npx tsc --noEmit
+pnpm lint
+pnpm build
+
+# ❌ 타입 체크 없이 빌드
+pnpm build  # 타입 오류 발견 시 빌드 실패
+```
+
+#### 2. IDE 설정 권장사항
+```json
+// .vscode/settings.json
+{
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "typescript.suggest.autoImports": true,
+  "typescript.validate.enable": true,
+  "typescript.preferences.importModuleSpecifier": "non-relative"
+}
+```
+
+#### 3. 자동화된 타입 검증
+```json
+// package.json scripts
+{
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "prebuild": "npm run type-check",
+    "build": "next build"
+  }
+}
+```
+
+### 오류 방지 체크리스트
+
+#### 개발 시 확인사항
+- [ ] useRef에 적절한 초기값 설정 (null, undefined 등)
+- [ ] 모든 컴포넌트 props 타입 정의 완료
+- [ ] API 응답 타입 일관성 확인
+- [ ] WebSocket 이벤트 핸들러 타입 매칭
+- [ ] Zustand 스토어 상태 타입 완성도 확인
+- [ ] 조건부 렌더링에서 프로퍼티 존재 여부 검증
+
+#### 빌드 전 확인사항
+- [ ] `npx tsc --noEmit` 실행하여 타입 오류 없음 확인
+- [ ] `pnpm lint` 실행하여 코드 품질 검증
+- [ ] 모든 import 경로 정확성 확인
+- [ ] 사용되지 않는 import 제거
+- [ ] 타입 정의 파일(.d.ts) 충돌 확인
+
+#### 코드 리뷰 시 확인사항
+- [ ] 타입 안전성 검증
+- [ ] null/undefined 처리 로직 확인
+- [ ] 에러 바운더리 및 예외 처리 검토
+- [ ] 성능 최적화 기회 식별
+- [ ] 접근성 및 사용성 개선점 검토
+
+이 규칙들을 따라 일관성 있고 유지보수 가능한 코드를 작성하세요.
+```
+
+이 규칙들을 따라 일관성 있고 유지보수 가능한 코드를 작성하세요.# Focus Habit Frontend - 최적화된 Cursor Rules
 
 ## 프로젝트 개요
 실시간 집중도 분석과 소셜 기능을 갖춘 습관 관리 웹 애플리케이션
