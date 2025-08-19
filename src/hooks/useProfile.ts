@@ -25,7 +25,7 @@ export function useProfile(userId?: string) {
       
       const result = await response.json()
       // 표준 API 응답에서 data 필드만 반환
-      return result.data as UserProfile
+      return result.success ? result.data as UserProfile : null
     },
     enabled: !!userId,
     staleTime: 5 * 60 * 1000, // 5분
@@ -53,7 +53,7 @@ export function useUpdateProfile() {
       
       const result = await response.json()
       // 표준 API 응답에서 data 필드만 반환
-      return result.data
+      return result.success ? result.data : null
     },
     onSuccess: (data) => {
       // 캐시 업데이트
@@ -79,7 +79,7 @@ export function useFocusSummary(userId?: string) {
       
       const result = await response.json()
       // 표준 API 응답에서 data 필드만 반환
-      return result.data as FocusSummary
+      return result.success ? result.data : null
     },
     enabled: !!userId,
     staleTime: 2 * 60 * 1000, // 2분
@@ -101,7 +101,7 @@ export function useWeeklyStats(userId?: string) {
       
       const result = await response.json()
       // 표준 API 응답에서 data 필드만 반환
-      return result.data
+      return result.success ? result.data : null
     },
     enabled: !!userId,
     staleTime: 5 * 60 * 1000, // 5분

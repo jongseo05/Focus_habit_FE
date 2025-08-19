@@ -3,13 +3,10 @@
 // =====================================================
 
 import { NextResponse } from 'next/server'
+import type { APIResponse } from '@/types/base'
 
-// 표준 API 응답 인터페이스
-export interface StandardAPIResponse<T = any> {
-  success: boolean
-  data?: T
-  error?: string
-  message?: string
+// 확장된 표준 API 응답 인터페이스 (타임스탬프와 버전 추가)
+export interface StandardAPIResponse<T = any> extends APIResponse<T> {
   timestamp: string
   version: string
 }
@@ -21,7 +18,7 @@ export interface ErrorDetails {
   stack?: string
 }
 
-// 성공 응답 생성
+// 성공 응답 생성 (확장 버전 - 타임스탬프와 버전 포함)
 export function createSuccessResponse<T>(
   data: T,
   message?: string,
@@ -38,7 +35,22 @@ export function createSuccessResponse<T>(
   return NextResponse.json(response, { status })
 }
 
-// 에러 응답 생성
+// 간단한 성공 응답 생성 (기본 APIResponse 형식)
+export function createSimpleSuccessResponse<T>(
+  data: T,
+  message?: string,
+  status: number = 200
+): NextResponse {
+  const response: APIResponse<T> = {
+    success: true,
+    data,
+    message
+  }
+  
+  return NextResponse.json(response, { status })
+}
+
+// 에러 응답 생성 (확장 버전 - 타임스탬프와 버전 포함)
 export function createErrorResponse(
   error: string,
   status: number = 500,
@@ -50,6 +62,19 @@ export function createErrorResponse(
     timestamp: new Date().toISOString(),
     version: 'v1',
     ...(details && { details })
+  }
+  
+  return NextResponse.json(response, { status })
+}
+
+// 간단한 에러 응답 생성 (기본 APIResponse 형식)
+export function createSimpleErrorResponse(
+  error: string,
+  status: number = 500
+): NextResponse {
+  const response: APIResponse = {
+    success: false,
+    error
   }
   
   return NextResponse.json(response, { status })

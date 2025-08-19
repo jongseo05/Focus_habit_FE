@@ -46,6 +46,8 @@ export function GroupChallengePanel({
 }: GroupChallengePanelProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [joiningChallenges, setJoiningChallenges] = useState<Set<string>>(new Set())
+  const [leavingChallenges, setLeavingChallenges] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState<CreateGroupChallengeData>({
     room_id: roomId,
     title: '',
@@ -82,6 +84,46 @@ export function GroupChallengePanel({
       setIsLoading(false)
     }
   }, [formData, onCreateChallenge, roomId])
+
+  const handleJoinChallenge = useCallback(async (challengeId: string) => {
+    if (joiningChallenges.has(challengeId)) {
+      return // 이미 참여 중인 경우 중복 요청 방지
+    }
+
+    setJoiningChallenges(prev => new Set(prev).add(challengeId))
+    try {
+      await onJoinChallenge(challengeId)
+    } catch (error) {
+      console.error('챌린지 참여 실패:', error)
+      // 에러 메시지는 onJoinChallenge에서 처리됨
+    } finally {
+      setJoiningChallenges(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(challengeId)
+        return newSet
+      })
+    }
+  }, [joiningChallenges, onJoinChallenge])
+
+  const handleLeaveChallenge = useCallback(async (challengeId: string) => {
+    if (leavingChallenges.has(challengeId)) {
+      return // 이미 탈퇴 중인 경우 중복 요청 방지
+    }
+
+    setLeavingChallenges(prev => new Set(prev).add(challengeId))
+    try {
+      await onLeaveChallenge(challengeId)
+    } catch (error) {
+      console.error('챌린지 탈퇴 실패:', error)
+      // 에러 메시지는 onLeaveChallenge에서 처리됨
+    } finally {
+      setLeavingChallenges(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(challengeId)
+        return newSet
+      })
+    }
+  }, [leavingChallenges, onLeaveChallenge])
 
   const getChallengeTypeInfo = (type: string) => {
     switch (type) {
@@ -296,7 +338,7 @@ export function GroupChallengePanel({
         )}
 
         {/* 현재 활성 챌린지들 */}
-        {currentChallenges.length > 0 ? (
+        {currentChallenges && currentChallenges.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
             {/* 4개 섹션으로 나누어 각 챌린지 타입별로 표시 */}
             {['focus_time', 'study_sessions', 'streak_days', 'focus_score'].map((challengeType) => {
@@ -346,7 +388,7 @@ export function GroupChallengePanel({
                       )}
 
                        {/* 순위 */}
-                       {challengeProgress && challengeProgress.top_contributors.length > 0 && (
+                                               {challengeProgress && challengeProgress.top_contributors && challengeProgress.top_contributors.length > 0 && (
                          <div className="bg-slate-100 rounded p-2">
                            <h5 className="text-xs font-semibold text-slate-700 mb-2">순위</h5>
                            <div className="space-y-2">
@@ -393,30 +435,37 @@ export function GroupChallengePanel({
 
                       {/* 참여/탈퇴 버튼 */}
                       {!challenge.is_completed && (() => {
-                        const isParticipating = challengeProgress?.all_participants.some(
-                          (participant: any) => participant.user_id === currentUserId
-                        ) || false
+                        // 참여 상태 확인 - 더 안전한 방식으로 수정
+                        const allParticipants = challengeProgress?.all_participants || []
+                        const isParticipating = Array.isArray(allParticipants) && 
+                          allParticipants.some((participant: any) => 
+                            participant && participant.user_id === currentUserId
+                          ) || false
+                        const isJoining = joiningChallenges.has(challenge.challenge_id)
+                        const isLeaving = leavingChallenges.has(challenge.challenge_id)
 
                         return (
                           <div className="flex gap-2">
                             {!isParticipating ? (
                               <Button
-                                onClick={() => onJoinChallenge(challenge.challenge_id)}
+                                onClick={() => handleJoinChallenge(challenge.challenge_id)}
+                                disabled={isJoining || isLeaving}
                                 size="sm"
                                 className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-xs"
                               >
                                 <Users className="w-3 h-3 mr-1" />
-                                참여
+                                {isJoining ? '참여 중...' : '참여'}
                               </Button>
                             ) : (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => onLeaveChallenge(challenge.challenge_id)}
+                                onClick={() => handleLeaveChallenge(challenge.challenge_id)}
+                                disabled={isJoining || isLeaving}
                                 className="flex-1 text-xs"
                               >
                                 <X className="w-3 h-3 mr-1" />
-                                탈퇴
+                                {isLeaving ? '탈퇴 중...' : '탈퇴'}
                               </Button>
                             )}
                             
@@ -425,6 +474,7 @@ export function GroupChallengePanel({
                               <Button
                                 variant="outline"
                                 size="sm"
+                                disabled={isJoining || isLeaving}
                                 onClick={() => {
                                   if (confirm('정말로 이 챌린지를 삭제하시겠습니까?')) {
                                     onDeleteChallenge(challenge.challenge_id)

@@ -7,7 +7,7 @@ import { useFocusSessionActions } from '@/stores/focusSessionStore'
 import type { WebcamFrameAnalysisResult, FocusAnalysisFeatures } from '@/types/websocket'
 import { useFocusSessionErrorHandler } from '@/hooks/useFocusSessionErrorHandler'
 import { FocusSessionErrorType, FocusSessionStatus } from '@/types/focusSession'
-import { determineFocusStatus, type FocusStatus } from '@/lib/focusScoreEngine'
+// WebSocket에서 실시간 집중도 점수를 받으므로 focusScoreEngine 불필요
 import { supabaseBrowser } from '@/lib/supabase/client'
 import type { GestureFeatures } from '@/types/focusSession'
 
@@ -496,19 +496,44 @@ export function useFocusSessionWithGesture(
           }
         }
         
-        // 집중 상태 계산
-        const focusStatusResult = determineFocusStatus(focusFeatures)
+        // WebSocket 응답에서 실제 집중도 점수 추출
+        let actualFocusScore = 75 // 기본값
+        let confidence = 0.8 // 기본 신뢰도
         
-        console.log('📊 기존 응답 구조 집중도 계산:', {
-          focusStatus: focusStatusResult.status,
-          focusConfidence: focusStatusResult.confidence,
-          focusScore: focusStatusResult.score
-        })
+        // 다양한 응답 구조에서 집중도 점수 추출 시도
+        if (parsedData.prediction_result && typeof parsedData.prediction_result.prediction === 'number') {
+          const rawScore = parsedData.prediction_result.prediction
+          actualFocusScore = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore)
+          confidence = parsedData.prediction_result.confidence || 0.8
+        } else if (parsedData.focus_score && typeof parsedData.focus_score === 'number') {
+          actualFocusScore = parsedData.focus_score
+          confidence = parsedData.confidence || 0.8
+        } else if (parsedData.score && typeof parsedData.score === 'number') {
+          actualFocusScore = parsedData.score
+          confidence = parsedData.confidence || 0.8
+        } else if (parsedData.prediction && typeof parsedData.prediction === 'number') {
+          const rawScore = parsedData.prediction
+          actualFocusScore = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore)
+          confidence = parsedData.confidence || 0.8
+        } else if (parsedData.analysis && parsedData.analysis.focus_score) {
+          actualFocusScore = parsedData.analysis.focus_score
+          confidence = parsedData.analysis.confidence || 0.8
+        }
+        
+        console.log('📊 WebSocket 응답 기반 집중도 사용:', actualFocusScore)
         
         // 집중도 점수 업데이트 (대시보드 스토어)
-        updateFocusScore(focusStatusResult.score)
+        updateFocusScore(actualFocusScore)
         
-        // 제스처 인식 결과를 DB에 저장 (집중 상태 포함)
+        // lastFocusScore 상태 업데이트 (UI 반영을 위해)
+        setLastFocusScore(actualFocusScore)
+        
+        // DB에 즉시 저장 (WebSocket 응답이 있을 때만)
+        if (sessionId) {
+          saveFocusScoreToDatabase(sessionId, actualFocusScore, confidence, Date.now())
+        }
+        
+        // 제스처 인식 결과를 DB에 저장 (WebSocket 응답 기반)
         if (data.timestamp) {
           const features = {
             frameNumber: gestureFramesSent,
@@ -519,9 +544,9 @@ export function useFocusSessionWithGesture(
               roll: data.head_pose?.roll,
               yaw: data.head_pose?.yaw
             },
-            focusStatus: focusStatusResult.status,
-            focusConfidence: focusStatusResult.confidence,
-            focusScore: focusStatusResult.score
+            focusStatus: 'normal' as const, // WebSocket 응답에서 결정
+            focusConfidence: 0.5, // WebSocket 응답에서 결정
+            focusScore: actualFocusScore // WebSocket 응답에서 결정
           }
           
           saveGestureFeatures(features)
@@ -539,7 +564,7 @@ export function useFocusSessionWithGesture(
 
   // 제스처 인식을 위한 WebSocket - 웹캠 분석용 URL 사용 (사용자 ID 포함)
   const { sendRawText, isConnected, connect, disconnect } = useWebSocket({
-    url: 'wss://focushabit.site/ws/analysis'
+    url: `wss://focushabit.site/ws/analysis?user_id=${sessionId}`
   }, {
     onMessage: handleWebSocketMessage,
     onOpen: () => {
@@ -560,7 +585,7 @@ export function useFocusSessionWithGesture(
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
-  // WebSocket 연결 상태 로깅
+  // WebSocket 연결 상태 로깅 및 자동 연결
   useEffect(() => {
     console.log('🔗 WebSocket 연결 상태:', { 
       isConnected,
@@ -568,7 +593,14 @@ export function useFocusSessionWithGesture(
       isRunning,
       enableGestureRecognition
     })
-  }, [isConnected, sessionId, isRunning, enableGestureRecognition])
+    
+    // enableGestureRecognition이 true이고 연결되지 않았으면 연결 시도
+    // sessionId가 없어도 연결 시도 (세션 ID는 나중에 설정됨)
+    if (enableGestureRecognition && !isConnected) {
+      console.log('🔗 WebSocket 연결 시도')
+      connect()
+    }
+  }, [isConnected, sessionId, isRunning, enableGestureRecognition, connect])
   
   // 제스처 인식 시작
   const startGestureRecognition = useCallback(() => {
@@ -832,20 +864,18 @@ export function useFocusSessionWithGesture(
     if (!isRunning || !sessionId) return
 
     const interval = setInterval(() => {
-      // 최신 집중도 점수 가져오기
-      const currentScore = lastSavedScoreRef.current || 75 // 기본값
+      // 최신 집중도 점수 가져오기 (lastFocusScore 사용)
+      const currentScore = lastFocusScore || 75 // 기본값
       const timestamp = Date.now()
       const confidence = 0.8 // 기본 신뢰도
 
-      console.log('⏰ 정기 집중도 저장:', { score: currentScore, sessionId })
       saveFocusScoreToDatabase(sessionId, currentScore, confidence, timestamp)
     }, 2000) // 2초마다
 
     return () => {
       clearInterval(interval)
-      console.log('⏰ 정기 집중도 저장 타이머 정리')
     }
-  }, [isRunning, sessionId, saveFocusScoreToDatabase])
+  }, [isRunning, sessionId, saveFocusScoreToDatabase, lastFocusScore])
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {

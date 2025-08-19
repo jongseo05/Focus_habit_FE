@@ -5,7 +5,7 @@ import type {
   CreateFocusSessionData, 
   UpdateFocusSessionData,
   FocusSessionFilters,
-  ApiResponse 
+  APIResponse 
 } from '@/types/database'
 
 // =====================================================
@@ -20,7 +20,7 @@ export class FocusSessionService {
   /**
    * 새로운 집중 세션 생성
    */
-  static async createSession(data: CreateFocusSessionData): Promise<ApiResponse<FocusSession>> {
+  static async createSession(data: CreateFocusSessionData): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -62,7 +62,7 @@ export class FocusSessionService {
   static async updateSession(
     sessionId: string, 
     data: UpdateFocusSessionData
-  ): Promise<ApiResponse<FocusSession>> {
+  ): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -95,7 +95,7 @@ export class FocusSessionService {
   /**
    * 집중 세션 종료
    */
-  static async endSession(sessionId: string): Promise<ApiResponse<FocusSession>> {
+  static async endSession(sessionId: string): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -130,7 +130,7 @@ export class FocusSessionService {
   /**
    * 집중 세션 조회
    */
-  static async getSession(sessionId: string): Promise<ApiResponse<FocusSession>> {
+  static async getSession(sessionId: string): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -162,7 +162,7 @@ export class FocusSessionService {
   /**
    * 사용자의 집중 세션 목록 조회
    */
-  static async getSessions(filters: FocusSessionFilters): Promise<ApiResponse<FocusSession[]>> {
+  static async getSessions(filters: FocusSessionFilters): Promise<APIResponse<FocusSession[]>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -224,7 +224,7 @@ export class FocusSessionService {
   /**
    * 사용자의 오늘 집중 세션 조회
    */
-  static async getTodaySessions(userId: string): Promise<ApiResponse<FocusSession[]>> {
+  static async getTodaySessions(userId: string): Promise<APIResponse<FocusSession[]>> {
     const today = new Date().toISOString().split('T')[0]
     
     return this.getSessions({
@@ -237,7 +237,7 @@ export class FocusSessionService {
   /**
    * 사용자의 활성 세션 조회 (종료되지 않은 세션)
    */
-  static async getActiveSession(userId: string): Promise<ApiResponse<FocusSession | null>> {
+  static async getActiveSession(userId: string): Promise<APIResponse<FocusSession | null>> {
     try {
       // API를 통해 활성 세션 조회
       const response = await fetch('/api/focus-session?active=true')
@@ -273,7 +273,7 @@ export class FocusSessionService {
   /**
    * 집중 세션 삭제
    */
-  static async deleteSession(sessionId: string): Promise<ApiResponse<void>> {
+  static async deleteSession(sessionId: string): Promise<APIResponse<void>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -308,7 +308,7 @@ export class FocusSessionService {
     sessionId: string,
     userId: string,
     finalFocusScore?: number
-  ): Promise<ApiResponse<any>> {
+  ): Promise<APIResponse<any>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -427,7 +427,7 @@ export class FocusSessionService {
   /**
    * 서버 사이드에서 집중 세션 생성
    */
-  static async createSessionServer(data: CreateFocusSessionData): Promise<ApiResponse<FocusSession>> {
+  static async createSessionServer(data: CreateFocusSessionData): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = await supabaseServer()
       
@@ -466,7 +466,7 @@ export class FocusSessionService {
   /**
    * 서버 사이드에서 집중 세션 조회
    */
-  static async getSessionServer(sessionId: string): Promise<ApiResponse<FocusSession>> {
+  static async getSessionServer(sessionId: string): Promise<APIResponse<FocusSession>> {
     try {
       const supabase = await supabaseServer()
       
@@ -498,7 +498,7 @@ export class FocusSessionService {
   /**
    * 서버 사이드에서 사용자의 집중 세션 목록 조회
    */
-  static async getSessionsServer(filters: FocusSessionFilters): Promise<ApiResponse<FocusSession[]>> {
+  static async getSessionsServer(filters: FocusSessionFilters): Promise<APIResponse<FocusSession[]>> {
     try {
       const supabase = await supabaseServer()
       

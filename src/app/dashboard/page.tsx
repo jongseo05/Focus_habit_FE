@@ -410,6 +410,20 @@ function DashboardContent() {
               } catch (error) {
                 console.error('개인 챌린지 진행률 업데이트 실패:', error)
               }
+
+              // 스터디룸 자동 챌린지 업데이트를 위한 이벤트 발생
+              try {
+                const { dispatchFocusSessionComplete } = await import('@/lib/utils/focusSessionEvents')
+                dispatchFocusSessionComplete({
+                  duration: sessionDuration,
+                  focusScore: result.data.summary.averageFocusScore || sessionStateState.focusScore,
+                  sessionType: 'focus',
+                  sessionId: activeSession.session_id
+                })
+                console.log('스터디룸 챌린지 업데이트 이벤트 발생 완료')
+              } catch (error) {
+                console.error('스터디룸 챌린지 업데이트 이벤트 발생 실패:', error)
+              }
               
               // 알림 표시
               setShowSessionEndNotification(true)
@@ -677,118 +691,12 @@ function DashboardContent() {
   //   }
   // }, [sessionStateState.isRunning])
 
-  // AI 집중도 점수 계산 및 저장 함수 (useCallback으로 최적화)
+  // WebSocket에서 실시간 집중도 점수를 받으므로 로컬 계산 불필요
   const calculateAndSaveFocusScore = useCallback(async () => {
-  try {
-    // AI 집중도 엔진 import
-    const { FocusScoreEngine } = await import('@/lib/focusScoreEngine')
-    
-          // 현재 시간 기반 지표 계산 (elapsed 시간 사용)
-      const currentTime = Date.now()
-      const sessionDuration = Math.floor(sessionStateState.elapsed / 60) // 분 단위
-      
-      // 1초마다 실행되므로 너무 자주 로그 출력하지 않도록 제한
-      if (Math.floor(sessionStateState.elapsed) % 10 === 0) { // 10초마다만 로그 출력
-        console.log('📊 실시간 집중도 수집 중:', { 
-          elapsed: sessionStateState.elapsed, 
-        sessionDuration, 
-        timestamp: new Date().toISOString() 
-      })
-    }
-      
-      // AI 집중도 계산을 위한 피쳐 데이터 구성
-      const focusFeatures = {
-        // 시각적 지표 (ML 피쳐값에서 가져오거나 기본값 사용)
-        visual: {
-          eyeStatus: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.eye_status 
-            ? mlFeatures[mlFeatures.length - 1].eye_status 
-            : 'OPEN',
-          earValue: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.ear_value 
-            ? mlFeatures[mlFeatures.length - 1].ear_value 
-            : 0.3,
-          headPose: {
-            pitch: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_pitch 
-              ? mlFeatures[mlFeatures.length - 1].head_pose_pitch 
-              : 0,
-            yaw: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_yaw 
-              ? mlFeatures[mlFeatures.length - 1].head_pose_yaw 
-              : 0,
-            roll: mlFeatures.length > 0 && mlFeatures[mlFeatures.length - 1]?.head_pose_roll 
-              ? mlFeatures[mlFeatures.length - 1].head_pose_roll 
-              : 0
-          },
-          gazeDirection: 'FORWARD' as const
-        },
-        
-        // 청각적 지표 (음성 분석 결과에서 가져오거나 기본값 사용)
-        audio: {
-          isSpeaking: false, // 실제로는 음성 분석 결과 사용
-          speechContent: '',
-          isStudyRelated: true,
-          confidence: 0.8,
-          audioLevel: 20 // 기본 조용함
-        },
-        
-        // 행동 지표 (실제로는 사용자 활동 모니터링에서 가져와야 함)
-        behavior: {
-          mouseActivity: true, // 기본값
-          keyboardActivity: true, // 기본값
-          tabSwitches: 0, // 실제로는 탭 전환 감지 필요
-          idleTime: 0 // 실제로는 유휴 시간 감지 필요
-        },
-        
-        // 시간 지표
-        time: {
-          sessionDuration,
-          lastBreakTime: Math.floor(sessionDuration * 0.8), // 예시값
-          consecutiveFocusTime: Math.floor(sessionDuration * 0.9) // 예시값
-        }
-      }
+    console.log('📊 WebSocket 기반 실시간 집중도 점수 사용 (로컬 계산 제거)')
+  }, [])
 
-      // AI 집중도 점수 계산 및 저장
-      if (!activeSession?.session_id) {
-        console.error('❌ 활성 세션 ID가 없습니다')
-        return
-      }
-      
-      const focusScoreResult = await FocusScoreEngine.trackFocusScore(
-        activeSession.session_id,
-        focusFeatures
-      )
-
-      // 로컬 상태 업데이트
-      setMlFeatures(prev => [...prev, {
-        ts: new Date().toISOString(),
-        score: focusScoreResult.score,
-        confidence: focusScoreResult.confidence,
-        topic_tag: 'ai_focus_analysis',
-        created_at: new Date().toISOString()
-      }])
-
-      // 집중도 점수 히스토리 업데이트
-      setFocusScores(prev => [...prev, {
-        ts: new Date().toISOString(),
-        score: focusScoreResult.score,
-        confidence: focusScoreResult.confidence,
-        analysis: focusScoreResult.analysis.primaryFactor
-      }])
-
-      // 집중도 점수 업데이트
-      sessionActions.updateFocusScore(focusScoreResult.score)
-
-      console.log('🤖 AI 집중도 분석 완료:', {
-        score: focusScoreResult.score,
-        confidence: focusScoreResult.confidence,
-        breakdown: focusScoreResult.breakdown,
-        analysis: focusScoreResult.analysis
-      })
-
-    } catch (error) {
-      console.error('❌ AI 집중도 점수 계산 실패:', error)
-    }
-  }, [activeSession?.session_id, mlFeatures, sessionActions])
-
-  // AI 집중도 점수 계산 및 저장 (세션 중일 때)
+  // WebSocket 기반 실시간 집중도 점수 사용 (세션 중일 때)
   useEffect(() => {
     if (!sessionStateState.isRunning || !activeSession?.session_id) return
     

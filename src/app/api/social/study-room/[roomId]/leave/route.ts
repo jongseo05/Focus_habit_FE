@@ -1,5 +1,16 @@
+// =====================================================
+// 개선된 스터디룸 나가기 API
+// =====================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSimpleSuccessResponse, 
+  createSimpleErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '@/lib/api/standardResponse'
+import { SocialService } from '@/lib/database/socialServiceV2'
 
 // POST: 스터디룸 나가기
 export async function POST(
@@ -11,40 +22,21 @@ export async function POST(
     const supabase = await supabaseServer()
     
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
-
-    // 참가자 상태를 left_at으로 업데이트
-    const { error: leaveError } = await supabase
-      .from('room_participants')
-      .update({ 
-        left_at: new Date().toISOString(),
-        is_connected: false,
-        last_activity: new Date().toISOString()
-      })
-      .eq('room_id', roomId)
-      .eq('user_id', user.id)
-      .is('left_at', null)
-
-    if (leaveError) {
-      console.error('스터디룸 나가기 실패:', leaveError)
-      return NextResponse.json(
-        { error: '스터디룸 나가기에 실패했습니다.' },
-        { status: 500 }
-      )
+    const { user } = authResult
+    
+    // 새로운 서비스 사용
+    const result = await SocialService.leaveStudyRoom(roomId, user.id)
+    
+    if (!result.success) {
+      return createSimpleErrorResponse(result.error || '스터디룸 나가기에 실패했습니다.', 500)
     }
-
-    return NextResponse.json({ success: true })
+    
+    return createSimpleSuccessResponse(result.data, result.message)
   } catch (error) {
-    console.error('스터디룸 나가기 실패:', error)
-    return NextResponse.json(
-      { error: '스터디룸 나가기에 실패했습니다.' },
-      { status: 500 }
-    )
+    return handleAPIError(error, '스터디룸 나가기')
   }
 }

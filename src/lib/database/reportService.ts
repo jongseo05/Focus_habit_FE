@@ -5,7 +5,7 @@ import {
   FocusEvent, 
   DailySummary,
   WeeklySummary,
-  ApiResponse 
+  APIResponse 
 } from '@/types/database'
 import { DailyReportData as DailyReportType, FocusScorePoint } from '@/types/dailyReport'
 
@@ -20,7 +20,7 @@ export class ReportService {
   static async generateDailyReport(
     userId: string, 
     date: string
-  ): Promise<ApiResponse<DailyReportType>> {
+  ): Promise<APIResponse<DailyReportType>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -111,7 +111,7 @@ export class ReportService {
     userId: string, 
     date: string,
     supabaseClient: any
-  ): Promise<ApiResponse<DailyReportType>> {
+  ): Promise<APIResponse<DailyReportType>> {
     try {
       // 1. 해당 날짜의 집중 세션 조회
       const { data: sessions, error: sessionsError } = await supabaseClient
@@ -522,7 +522,7 @@ export class ReportService {
     userId: string,
     year: number,
     week: number
-  ): Promise<ApiResponse<any>> {
+  ): Promise<APIResponse<any>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -551,7 +551,7 @@ export class ReportService {
   static async upsertDailySummary(
     userId: string,
     date: string
-  ): Promise<ApiResponse<DailySummary>> {
+  ): Promise<APIResponse<DailySummary>> {
     try {
       const supabase = supabaseBrowser()
       
@@ -620,7 +620,7 @@ export class ReportService {
     userId: string,
     date: string,
     supabaseClient: any
-  ): Promise<ApiResponse<DailySummary>> {
+  ): Promise<APIResponse<DailySummary>> {
     try {
       // 해당 날짜의 데이터 집계
       const { data: sessions, error: sessionsError } = await supabaseClient

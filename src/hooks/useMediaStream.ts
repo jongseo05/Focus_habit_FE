@@ -87,32 +87,35 @@ export const useMediaStream = () => {
   // 미디어 스트림 요청
   const requestMediaStream = useCallback(async (constraints: MediaStreamConstraints = { video: true }) => {
     try {
+      console.log('[REQUEST_MEDIA_STREAM] 스트림 요청 시작:', constraints)
+      
       // 브라우저 환경에서만 실행
       if (typeof window === 'undefined' || !navigator.mediaDevices) {
         throw new Error('브라우저 환경이 아니거나 미디어 디바이스를 지원하지 않습니다.')
       }
 
-      // 이미 유효한 스트림이 있다면 재사용
-      if (streamRef.current) {
-        const tracks = streamRef.current.getTracks()
-        if (tracks.length > 0 && tracks[0].readyState === 'live') {
-          setState(prev => ({
-            ...prev,
-            stream: streamRef.current,
-            isLoading: false,
-            isPermissionGranted: true,
-            isPermissionDenied: false,
-            error: null,
-          }))
-          return streamRef.current
-        }
-      }
-
+      // 로딩 상태 시작
       setState(prev => ({ ...prev, isLoading: true, error: null }))
 
+      // getUserMedia 호출
+      console.log('[REQUEST_MEDIA_STREAM] navigator.mediaDevices.getUserMedia 호출')
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      
+      console.log('[REQUEST_MEDIA_STREAM] 스트림 생성 성공:', {
+        streamId: stream.id,
+        active: stream.active,
+        tracks: stream.getTracks().map(t => ({
+          kind: t.kind,
+          label: t.label,
+          enabled: t.enabled,
+          readyState: t.readyState
+        }))
+      })
+
+      // 스트림 참조 저장
       streamRef.current = stream
 
+      // 상태 업데이트
       setState(prev => ({
         ...prev,
         stream,
@@ -122,6 +125,7 @@ export const useMediaStream = () => {
         error: null,
       }))
 
+      console.log('[REQUEST_MEDIA_STREAM] 상태 업데이트 완료')
       return stream
     } catch (error: any) {
       
@@ -242,45 +246,155 @@ export const useMediaStream = () => {
   // 스트림 시작
   const startStream = useCallback(async (): Promise<boolean> => {
     try {
+      console.log('[MEDIA_STREAM] startStream 호출됨')
+      
       // 기존 스트림이 있고 유효한지 확인
       if (streamRef.current) {
         const tracks = streamRef.current.getTracks()
+        console.log('[MEDIA_STREAM] 기존 스트림 확인:', {
+          hasStream: !!streamRef.current,
+          tracksCount: tracks.length,
+          trackStates: tracks.map(t => ({ kind: t.kind, readyState: t.readyState }))
+        })
         
-        if (tracks.length > 0 && tracks[0].readyState === 'live') {
-          // 이미 유효한 스트림이 있고 상태가 동일하면 불필요한 업데이트 방지
-          setState(prev => {
-            if (prev.stream === streamRef.current && !prev.error) {
-              return prev // 상태 변경하지 않음
-            }
-            return { ...prev, stream: streamRef.current, error: null }
-          })
+        if (tracks.length > 0 && tracks.some(track => track.readyState === 'live')) {
+          console.log('[MEDIA_STREAM] 기존 스트림이 유효함, 재사용')
+          
+          // 상태 동기화
+          setState(prev => ({
+            ...prev, 
+            stream: streamRef.current, 
+            error: null,
+            isLoading: false,
+            isPermissionGranted: true,
+            isPermissionDenied: false
+          }))
           return true
         } else {
+          console.log('[MEDIA_STREAM] 기존 스트림이 무효함, 정리')
           // 기존 스트림이 무효하면 정리
           streamRef.current.getTracks().forEach(track => track.stop())
           streamRef.current = null
         }
       }
 
-      // 새 스트림 요청 (고해상도로)
-      const stream = await requestMediaStream({
-        video: {
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          frameRate: { ideal: 30, min: 15 }
+      console.log('[MEDIA_STREAM] 새 스트림 요청 시작')
+      
+      // 새 스트림 요청 (점진적 품질 다운그레이드)
+      const streamConstraints = [
+        // 고품질 시도
+        {
+          video: {
+            width: { ideal: 1280, min: 640 },
+            height: { ideal: 720, min: 480 },
+            frameRate: { ideal: 30, min: 15 }
+          }
+        },
+        // 중품질 시도
+        {
+          video: {
+            width: { ideal: 640, min: 320 },
+            height: { ideal: 480, min: 240 },
+            frameRate: { ideal: 24, min: 10 }
+          }
+        },
+        // 저품질 시도
+        {
+          video: {
+            width: 320,
+            height: 240,
+            frameRate: 15
+          }
+        },
+        // 최소 품질 시도
+        { video: true }
+      ]
+      
+      let lastError = null
+      
+      for (let i = 0; i < streamConstraints.length; i++) {
+        const constraints = streamConstraints[i]
+        console.log(`[MEDIA_STREAM] 스트림 시도 ${i + 1}/${streamConstraints.length}:`, constraints)
+        
+        try {
+          const stream = await requestMediaStream(constraints)
+          
+          if (stream && stream.getTracks().length > 0) {
+            console.log('[MEDIA_STREAM] 스트림 생성 성공:', {
+              streamId: stream.id,
+              tracksCount: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length
+            })
+            
+            // 중요: 상태 업데이트를 동기적으로 처리하고 확인
+            console.log('[MEDIA_STREAM] 상태 업데이트 시작...')
+            
+            // streamRef 업데이트
+            streamRef.current = stream
+            
+            setState(prev => {
+              const newState = { 
+                ...prev, 
+                stream, 
+                error: null,
+                isLoading: false,
+                isPermissionGranted: true,
+                isPermissionDenied: false
+              }
+              console.log('[MEDIA_STREAM] 상태 업데이트:', {
+                prevStream: !!prev.stream,
+                newStream: !!newState.stream,
+                prevError: prev.error,
+                newError: newState.error,
+                prevPermissionGranted: prev.isPermissionGranted,
+                newPermissionGranted: newState.isPermissionGranted
+              })
+              return newState
+            })
+            
+            // 상태 업데이트 확인을 위한 짧은 대기
+            await new Promise(resolve => setTimeout(resolve, 50))
+            
+            console.log('[MEDIA_STREAM] 상태 업데이트 완료, 현재 streamRef:', {
+              streamRefExists: !!streamRef.current,
+              streamRefId: streamRef.current?.id,
+              streamRefTracks: streamRef.current?.getTracks()?.length || 0
+            })
+            
+            return true
+          } else {
+            console.warn('[MEDIA_STREAM] 스트림은 생성되었지만 트랙이 없음')
+          }
+        } catch (error) {
+          console.warn(`[MEDIA_STREAM] 스트림 시도 ${i + 1} 실패:`, error)
+          lastError = error
+          continue
         }
-      })
-      if (stream) {
-        setState(prev => ({ ...prev, stream, error: null }))
-        return true
       }
-      return false
-    } catch (error) {
+      
+      // 모든 시도가 실패한 경우
+      console.error('[MEDIA_STREAM] 모든 스트림 생성 시도 실패, 마지막 오류:', lastError)
+      
       setState(prev => ({ 
         ...prev, 
         stream: null, 
-        error: '스트림 시작에 실패했습니다.' 
+        error: '스트림 시작에 실패했습니다. 카메라 연결을 확인해주세요.',
+        isLoading: false
       }))
+      
+      return false
+      
+    } catch (error) {
+      console.error('[MEDIA_STREAM] startStream 예외 오류:', error)
+      
+      setState(prev => ({ 
+        ...prev, 
+        stream: null, 
+        error: '스트림 시작에 실패했습니다.',
+        isLoading: false
+      }))
+      
       return false
     }
   }, [requestMediaStream])

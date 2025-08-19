@@ -1,169 +1,122 @@
+// =====================================================
+// 스터디룸 참가자 목록 API
+// =====================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSimpleSuccessResponse, 
+  createSimpleErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '@/lib/api/standardResponse'
 
 // GET: 스터디룸 참가자 목록 조회
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ roomId: string }> }
 ) {
-  const { roomId } = await params
-  console.log('참가자 목록 API 호출:', { roomId })
-  
   try {
+    const { roomId } = await params
     const supabase = await supabaseServer()
     
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      console.error('인증 실패:', authError)
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      )
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
     
-    console.log('인증된 사용자:', { userId: user.id, email: user.email })
-
-    // 현재 참가 중인 참가자 목록 조회 (left_at이 null인 경우)
+    // 1. 먼저 참가자 목록 조회
+    const { data: roomParticipants, error: participantsError } = await supabase
+      .from('room_participants')
+      .select(`
+        participant_id,
+        user_id,
+        room_id,
+        is_host,
+        joined_at,
+        left_at,
+        current_focus_score,
+        is_connected,
+        last_activity
+      `)
+      .eq('room_id', roomId)
+      .is('left_at', null) // 아직 나가지 않은 참가자만
+      .order('joined_at', { ascending: true })
     
-    try {
-      // 먼저 현재 사용자가 이 룸에 참가했는지 확인
-      const { data: currentParticipant, error: checkError } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId)
-        .eq('user_id', user.id)
-        .single()
+    if (participantsError) {
+      console.error('참가자 목록 조회 실패:', participantsError)
+      return createSimpleErrorResponse('참가자 목록 조회에 실패했습니다.', 500)
+    }
 
-      // 참가하지 않았다면 자동으로 참가
-      if (!currentParticipant) {
-        const { error: joinError } = await supabase
-          .from('room_participants')
-          .insert({
-            room_id: roomId,
-            user_id: user.id,
-            is_host: false,
-            joined_at: new Date().toISOString(),
-            is_connected: true,
-            last_activity: new Date().toISOString()
-          })
+    if (!roomParticipants || roomParticipants.length === 0) {
+      return createSimpleSuccessResponse([], '참가자가 없습니다.')
+    }
 
-        if (joinError) {
-          console.error('자동 참가 실패:', joinError)
-        }
-      } else if (currentParticipant.left_at) {
-        // 나간 후 다시 참가하는 경우
-        const { error: rejoinError } = await supabase
-          .from('room_participants')
-          .update({
-            left_at: null,
-            joined_at: new Date().toISOString(),
-            is_connected: true,
-            last_activity: new Date().toISOString()
-          })
-          .eq('room_id', roomId)
-          .eq('user_id', user.id)
+    // 2. 참가자들의 user_id로 프로필 정보 조회 (user_profile 테이블 시도)
+    const userIds = roomParticipants.map(p => p.user_id)
+    let profiles: any[] = []
+    
+    // 먼저 user_profile 테이블 시도
+    const { data: userProfiles, error: userProfileError } = await supabase
+      .from('user_profile')
+      .select(`
+        user_id,
+        display_name,
+        avatar_url,
+        status
+      `)
+      .in('user_id', userIds)
 
-        if (rejoinError) {
-          console.error('재참가 실패:', rejoinError)
-        }
-      }
-
-      // 잠시 대기 후 참가자 목록 조회 (트랜잭션 완료 대기)
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      // 참가자 목록 조회 (RLS 문제를 피하기 위해 조인 없이)
-      console.log('참가자 목록 조회 시작')
-      const { data: participants, error } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId)
-        .is('left_at', null)
-        .order('joined_at', { ascending: true })
-
-      if (error) {
-        console.error('참가자 목록 조회 실패:', error)
-        return NextResponse.json({
-          participants: [],
-          count: 0
-        })
-      }
+    if (!userProfileError && userProfiles) {
+      profiles = userProfiles
+    } else {
+      // user_profile 실패 시 profiles 테이블 시도
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select(`
+          user_id,
+          display_name,
+          avatar_url,
+          status
+        `)
+        .in('user_id', userIds)
       
-      console.log('참가자 목록 조회 결과:', { 
-        count: participants?.length || 0, 
-        participants: participants?.map(p => ({ user_id: p.user_id, is_host: p.is_host }))
-      })
+      if (!profilesError && profilesData) {
+        profiles = profilesData
+      } else {
+        console.error('프로필 조회 실패 (user_profile):', userProfileError)
+        console.error('프로필 조회 실패 (profiles):', profilesError)
+        // 프로필 조회 실패해도 기본 정보로 진행
+      }
+    }
 
-      // 각 참가자의 사용자 정보를 개별적으로 가져오기
-      const formattedParticipants = []
-      for (const participant of participants || []) {
-        try {
-          // 사용자 정보 조회 (profiles 테이블에서 조회)
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('display_name, avatar_url')
-            .eq('user_id', participant.user_id)
-            .single()
-          
-          if (profileError) {
-            console.error(`사용자 ${participant.user_id} 프로필 조회 실패:`, profileError)
-            // 에러가 있어도 기본 정보로 계속 진행
-            formattedParticipants.push({
-              ...participant,
-              user: {
-                name: '사용자',
-                avatar_url: null
-              }
-            })
-          } else {
-            formattedParticipants.push({
-              ...participant,
-              user: {
-                name: profileData?.display_name || '사용자',
-                avatar_url: profileData?.avatar_url || null
-              }
-            })
-          }
-        } catch (userFetchError) {
-          console.error(`사용자 ${participant.user_id} 프로필 조회 중 에러:`, userFetchError)
-          // 에러가 있어도 기본 정보로 계속 진행
-          formattedParticipants.push({
-            ...participant,
-            user: {
-              name: '사용자',
-              avatar_url: null
-            }
-          })
+    // 3. 데이터 병합 및 변환
+    const formattedParticipants = roomParticipants.map(p => {
+      const profile = profiles?.find(prof => prof.user_id === p.user_id)
+      
+      return {
+        participant_id: p.participant_id,
+        user_id: p.user_id,
+        room_id: p.room_id,
+        is_host: p.is_host || false,
+        joined_at: p.joined_at,
+        left_at: p.left_at,
+        focus_score: p.current_focus_score,
+        last_activity: p.last_activity || p.joined_at,
+        is_connected: p.is_connected || true,
+        user: {
+          name: profile?.display_name || `사용자-${p.user_id.slice(-4)}`,
+          avatar_url: profile?.avatar_url || null
         }
       }
-
-      const participantCount = formattedParticipants.length
-      console.log('최종 참가자 목록 응답:', { 
-        count: participantCount, 
-        participants: formattedParticipants.map(p => ({ 
-          user_id: p.user_id, 
-          name: p.user.name, 
-          is_host: p.is_host 
-        }))
-      })
-      return NextResponse.json({
-        participants: formattedParticipants,
-        count: participantCount
-      })
-    } catch (innerError) {
-      console.error('참가자 처리 중 에러:', innerError)
-      return NextResponse.json({
-        participants: [],
-        count: 0
-      })
-    }
-  } catch (error) {
-    console.error('=== 참가자 목록 조회 실패 ===')
-    console.error('에러:', error)
-    return NextResponse.json(
-      { error: '참가자 목록을 불러오는데 실패했습니다.' },
-      { status: 500 }
+    })
+    
+    return createSimpleSuccessResponse(
+      formattedParticipants, 
+      `${formattedParticipants.length}명의 참가자를 조회했습니다.`
     )
+  } catch (error) {
+    return handleAPIError(error, '참가자 목록 조회')
   }
 }

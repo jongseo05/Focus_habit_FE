@@ -453,7 +453,7 @@ export class FrameStreamer {
   // 연속 실패 처리
   private handleContinuousFailure(reason: string): void {
     // 이미 스트리밍이 중단된 상태면 오류 리포트하지 않음
-    if (!this.isRunning) {
+    if (!this.isStreaming) {
       return
     }
     
@@ -474,7 +474,6 @@ export class FrameStreamer {
   // 스트리밍 중지 (고급 메모리 정리 포함)
   stop(): void {
     // 먼저 실행 상태를 false로 설정하여 진행 중인 작업들이 중단되도록 함
-    this.isRunning = false
     this.isStreaming = false
     
     if (this.intervalId) {

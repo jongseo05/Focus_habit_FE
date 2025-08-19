@@ -1,34 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { 
+  createSimpleSuccessResponse, 
+  createSimpleErrorResponse, 
+  requireAuth, 
+  handleAPIError
+} from '@/lib/api/standardResponse'
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 현재 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 })
+    // 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
 
     // FormData에서 파일 추출
     const formData = await request.formData()
     const file = formData.get('file') as File
     
     if (!file) {
-      return NextResponse.json({ error: '파일이 필요합니다.' }, { status: 400 })
+      return createSimpleErrorResponse('파일이 필요합니다.', 400)
     }
 
     // 파일 타입 검증
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: '지원하지 않는 파일 형식입니다.' }, { status: 400 })
+      return createSimpleErrorResponse('지원하지 않는 파일 형식입니다.', 400)
     }
 
     // 파일 크기 검증 (5MB)
     const maxSize = 5 * 1024 * 1024 // 5MB
     if (file.size > maxSize) {
-      return NextResponse.json({ error: '파일 크기는 5MB를 초과할 수 없습니다.' }, { status: 400 })
+      return createSimpleErrorResponse('파일 크기는 5MB를 초과할 수 없습니다.', 400)
     }
 
     // 파일명 생성 (사용자 ID + 타임스탬프 + 확장자)
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('이미지 업로드 실패:', uploadError)
-      return NextResponse.json({ error: '이미지 업로드에 실패했습니다.' }, { status: 500 })
+      return createSimpleErrorResponse('이미지 업로드에 실패했습니다.', 500)
     }
 
     // 업로드된 이미지의 공개 URL 생성
@@ -81,18 +88,15 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('프로필 업데이트 실패:', updateError)
-      return NextResponse.json({ error: '프로필 업데이트에 실패했습니다.' }, { status: 500 })
+      return createSimpleErrorResponse('프로필 업데이트에 실패했습니다.', 500)
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      avatar_url: publicUrl,
-      message: '프로필 이미지가 성공적으로 업로드되었습니다.'
-    })
+    return createSimpleSuccessResponse({ 
+      avatar_url: publicUrl
+    }, '프로필 이미지가 성공적으로 업로드되었습니다.')
 
   } catch (error) {
-    console.error('프로필 이미지 업로드 오류:', error)
-    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
+    return handleAPIError(error, '프로필 이미지 업로드')
   }
 }
 
@@ -101,11 +105,12 @@ export async function DELETE(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
     
-    // 현재 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 })
+    // 인증 확인
+    const authResult = await requireAuth(supabase)
+    if (authResult instanceof NextResponse) {
+      return authResult
     }
+    const { user } = authResult
 
     // 현재 프로필 이미지 URL 가져오기
     const { data: profile, error: profileError } = await supabase
@@ -115,7 +120,7 @@ export async function DELETE(request: NextRequest) {
       .single()
 
     if (profileError || !profile?.avatar_url) {
-      return NextResponse.json({ error: '삭제할 이미지가 없습니다.' }, { status: 404 })
+      return createSimpleErrorResponse('삭제할 이미지가 없습니다.', 404)
     }
 
     // Storage에서 이미지 삭제
@@ -141,17 +146,16 @@ export async function DELETE(request: NextRequest) {
 
     if (updateError) {
       console.error('프로필 업데이트 실패:', updateError)
-      return NextResponse.json({ error: '프로필 업데이트에 실패했습니다.' }, { status: 500 })
+      return createSimpleErrorResponse('프로필 업데이트에 실패했습니다.', 500)
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: '프로필 이미지가 성공적으로 삭제되었습니다.'
-    })
+    return createSimpleSuccessResponse(
+      { avatar_url: null }, 
+      '프로필 이미지가 성공적으로 삭제되었습니다.'
+    )
 
   } catch (error) {
-    console.error('프로필 이미지 삭제 오류:', error)
-    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
+    return handleAPIError(error, '프로필 이미지 삭제')
   }
 }
 

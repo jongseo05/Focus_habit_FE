@@ -3,7 +3,7 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { VideoOff } from 'lucide-react'
 import { VideoGrid } from './VideoGrid'
-import { FocusScoreChart } from './FocusScoreChart'
+import MultiParticipantFocusChart from '../MultiParticipantFocusChart'
 import type { ParticipantWithUser } from '@/types/social'
 
 interface MainTabProps {
@@ -61,9 +61,15 @@ export function MainTab({
       )}
 
       {/* 집중도 차트 */}
-      <FocusScoreChart 
-        participants={participants}
-        currentUserId={currentUserId}
+      <MultiParticipantFocusChart
+        participants={participants.map(participant => ({
+          userId: participant.user_id,
+          userName: participant.user.name,
+          focusHistory: [], // 실제 집중도 히스토리 데이터가 있다면 여기에 매핑
+          currentScore: 0, // 실제 현재 집중도 점수가 있다면 여기에 매핑
+          isOnline: participant.is_connected
+        }))}
+        timeRange={10}
       />
     </div>
   )

@@ -353,6 +353,7 @@ export const useFocusSessionState = () => ({
   elapsed: useFocusSessionStore((state) => state.elapsed),
   focusScore: useFocusSessionStore((state) => state.focusScore),
   startTime: useFocusSessionStore((state) => state.startTime),
+  currentSessionId: useFocusSessionStore((state) => state.currentSessionId),
   formatTime: useFocusSessionStore((state) => state.formatTime),
   getDuration: useFocusSessionStore((state) => state.getDuration),
   isSessionActive: useFocusSessionStore((state) => state.isSessionActive)

@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # Focus Habit Frontend - 최적화된 Cursor Rules
 
 ## 프로젝트 개요
@@ -503,6 +499,240 @@ const formatKoreanDate = (dateString: string) => {
   const date = parseISO(dateString)
   return isValid(date) ? format(date, 'yyyy년 MM월 dd일', { locale: ko }) : ''
 }
+```
+
+## 빌드 오류 방지 가이드라인
+
+### TypeScript 타입 안전성 강화
+
+#### 1. useRef 초기값 필수 설정
+```typescript
+// ✅ React 19 호환성 - 올바른 초기값 설정
+const timerRef = useRef<NodeJS.Timeout | null>(null)
+const intervalRef = useRef<number | null>(null)
+const elementRef = useRef<HTMLDivElement | null>(null)
+
+// ❌ 초기값 없이 사용 금지
+const timerRef = useRef<NodeJS.Timeout>()  // 오류 발생
+const intervalRef = useRef<number>()       // 오류 발생
+```
+
+#### 2. 타입 정의 일관성 유지
+```typescript
+// ✅ 인터페이스 우선 사용, 명시적 타입 정의
+interface ParticipantWithUser {
+  user_id: string
+  user: User
+  current_focus_score: number | null
+  joined_at: string
+}
+
+// ❌ any 타입 사용 금지, 타입 추론에만 의존 금지
+const participant: any = { ... }  // 오류 발생
+const score = data.score          // 타입 불명확
+```
+
+#### 3. API 응답 타입 통일
+```typescript
+// ✅ 표준 API 응답 형태 사용
+interface APIResponse<T = any> {
+  success: boolean
+  data?: T
+  error?: string
+  message?: string
+}
+
+// ❌ 혼재된 응답 형태 사용 금지
+interface ApiResponse<T> { ... }  // 대문자로 통일
+interface Response<T> { ... }     // 너무 일반적인 이름
+```
+
+### Next.js API Routes 안전성
+
+#### 1. 모듈 export 규칙
+```typescript
+// ✅ 명시적 함수 export
+export async function GET(request: NextRequest) { ... }
+export async function POST(request: NextRequest) { ... }
+
+// ❌ default export 사용 금지
+export default async function handler(req: NextRequest) { ... }  // 오류 발생
+```
+
+#### 2. 타입 import 경로 검증
+```typescript
+// ✅ 절대 경로 사용 권장
+import type { User } from '@/types/user'
+import { supabaseServer } from '@/lib/supabase/server'
+
+// ❌ 상대 경로 오타 주의
+import type { User } from '../../../types/user'  // 경로 오타 위험
+```
+
+### WebSocket 타입 안전성
+
+#### 1. 이벤트 핸들러 타입 매칭
+```typescript
+// ✅ WebSocketEventHandlers 타입과 일치하는 메서드 시그니처
+interface WebSocketEventHandlers {
+  onOpen: (event: Event) => void
+  onClose: (event: CloseEvent) => void
+  onMessage: (message: WebSocketMessage) => void
+  onError: (error: Event) => void
+}
+
+// ❌ 타입 불일치 메서드
+private handleConnect(): void { ... }        // Event 매개변수 누락
+private handleDisconnect(): void { ... }     // CloseEvent 매개변수 누락
+```
+
+#### 2. 메시지 타입 캐스팅 안전성
+```typescript
+// ✅ 타입 가드와 함께 안전한 캐스팅
+private handleMessage(message: WebSocketMessage): void {
+  try {
+    // 타입 가드로 검증
+    if (message.type === 'focus_update' && message.data?.score !== undefined) {
+      const focusMessage = message as FocusUpdateMessage
+      this.handleFocusUpdate(focusMessage)
+    }
+  } catch (error) {
+    console.error('메시지 처리 오류:', error)
+  }
+}
+
+// ❌ 무분별한 타입 캐스팅
+const data = message as any  // 타입 안전성 상실
+```
+
+### 상태 관리 타입 안전성
+
+#### 1. Zustand 스토어 타입 정의
+```typescript
+// ✅ 완전한 상태 타입 정의
+interface DashboardState {
+  isRunning: boolean
+  isPaused: boolean
+  elapsed: number
+  focusScore: number
+  // 모든 사용되는 프로퍼티 포함
+}
+
+// ❌ 부분적 타입 정의
+interface DashboardState {
+  isRunning: boolean
+  // 누락된 프로퍼티들로 인한 오류 발생
+}
+```
+
+#### 2. 스토어 선택자 타입 검증
+```typescript
+// ✅ 올바른 스토어에서 상태 선택
+const focusSession = useFocusSessionStore((state) => ({
+  isRunning: state.isRunning,
+  isPaused: state.isPaused,
+  // focusSessionStore에 실제로 존재하는 프로퍼티만 선택
+}))
+
+// ❌ 존재하지 않는 스토어 사용
+const focusSession = useDashboardStore((state) => ({
+  isRunning: state.isRunning,  // DashboardStore에 없을 수 있음
+}))
+```
+
+### 컴포넌트 Props 타입 안전성
+
+#### 1. 필수 Props 검증
+```typescript
+// ✅ 모든 사용되는 props 타입 정의
+interface FriendSearchProps {
+  onUserSelect?: (user: User) => void
+  mode?: 'search' | 'add'
+  onClose?: () => void  // 사용되는 모든 props 포함
+}
+
+// ❌ 누락된 props 타입
+interface FriendSearchProps {
+  onUserSelect?: (user: User) => void
+  // onClose 누락으로 인한 오류 발생
+}
+```
+
+#### 2. 조건부 렌더링 타입 안전성
+```typescript
+// ✅ 타입 가드를 통한 안전한 조건부 렌더링
+{participant.current_focus_score !== null && 
+ participant.current_focus_score !== undefined && (
+  <span>{Math.round(participant.current_focus_score)}점</span>
+)}
+
+// ❌ 존재하지 않는 프로퍼티 접근
+{participant.focus_score && (  // focus_score는 존재하지 않음
+  <span>{participant.focus_score}점</span>
+)}
+```
+
+### 개발 워크플로우 개선
+
+#### 1. 빌드 전 타입 체크
+```bash
+# ✅ 빌드 전 TypeScript 타입 검증
+npx tsc --noEmit
+pnpm lint
+pnpm build
+
+# ❌ 타입 체크 없이 빌드
+pnpm build  # 타입 오류 발견 시 빌드 실패
+```
+
+#### 2. IDE 설정 권장사항
+```json
+// .vscode/settings.json
+{
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "typescript.suggest.autoImports": true,
+  "typescript.validate.enable": true,
+  "typescript.preferences.importModuleSpecifier": "non-relative"
+}
+```
+
+#### 3. 자동화된 타입 검증
+```json
+// package.json scripts
+{
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "prebuild": "npm run type-check",
+    "build": "next build"
+  }
+}
+```
+
+### 오류 방지 체크리스트
+
+#### 개발 시 확인사항
+- [ ] useRef에 적절한 초기값 설정 (null, undefined 등)
+- [ ] 모든 컴포넌트 props 타입 정의 완료
+- [ ] API 응답 타입 일관성 확인
+- [ ] WebSocket 이벤트 핸들러 타입 매칭
+- [ ] Zustand 스토어 상태 타입 완성도 확인
+- [ ] 조건부 렌더링에서 프로퍼티 존재 여부 검증
+
+#### 빌드 전 확인사항
+- [ ] `npx tsc --noEmit` 실행하여 타입 오류 없음 확인
+- [ ] `pnpm lint` 실행하여 코드 품질 검증
+- [ ] 모든 import 경로 정확성 확인
+- [ ] 사용되지 않는 import 제거
+- [ ] 타입 정의 파일(.d.ts) 충돌 확인
+
+#### 코드 리뷰 시 확인사항
+- [ ] 타입 안전성 검증
+- [ ] null/undefined 처리 로직 확인
+- [ ] 에러 바운더리 및 예외 처리 검토
+- [ ] 성능 최적화 기회 식별
+- [ ] 접근성 및 사용성 개선점 검토
+
+이 규칙들을 따라 일관성 있고 유지보수 가능한 코드를 작성하세요.
 ```
 
 이 규칙들을 따라 일관성 있고 유지보수 가능한 코드를 작성하세요.

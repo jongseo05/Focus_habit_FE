@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { useDashboardStore, useChartState } from '@/stores/dashboardStore'
+import { useFocusSessionStore } from '@/stores/focusSessionStore'
 import { useTodayStats, useWeeklyDetailedData, useDashboardInsights } from '@/hooks/useDashboardData'
 
 // 메모이제이션된 차트 데이터 처리
@@ -164,7 +165,7 @@ export function useOptimizedAnimations() {
 
 // 대시보드 전체 데이터를 위한 통합 훅
 export function useDashboard() {
-  const focusSession = useDashboardStore((state) => ({
+  const focusSession = useFocusSessionStore((state) => ({
     isRunning: state.isRunning,
     isPaused: state.isPaused,
     elapsed: state.elapsed,

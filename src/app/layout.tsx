@@ -4,6 +4,7 @@ import "./globals.css";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { Toaster } from "sonner";
+import { GlobalOnlineStatusProvider } from "@/components/GlobalOnlineStatusProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +38,9 @@ export default function RootLayout({
       >
         <QueryProvider>
           <AuthProvider>
-            {children}
+            <GlobalOnlineStatusProvider>
+              {children}
+            </GlobalOnlineStatusProvider>
             <Toaster />
           </AuthProvider>
         </QueryProvider>

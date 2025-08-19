@@ -257,30 +257,68 @@ export class WebSocketClient {
       })
       
       try {
-        const message: WebSocketMessage = JSON.parse(event.data)
-        console.log('📨 파싱된 메시지:', message)
-        
-        // Pong 메시지 처리
-        if (message.type === 'pong') {
-          this.handlePongMessage(message as PongMessage)
+        // 먼저 JSON 파싱 시도
+        let parsedData: any
+        try {
+          parsedData = JSON.parse(event.data)
+          console.log('📨 JSON 파싱 성공:', parsedData)
+        } catch (parseError) {
+          console.error('📨 JSON 파싱 실패:', parseError)
+          console.log('📨 원본 데이터:', event.data)
           return
         }
 
-        // 인증 응답 처리
-        if (message.type === 'auth_success') {
-          this.isAuthenticated = true
-        }
+        // 서버에서 보내는 집중도 분석 응답 형식 확인
+        if (parsedData && typeof parsedData === 'object') {
+          // 집중도 분석 응답인지 확인 (prediction_result가 있는 경우)
+          if (parsedData.prediction_result && parsedData.timestamp) {
+            console.log('✅ 집중도 분석 응답 감지:', parsedData)
+            
+            // 집중도 분석 응답을 이벤트 핸들러로 직접 전달
+            try {
+              console.log('📨 집중도 분석 데이터를 이벤트 핸들러로 전달')
+              this.eventHandlers.onMessage?.(parsedData)
+            } catch (handlerError) {
+              console.error('이벤트 핸들러 호출 실패:', handlerError)
+            }
+            return
+          }
+          
+          // 기존 WebSocketMessage 형식 처리
+          if (parsedData.type) {
+            const message: WebSocketMessage = parsedData
+            console.log('📨 WebSocketMessage 형식:', message)
+            
+            // Pong 메시지 처리
+            if (message.type === 'pong') {
+              this.handlePongMessage(message as PongMessage)
+              return
+            }
 
-        try {
-          console.log('📨 WebSocket 클라이언트에서 이벤트 핸들러 호출:', message)
-          this.eventHandlers.onMessage?.(message)
-        } catch (error) {
-          console.error('이벤트 핸들러 호출 실패:', error)
+            // 인증 응답 처리
+            if (message.type === 'auth_success') {
+              this.isAuthenticated = true
+            }
+
+            try {
+              console.log('📨 WebSocket 클라이언트에서 이벤트 핸들러 호출:', message)
+              this.eventHandlers.onMessage?.(message)
+            } catch (error) {
+              console.error('이벤트 핸들러 호출 실패:', error)
+            }
+          } else {
+            // type이 없는 일반 JSON 객체도 이벤트 핸들러로 전달
+            console.log('📨 일반 JSON 객체를 이벤트 핸들러로 전달:', parsedData)
+            try {
+              this.eventHandlers.onMessage?.(parsedData)
+            } catch (handlerError) {
+              console.error('일반 JSON 객체 이벤트 핸들러 호출 실패:', handlerError)
+            }
+          }
         }
       } catch (error) {
-        console.error('WebSocket 메시지 파싱 실패:', error)
+        console.error('WebSocket 메시지 처리 실패:', error)
         console.log('📨 원본 데이터:', event.data)
-        // 파싱 에러 처리
       }
     }
 

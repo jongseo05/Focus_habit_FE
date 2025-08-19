@@ -173,7 +173,6 @@ export default function HybridAudioPipeline() {
     if (currentState === 'inactive' || currentState === undefined) {
       try {
         recognitionRef.current.start();
-        console.log('🎤 음성 인식 재시작 성공');
         return true;
       } catch (error) {
         if (error instanceof Error && error.message.includes('already started')) {
@@ -717,7 +716,6 @@ export default function HybridAudioPipeline() {
 
     recognition.onstart = () => { 
       setIsSpeechRecognitionActive(true);
-      console.log('🎤 Speech Recognition 시작됨');
     };
 
     recognition.onresult = (event: any) => {

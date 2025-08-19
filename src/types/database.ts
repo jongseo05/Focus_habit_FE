@@ -1,18 +1,39 @@
 // 새로운 DB 스키마에 맞는 타입 정의
 
+import type { 
+  UUID, 
+  Timestamp, 
+  DateString,
+  APIResponse,
+  PaginatedResponse,
+  Insertable,
+  Updatable,
+  ValidationError,
+  ApiError
+} from './base'
+
+// 기본 타입들 re-export
+export type { 
+  UUID, 
+  Timestamp, 
+  DateString,
+  APIResponse,
+  PaginatedResponse,
+  Insertable,
+  Updatable,
+  ValidationError,
+  ApiError
+}
+
+// 사용자 관련 타입들은 profile.ts에서 가져옴
+export type { User, UserProfile } from './profile'
+
 // =====================================================
-// 1. 기본 타입들
+// 2. 데이터베이스 전용 타입
 // =====================================================
 
-export type UUID = string
-export type Timestamp = string // ISO 8601 형식
-export type DateString = string // YYYY-MM-DD 형식
-
-// =====================================================
-// 2. 사용자 관련 타입
-// =====================================================
-
-export interface User {
+// 데이터베이스 전용 사용자 확장 타입 (필요시)
+export interface DatabaseUser {
   user_id: UUID
   email: string
   created_at: Timestamp
@@ -30,23 +51,26 @@ export interface User {
 export interface FocusSession {
   session_id: UUID
   user_id: UUID
+  room_id?: UUID
   started_at: Timestamp
   ended_at?: Timestamp
   goal_min?: number
   context_tag?: string
-  session_type: 'study' | 'work' | 'reading' | 'other'
+  session_type: 'study' | 'work' | 'reading' | 'other' | 'study_room'
   focus_score?: number
   distractions: number
   notes?: string
   created_at: Timestamp
+  updated_at?: Timestamp
 }
 
 export interface CreateFocusSessionData {
   user_id: UUID
+  room_id?: UUID
   started_at: Timestamp
   goal_min?: number
   context_tag?: string
-  session_type?: 'study' | 'work' | 'reading' | 'other'
+  session_type?: 'study' | 'work' | 'reading' | 'other' | 'study_room'
   notes?: string
 }
 
@@ -280,24 +304,7 @@ export interface WeeklyFocusStats {
   avg_score: number
 }
 
-// =====================================================
-// 13. API 응답 타입들
-// =====================================================
 
-export interface ApiResponse<T = any> {
-  success: boolean
-  data?: T
-  error?: string
-  message?: string
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  count: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
 
 // =====================================================
 // 14. 쿼리 파라미터 타입들
@@ -396,30 +403,14 @@ export type DatabaseTable =
   | 'habits'
   | 'habit_records'
 
-export type Insertable<T> = Omit<T, 'created_at' | 'updated_at'>
-export type Updatable<T> = Partial<Omit<T, 'created_at' | 'updated_at'>>
 
-// =====================================================
-// 18. 에러 타입들
-// =====================================================
 
+// 데이터베이스 전용 에러 타입
 export interface DatabaseError {
   code: string
   message: string
   details?: string
   hint?: string
-}
-
-export interface ValidationError {
-  field: string
-  message: string
-  value?: any
-}
-
-export interface ApiError {
-  status: number
-  message: string
-  errors?: ValidationError[]
 } 
 
 // =====================================================
