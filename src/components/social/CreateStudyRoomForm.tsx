@@ -84,16 +84,31 @@ export default function CreateStudyRoomForm({ onClose, onSuccess }: CreateStudyR
       }
 
              console.log('응답이 성공적, 데이터 읽기 시도...')
-       const responseData = await response.json()
-       console.log('응답 데이터:', responseData)
-       
-       // 디버그 API와 원래 API의 응답 구조가 다름
-       const room = responseData.room || responseData
-       console.log('생성된 룸:', room)
-       
-       console.log('룸 페이지로 이동 시도:', `/social/room/${room.room_id}`)
-       // 성공 시 룸 페이지로 직접 이동
-       window.location.href = `/social/room/${room.room_id}`
+      const responseData = await response.json()
+      console.log('응답 데이터:', responseData)
+      
+      // API 응답 구조에 맞게 룸 데이터 추출
+      // createSimpleSuccessResponse는 { success: true, data: room, message: "..." } 형태
+      const room = responseData.data
+      console.log('생성된 룸:', room)
+      
+      // room_id가 존재하는지 확인
+      if (!room || !room.room_id) {
+        console.error('룸 데이터가 올바르지 않습니다:', room)
+        console.error('전체 응답 데이터:', responseData)
+        throw new Error('생성된 룸 정보를 가져올 수 없습니다. 서버 응답을 확인해주세요.')
+      }
+      
+      // room_id가 유효한 UUID 형식인지 확인
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!uuidRegex.test(room.room_id)) {
+        console.error('유효하지 않은 room_id 형식:', room.room_id)
+        throw new Error('생성된 룸 ID가 올바르지 않습니다. 다시 시도해주세요.')
+      }
+      
+      console.log('룸 페이지로 이동 시도:', `/social/room/${room.room_id}`)
+      // 성공 시 룸 페이지로 직접 이동
+      window.location.href = `/social/room/${room.room_id}`
     } catch (err) {
       console.error('=== 전체 에러 ===')
       console.error('에러 타입:', typeof err)

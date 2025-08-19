@@ -18,6 +18,47 @@ export default function StudyRoomPage() {
 
   const roomId = params.roomId as string
 
+  // roomId가 undefined인 경우 즉시 오류 표시
+  if (!roomId || roomId === 'undefined') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 flex items-center justify-center">
+        <Card className="w-full max-w-2xl">
+          <CardContent className="p-8">
+            <div className="text-red-600 mb-6">
+              <h2 className="text-xl font-bold mb-2">잘못된 스터디룸 접근</h2>
+              <p className="font-medium mb-4">
+                스터디룸 ID가 올바르지 않습니다. (roomId: {roomId || 'undefined'})
+              </p>
+              
+              <div className="bg-gray-50 p-4 rounded-md text-left">
+                <h3 className="font-semibold mb-2">문제 원인:</h3>
+                <div className="text-sm space-y-1">
+                  <p><strong>요청한 roomId:</strong> {roomId || 'undefined'}</p>
+                  <p><strong>현재 URL:</strong> {typeof window !== 'undefined' ? window.location.href : 'N/A'}</p>
+                  <p><strong>시간:</strong> {new Date().toLocaleString()}</p>
+                </div>
+                
+                <div className="mt-4">
+                  <p className="text-sm text-gray-600">
+                    이 문제는 보통 스터디룸 생성 후 리다이렉트 과정에서 발생합니다.
+                    스터디룸 목록으로 돌아가서 다시 시도해주세요.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-center">
+              <Button onClick={handleClose} className="bg-blue-600 hover:bg-blue-700">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                스터디룸 목록으로 돌아가기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   useEffect(() => {
     if (roomId) {
       fetchRoomDetails()

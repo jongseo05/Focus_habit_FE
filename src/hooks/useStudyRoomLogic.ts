@@ -222,8 +222,26 @@ export function useStudyRoomLogic({
 
       if (response.ok) {
         const newRoom = await response.json()
+        
+        // API 응답 구조에 맞게 룸 데이터 추출
+        // createSimpleSuccessResponse는 { success: true, data: room, message: "..." } 형태
+        const room = newRoom.data
+        
+        if (!room || !room.room_id) {
+          console.error('생성된 룸 데이터가 올바르지 않습니다:', room)
+          console.error('전체 응답 데이터:', newRoom)
+          throw new Error('생성된 룸 정보를 가져올 수 없습니다. 서버 응답을 확인해주세요.')
+        }
+        
+        // room_id가 유효한 UUID 형식인지 확인
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (!uuidRegex.test(room.room_id)) {
+          console.error('유효하지 않은 room_id 형식:', room.room_id)
+          throw new Error('생성된 룸 ID가 올바르지 않습니다. 다시 시도해주세요.')
+        }
+        
         // 룸 생성 후 해당 룸으로 이동
-        window.location.href = `/social/room/${newRoom.room_id}`
+        window.location.href = `/social/room/${room.room_id}`
       }
     } catch (error) {
       console.error('스터디룸 생성 실패:', error)
