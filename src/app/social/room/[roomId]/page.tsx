@@ -18,6 +18,49 @@ export default function StudyRoomPage() {
 
   const roomId = params.roomId as string
 
+  // useEffect를 조건부 반환문 이전에 배치 (React Hook 규칙 준수)
+  useEffect(() => {
+    if (roomId && roomId !== 'undefined') {
+      fetchRoomDetails()
+    }
+  }, [roomId])
+
+  const fetchRoomDetails = async () => {
+    try {
+      setLoading(true)
+      
+      // 먼저 디버깅 API로 룸 존재 여부 확인
+      const debugResponse = await fetch(`/api/social/debug-room/${roomId}`)
+      const debugData = await debugResponse.json()
+      setDebugInfo(debugData)
+      
+      // 원래 룸 조회 API 호출
+      const response = await fetch(`/api/social/study-room/${roomId}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        
+        if (response.status === 404) {
+          setError(`스터디룸을 찾을 수 없습니다. (roomId: ${roomId})`)
+        } else {
+          setError(`스터디룸 정보를 불러오는데 실패했습니다. (상태: ${response.status}, 에러: ${JSON.stringify(errorData)})`)
+        }
+        return
+      }
+
+      const roomData = await response.json()
+      setRoom(roomData)
+    } catch (error) {
+      setError(`스터디룸 정보를 불러오는데 실패했습니다. (에러: ${error instanceof Error ? error.message : String(error)})`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClose = () => {
+    router.push('/social')
+  }
+
   // roomId가 undefined인 경우 즉시 오류 표시
   if (!roomId || roomId === 'undefined') {
     return (
@@ -57,48 +100,6 @@ export default function StudyRoomPage() {
         </Card>
       </div>
     )
-  }
-
-  useEffect(() => {
-    if (roomId) {
-      fetchRoomDetails()
-    }
-  }, [roomId])
-
-  const fetchRoomDetails = async () => {
-    try {
-      setLoading(true)
-      
-      // 먼저 디버깅 API로 룸 존재 여부 확인
-      const debugResponse = await fetch(`/api/social/debug-room/${roomId}`)
-      const debugData = await debugResponse.json()
-      setDebugInfo(debugData)
-      
-      // 원래 룸 조회 API 호출
-      const response = await fetch(`/api/social/study-room/${roomId}`)
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        
-        if (response.status === 404) {
-          setError(`스터디룸을 찾을 수 없습니다. (roomId: ${roomId})`)
-        } else {
-          setError(`스터디룸 정보를 불러오는데 실패했습니다. (상태: ${response.status}, 에러: ${JSON.stringify(errorData)})`)
-        }
-        return
-      }
-
-      const roomData = await response.json()
-      setRoom(roomData)
-    } catch (error) {
-      setError(`스터디룸 정보를 불러오는데 실패했습니다. (에러: ${error instanceof Error ? error.message : String(error)})`)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleClose = () => {
-    router.push('/social')
   }
 
   if (loading) {
