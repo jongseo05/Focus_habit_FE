@@ -15,7 +15,7 @@ export const signUp = async (
       email: formData.email,
       password: formData.password,
       options: {
-        emailRedirectTo: options?.emailRedirectTo || `${window.location.origin}/auth/confirm`,
+        emailRedirectTo: options?.emailRedirectTo || process.env.NEXT_PUBLIC_EMAIL_CONFIRM_URL || `${window.location.origin}/auth/confirm`,
         data: {
           name: formData.name,
           ...options?.data
@@ -37,28 +37,58 @@ export const signUp = async (
         let handle = formData.email.split('@')[0]
         let counter = 1
         
-        // handle 중복 확인 및 수정
-        while (true) {
-          const { data: existingProfile } = await supabase
-            .from('profiles')
-            .select('handle')
-            .eq('handle', handle)
-            .single()
-          
-          if (!existingProfile) {
-            break // 중복되지 않는 handle를 찾음
-          }
-          
-          // 중복 시 숫자 추가
-          handle = `${formData.email.split('@')[0]}${counter}`
-          counter++
-          
-          // 무한 루프 방지
-          if (counter > 100) {
-            handle = `${formData.email.split('@')[0]}_${Date.now()}`
+        // handle 중복 확인 및 수정 (더 안전한 방식)
+        let isHandleUnique = false
+        while (!isHandleUnique && counter <= 100) {
+          try {
+            const { data: existingProfile, error: checkError } = await supabase
+              .from('profiles')
+              .select('handle')
+              .eq('handle', handle)
+              .maybeSingle() // single() 대신 maybeSingle() 사용
+            
+            if (checkError) {
+              console.warn('handle 중복 확인 중 오류:', checkError.message)
+              break
+            }
+            
+            if (!existingProfile) {
+              isHandleUnique = true // 중복되지 않는 handle를 찾음
+            } else {
+              // 중복 시 숫자 추가
+              handle = `${formData.email.split('@')[0]}${counter}`
+              counter++
+            }
+          } catch (checkError) {
+            console.warn('handle 중복 확인 중 예외:', checkError)
             break
           }
         }
+        
+        // 무한 루프 방지
+        if (!isHandleUnique) {
+          handle = `${formData.email.split('@')[0]}_${Date.now()}`
+        }
+        
+        console.log('프로필 생성 시도:', { user_id: data.user.id, display_name: formData.name, handle })
+        
+        // 프로필 생성 전 테이블 존재 여부 확인
+        const { data: tableInfo, error: tableError } = await supabase
+          .from('profiles')
+          .select('*')
+          .limit(1)
+        
+        if (tableError) {
+          console.error('profiles 테이블 접근 오류:', tableError)
+          return {
+            success: true,
+            user: data.user,
+            message: '회원가입이 완료되었습니다. 이메일을 확인해주세요. (프로필 설정은 나중에 완료할 수 있습니다.)',
+            warning: `프로필 테이블 접근 오류: ${tableError.message}. 나중에 설정 페이지에서 완료해주세요.`
+          }
+        }
+        
+        console.log('profiles 테이블 접근 성공, 프로필 생성 시도...')
         
         const { error: profileError } = await supabase
           .from('profiles')
@@ -70,17 +100,27 @@ export const signUp = async (
           })
 
         if (profileError) {
-          console.warn('프로필 생성 중 오류:', profileError.message)
+          console.error('프로필 생성 중 오류:', profileError)
+          console.error('프로필 생성 상세 정보:', {
+            message: profileError.message,
+            details: profileError.details,
+            hint: profileError.hint,
+            code: profileError.code,
+            fullError: JSON.stringify(profileError, null, 2)
+          })
+          
           // 프로필 생성 실패 시에도 회원가입은 성공이지만 사용자에게 알림
           return {
             success: true,
             user: data.user,
             message: '회원가입이 완료되었습니다. 이메일을 확인해주세요. (프로필 설정은 나중에 완료할 수 있습니다.)',
-            warning: '프로필 설정에 실패했습니다. 나중에 설정 페이지에서 완료해주세요.'
+            warning: `프로필 설정에 실패했습니다: ${profileError.message}. 나중에 설정 페이지에서 완료해주세요.`
           }
         }
+        
+        console.log('프로필 생성 성공:', handle)
       } catch (profileError) {
-        console.warn('프로필 생성 중 예외 발생:', profileError)
+        console.error('프로필 생성 중 예외 발생:', profileError)
         // 예외 발생 시에도 회원가입은 성공으로 처리
         return {
           success: true,
@@ -190,7 +230,7 @@ export const resetPassword = async (email: string): Promise<AuthResponse> => {
     const supabase = supabaseBrowser()
     
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`
+      redirectTo: process.env.NEXT_PUBLIC_PASSWORD_RESET_URL || `${window.location.origin}/auth/reset-password`
     })
 
     if (error) {
@@ -276,9 +316,7 @@ export const signInWithGoogle = async (): Promise<AuthResponse> => {
     const supabase = supabaseBrowser()
     
     // 개발 환경과 프로덕션 환경에 따른 리디렉션 URL 설정
-    const redirectTo = process.env.NODE_ENV === 'development' 
-      ? `${window.location.origin}/auth/callback`
-      : `${window.location.origin}/auth/callback`
+    const redirectTo = process.env.NEXT_PUBLIC_EMAIL_CONFIRM_URL?.replace('/auth/confirm', '/auth/callback') || `${window.location.origin}/auth/callback`
     
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -314,7 +352,7 @@ export const signInWithApple = async (): Promise<AuthResponse> => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'apple',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`
+        redirectTo: process.env.NEXT_PUBLIC_EMAIL_CONFIRM_URL?.replace('/auth/confirm', '/auth/callback') || `${window.location.origin}/auth/callback`
       }
     })
 

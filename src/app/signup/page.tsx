@@ -186,6 +186,7 @@ function SignUpForm() {
                         placeholder="홍길동"
                         value={formData.name}
                         onChange={(e) => handleInputChange("name", e.target.value)}
+                        autoComplete="name"
                         className={`pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
                           errors.name ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
                         }`}
@@ -213,6 +214,7 @@ function SignUpForm() {
                         placeholder="your@email.com"
                         value={formData.email}
                         onChange={(e) => handleInputChange("email", e.target.value)}
+                        autoComplete="email"
                         className={`pl-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
                           errors.email ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
                         }`}
@@ -240,6 +242,7 @@ function SignUpForm() {
                         placeholder="8자 이상, 대소문자, 숫자 포함"
                         value={formData.password}
                         onChange={(e) => handleInputChange("password", e.target.value)}
+                        autoComplete="new-password"
                         className={`pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
                           errors.password ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
                         }`}
@@ -274,6 +277,7 @@ function SignUpForm() {
                         placeholder="비밀번호를 다시 입력하세요"
                         value={formData.confirmPassword}
                         onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                        autoComplete="new-password"
                         className={`pl-12 pr-12 h-14 bg-white border-slate-200 rounded-xl focus:border-green-500 focus:ring-green-500/20 transition-all duration-200 text-base ${
                           errors.confirmPassword ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
                         }`}
