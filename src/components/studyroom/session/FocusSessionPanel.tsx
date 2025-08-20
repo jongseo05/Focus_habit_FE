@@ -158,22 +158,21 @@ export function FocusSessionPanel({ onSessionComplete }: FocusSessionPanelProps)
       // 집중도 분석 중지
       stopAnalysis()
 
-      // 데이터베이스 업데이트
-      const supabase = supabaseBrowser()
-      
-      const { error: updateError } = await supabase
-        .from('focus_session')
-        .update({
-          ended_at: new Date().toISOString(),
-          focus_score: averageScore,
-          notes: `스터디룸 세션 (${room?.name || '알 수 없음'})`,
-          updated_at: new Date().toISOString()
-        })
-        .eq('session_id', currentSessionId)
+      // 스터디룸 전용 세션 종료 API 호출
+      const response = await fetch(`/api/social/study-room-focus-session?session_id=${currentSessionId}&room_id=${room?.room_id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
 
-      if (updateError) {
-        console.error('세션 업데이트 실패:', updateError)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '세션 종료에 실패했습니다.')
       }
+
+      const result = await response.json()
+      console.log('세션 종료 성공:', result)
 
       // 상태 초기화
       setIsRunning(false)
@@ -194,7 +193,7 @@ export function FocusSessionPanel({ onSessionComplete }: FocusSessionPanelProps)
       console.error('세션 종료 실패:', error)
       addNotification('세션 종료에 실패했습니다.', 'info')
     }
-  }, [currentSessionId, elapsedTime, averageScore, sessionType, room?.name, stopAnalysis, onSessionComplete, addNotification])
+  }, [currentSessionId, elapsedTime, averageScore, sessionType, room?.room_id, stopAnalysis, onSessionComplete, addNotification])
 
   // 시간 포맷팅
   const formatTime = (seconds: number) => {

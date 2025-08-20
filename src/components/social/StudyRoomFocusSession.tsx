@@ -748,11 +748,31 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         console.log('마이크 스트림 정리 완료')
       }
       
-      // 4. UI 상태 리셋
+      // 4. 스터디룸 전용 세션 종료 API 호출
+      const currentSessionId = sessionSync.currentSessionId
+      if (currentSessionId) {
+        console.log('스터디룸 세션 종료 API 호출:', currentSessionId)
+        const response = await fetch(`/api/social/study-room-focus-session?session_id=${currentSessionId}&room_id=${roomId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('스터디룸 세션 종료 API 실패:', errorData)
+        } else {
+          const result = await response.json()
+          console.log('스터디룸 세션 종료 성공:', result)
+        }
+      }
+      
+      // 5. UI 상태 리셋
       setShowWebcam(false)
       setShowAudioPipeline(false)
       
-      // 5. 세션 완료 콜백 호출
+      // 6. 세션 완료 콜백 호출
       if (onSessionComplete && sessionState.elapsed > 0) {
         onSessionComplete({
           duration: sessionState.elapsed,
@@ -771,7 +791,9 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     cleanupDirectMediaStream,
     microphoneStream,
     sessionState.elapsed,
-    onSessionComplete
+    onSessionComplete,
+    sessionSync.currentSessionId,
+    roomId
   ])
 
   return (
