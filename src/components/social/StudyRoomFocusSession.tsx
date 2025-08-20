@@ -11,6 +11,8 @@ import { useFocusSessionState, useFocusSessionActions, useFocusSessionSync } fro
 import { useMicrophoneStream } from '@/hooks/useMediaStream'
 import { useFocusAnalysisWebSocket } from '@/hooks/useFocusAnalysisWebSocket'
 import { useOnlineStatus, useRoomOnlineStatus } from '@/stores/onlineStatusStore'
+import { useStudyRoomPresence } from '@/hooks/useStudyRoomPresence'
+import { RoomPresenceIndicator } from '@/components/studyroom/RoomPresenceIndicator'
 import HybridAudioPipeline from '@/components/HybridAudioPipeline'
 import WebcamAnalysisDisplay from '@/components/WebcamAnalysisDisplay'
 import CameraPermissionLayer from '@/components/CameraPermissionLayer'
@@ -56,6 +58,13 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   const sessionState = useFocusSessionState()
   const sessionActions = useFocusSessionActions()
   const sessionSync = useFocusSessionSync()
+
+  // ✨ 새로운 스터디룸 실시간 입장/퇴장 상태 관리
+  const roomPresence = useStudyRoomPresence({
+    roomId,
+    userId: currentUserId,
+    enabled: true
+  })
 
   // 직접 MediaStream 관리 (useMediaStream 훅 문제 우회)
   const [directMediaStream, setDirectMediaStream] = useState<MediaStream | null>(null)
@@ -474,6 +483,38 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     console.log('=== 세션 시작 함수 호출됨 ===')
     
     try {
+      // ✨ 새로운 단계: 세션 시작 자격 검증
+      console.log('0. 세션 시작 자격 검증 중...')
+      
+      if (!roomPresence.isPresent) {
+        alert('세션을 시작하려면 스터디룸에 입장해야 합니다.')
+        return
+      }
+
+      if (!isCurrentUserOnline) {
+        alert('세션을 시작하려면 온라인 상태여야 합니다.')
+        return
+      }
+
+      // 실시간 참가자 상태 확인
+      const eligibilityResult = await roomPresence.checkSessionEligibility()
+      
+      console.log('🔍 세션 시작 자격 검증 결과:', {
+        canStart: eligibilityResult.canStart,
+        onlineAndPresent: eligibilityResult.onlineAndPresent,
+        totalPresent: eligibilityResult.totalPresent,
+        message: eligibilityResult.message,
+        isCurrentUserPresent: roomPresence.isPresent,
+        isCurrentUserOnline: isCurrentUserOnline
+      })
+      
+      if (!eligibilityResult.canStart) {
+        alert(eligibilityResult.message)
+        return
+      }
+
+      console.log(`✅ 세션 시작 자격 확인 완료: ${eligibilityResult.onlineAndPresent}명의 참가자가 참여 가능`)
+      
       console.log('=== 세션 시작 프로세스 시작 ===')
       
       const startTime = Date.now()
@@ -798,12 +839,29 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   return (
     <div className="space-y-6">
+      {/* ✨ 새로운 실시간 참가자 상태 표시 */}
+      <RoomPresenceIndicator
+        totalPresent={roomPresence.presentParticipants.length}
+        onlineAndPresent={roomPresence.onlineAndPresentCount}
+        canStartSession={roomPresence.canStartSession}
+        isCurrentUserPresent={roomPresence.isPresent}
+      />
+
       {/* 세션 컨트롤 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Brain className="w-5 h-5" />
             스터디룸 집중 세션
+            {roomPresence.isPresent ? (
+              <Badge variant="default" className="text-xs">
+                룸 입장 중
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs">
+                룸 밖
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -868,10 +926,19 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
               <Button 
                 onClick={handleStartSession}
                 className="flex items-center gap-2"
-                disabled={directStreamLoading}
+                disabled={
+                  directStreamLoading || 
+                  !roomPresence.isPresent || 
+                  !isCurrentUserOnline || 
+                  !roomPresence.canStartSession
+                }
               >
                 <Play className="w-4 h-4" />
-                {directStreamLoading ? '준비 중...' : '세션 시작'}
+                {directStreamLoading ? '준비 중...' : 
+                 !roomPresence.isPresent ? '룸에 입장하세요' :
+                 !isCurrentUserOnline ? '온라인 상태가 아닙니다' :
+                 !roomPresence.canStartSession ? '참가자 대기 중' :
+                 '세션 시작'}
               </Button>
             ) : (
               <Button 

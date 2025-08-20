@@ -17,6 +17,12 @@ interface StudyRoomState {
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
   lastActivity: number
   
+  // ✨ 새로운 룸 입장/퇴장 상태 관리
+  roomPresenceStatus: 'entered' | 'left' | 'entering' | 'leaving'
+  presentParticipants: ParticipantWithUser[]
+  onlineAndPresentCount: number
+  canStartSession: boolean
+  
   // 세션 상태
   currentSessionId: string | null
   isSessionRunning: boolean
@@ -59,6 +65,15 @@ interface StudyRoomActions {
   removeParticipant: (userId: string) => void
   updateParticipant: (userId: string, updates: Partial<ParticipantWithUser>) => void
   
+  // ✨ 새로운 룸 입장/퇴장 상태 관리 액션들
+  setRoomPresenceStatus: (status: StudyRoomState['roomPresenceStatus']) => void
+  setPresentParticipants: (participants: ParticipantWithUser[]) => void
+  updateRoomPresence: (userId: string, isPresent: boolean) => void
+  setOnlineAndPresentCount: (count: number) => void
+  setCanStartSession: (canStart: boolean) => void
+  checkSessionStartEligibility: () => boolean
+  getOnlinePresentParticipants: () => ParticipantWithUser[]
+  
   // 연결 상태
   setConnectionStatus: (status: StudyRoomState['connectionStatus']) => void
   updateLastActivity: () => void
@@ -98,6 +113,12 @@ const initialState: StudyRoomState = {
   isConnected: false,
   connectionStatus: 'disconnected',
   lastActivity: 0,
+  
+  // ✨ 새로운 룸 입장/퇴장 상태 관리
+  roomPresenceStatus: 'left',
+  presentParticipants: [],
+  onlineAndPresentCount: 0,
+  canStartSession: false,
   
   // 세션 상태
   currentSessionId: null,
@@ -166,6 +187,62 @@ export const useStudyRoomStore = create<StudyRoomStore>()(
           p.user_id === userId ? { ...p, ...updates } : p
         )
       })),
+      
+      // ✨ 새로운 룸 입장/퇴장 상태 관리 액션 구현
+      setRoomPresenceStatus: (status) => set({ roomPresenceStatus: status }),
+      
+      setPresentParticipants: (participants) => set({ presentParticipants: participants }),
+      
+      updateRoomPresence: (userId, isPresent) => set((state) => ({
+        presentParticipants: state.presentParticipants.map(p =>
+          p.user_id === userId ? { ...p, is_present: isPresent } : p
+        )
+      })),
+      
+      setOnlineAndPresentCount: (count) => set({ onlineAndPresentCount: count }),
+      
+      setCanStartSession: (canStart) => set({ canStartSession: canStart }),
+      
+      checkSessionStartEligibility: () => {
+        const state = get()
+        const now = Date.now()
+        const onlineThreshold = 30000 // 30초
+        
+        const eligibleParticipants = state.presentParticipants.filter(participant => {
+          // 온라인 상태 체크 (last_activity 기준)
+          const lastActivity = participant.last_activity ? new Date(participant.last_activity).getTime() : 0
+          const isOnline = (now - lastActivity) <= onlineThreshold
+          
+          // 룸 내 존재 상태 체크 (is_present 필드 사용 - API에서 받아온 데이터)
+          const isPresent = (participant as any).is_present === true
+          
+          return isOnline && isPresent
+        })
+        
+        const canStart = eligibleParticipants.length >= 1
+        
+        // 상태 업데이트
+        set({
+          onlineAndPresentCount: eligibleParticipants.length,
+          canStartSession: canStart
+        })
+        
+        return canStart
+      },
+      
+      getOnlinePresentParticipants: () => {
+        const state = get()
+        const now = Date.now()
+        const onlineThreshold = 30000 // 30초
+        
+        return state.presentParticipants.filter(participant => {
+          const lastActivity = participant.last_activity ? new Date(participant.last_activity).getTime() : 0
+          const isOnline = (now - lastActivity) <= onlineThreshold
+          const isPresent = (participant as any).is_present === true
+          
+          return isOnline && isPresent
+        })
+      },
       
       // 연결 상태
       setConnectionStatus: (status) => set({ 

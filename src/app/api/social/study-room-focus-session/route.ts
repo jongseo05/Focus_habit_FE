@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     // 🚀 최적화: 병렬 처리로 참가자 확인과 기존 세션 종료를 동시에 실행
     const now = new Date().toISOString()
     
-    const [participantResult, existingSessionResult] = await Promise.allSettled([
+    const [participantResult, existingSessionResult, eligibleParticipantsResult] = await Promise.allSettled([
       // 스터디룸 참가자 확인
       supabase
         .from('room_participants')
@@ -57,7 +57,21 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
         .is('ended_at', null)
         .limit(1)
-        .maybeSingle()
+        .maybeSingle(),
+      
+      // ✨ 새로 추가: 세션 시작 자격이 있는 참가자들 확인
+      supabase
+        .from('room_participants')
+        .select(`
+          participant_id,
+          user_id,
+          is_present,
+          last_activity,
+          is_connected
+        `)
+        .eq('room_id', room_id)
+        .eq('is_present', true)  // 실제 룸에 있는 사람만
+        .is('left_at', null)
     ])
 
     // 참가자 확인 결과 처리
@@ -66,6 +80,31 @@ export async function POST(request: NextRequest) {
         '스터디룸에 참가하고 있지 않습니다.',
         403
       )
+    }
+
+    // ✨ 새로 추가: 세션 시작 자격 확인
+    if (eligibleParticipantsResult.status === 'fulfilled' && eligibleParticipantsResult.value.data) {
+      const presentParticipants = eligibleParticipantsResult.value.data
+      const onlineThreshold = 30000 // 30초
+      const currentTime = Date.now()
+      
+      // 온라인이면서 룸에 있는 참가자 필터링
+      const eligibleParticipants = presentParticipants.filter(participant => {
+        const lastActivity = new Date(participant.last_activity).getTime()
+        const isOnline = (currentTime - lastActivity) <= onlineThreshold
+        
+        return isOnline && participant.is_present && participant.is_connected
+      })
+      
+      // 최소 1명의 자격 있는 참가자가 필요
+      if (eligibleParticipants.length < 1) {
+        return createErrorResponse(
+          '세션을 시작하려면 온라인 상태이면서 룸에 있는 참가자가 최소 1명 이상 필요합니다. 현재 자격 있는 참가자: 0명',
+          400
+        )
+      }
+      
+      console.log(`✅ 세션 시작 자격 확인 완료: ${eligibleParticipants.length}명의 참가자가 참여 가능`)
     }
 
     // 🚀 최적화: 기존 세션이 있는 경우에만 종료 처리

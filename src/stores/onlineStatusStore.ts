@@ -38,6 +38,7 @@ interface OnlineStatusState {
   // 현재 사용자 온라인 상태
   currentUserStatus: OnlineStatus
   lastActivityTime: number | null
+  lastDbUpdate?: number // DB 업데이트 throttling을 위한 타임스탬프
   
   // 스터디룸 참가자들의 온라인 상태
   roomParticipants: ParticipantOnlineStatus[]
@@ -99,6 +100,7 @@ type OnlineStatusStore = OnlineStatusState & OnlineStatusActions
 const initialState: OnlineStatusState = {
   currentUserStatus: 'checking',
   lastActivityTime: null,
+  lastDbUpdate: undefined,
   roomParticipants: [],
   currentRoomId: null,
   friends: [],
@@ -125,6 +127,24 @@ export const useOnlineStatusStore = create<OnlineStatusStore>()(
         // 현재 사용자를 온라인으로 설정
         if (get().currentUserStatus !== 'online') {
           set({ currentUserStatus: 'online' })
+        }
+
+        // 데이터베이스의 last_activity도 업데이트 (throttling 적용)
+        const currentTime = Date.now()
+        const lastUpdate = (get() as any).lastDbUpdate || 0
+        const UPDATE_THROTTLE = 10000 // 10초마다만 DB 업데이트
+
+        if (currentTime - lastUpdate > UPDATE_THROTTLE) {
+          ;(set as any)({ lastDbUpdate: currentTime })
+          
+          fetch('/api/activity', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          }).catch(error => {
+            console.warn('활동 시간 DB 업데이트 실패:', error)
+          })
         }
       },
       
