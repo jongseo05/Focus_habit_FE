@@ -352,37 +352,7 @@ export function useRejectFriendRequest() {
   })
 }
 
-// =====================================================
-// 5. 통계 관련 훅
-// =====================================================
 
-export function useSocialStats() {
-  const { data: user } = useUser()
-  
-  return useQuery({
-    queryKey: ['social-stats'],
-    queryFn: async (): Promise<any | null> => {
-      if (!user) return null
-      
-      const response = await fetch('/api/social/stats')
-      if (!response.ok) {
-        throw new Error('소셜 통계를 불러오는데 실패했습니다.')
-      }
-
-      const result = await response.json()
-      // 표준 API 응답에서 data 필드만 반환
-      return result.data || null
-    },
-    enabled: !!user,
-    staleTime: 300000, // 5분
-    refetchInterval: false, // 자동 새로고침 비활성화
-    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
-    gcTime: 15 * 60 * 1000, // 15분 후 가비지 컬렉션
-    // 성능 최적화 추가
-    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
-    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
-  })
-}
 
 // =====================================================
 // 6. 실시간 업데이트 훅

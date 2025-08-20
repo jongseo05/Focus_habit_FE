@@ -565,14 +565,7 @@ export interface FriendComparisonResponse {
   period: string
 }
 
-export interface SocialStats {
-  total_friends: number
-  total_study_sessions: number
-  total_focus_time: number
-  average_focus_score: number
-  weekly_rank: number
-  monthly_rank: number
-}
+
 
 export interface FriendComparison {
   friend_id: UUID

@@ -12,7 +12,6 @@ import type {
   ChallengeParticipant,
   EncouragementMessage,
   UserAchievement,
-  SocialStats,
   FriendComparison
 } from '@/types/social'
 import type { UUID, Timestamp } from '@/types/database'
@@ -524,50 +523,6 @@ export class EncouragementService {
       return true
     } catch (error) {
       console.error('메시지 읽음 처리 실패:', error)
-      return false
-    }
-  }
-}
-
-// =====================================================
-// 5. 소셜 통계 서비스
-// =====================================================
-
-export class SocialStatsService {
-  // 사용자 소셜 통계 조회
-  static async getUserStats(userId: UUID): Promise<SocialStats | null> {
-    try {
-      const supabase = await supabaseServer()
-      const { data: stats, error } = await supabase
-        .from('social_stats')
-        .select('*')
-        .eq('user_id', userId)
-        .single()
-
-      if (error) throw error
-      return stats
-    } catch (error) {
-      console.error('소셜 통계 조회 실패:', error)
-      return null
-    }
-  }
-
-  // 소셜 통계 업데이트
-  static async updateStats(userId: UUID, updates: Partial<SocialStats>): Promise<boolean> {
-    try {
-      const supabase = await supabaseServer()
-      const { error } = await supabase
-        .from('social_stats')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
-
-      if (error) throw error
-      return true
-    } catch (error) {
-      console.error('소셜 통계 업데이트 실패:', error)
       return false
     }
   }
