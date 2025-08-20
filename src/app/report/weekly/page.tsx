@@ -454,91 +454,6 @@ const WeeklyFocusAnalysis = ({
   )
 }
 
-// 주간 목표 달성 컴포넌트
-const WeeklyGoals = () => {
-  const goals = [
-    {
-      id: 1,
-      title: "5일 연속 학습",
-      progress: 4,
-      target: 5,
-      icon: <TrendingUp className="w-5 h-5" />,
-      color: "from-green-500 to-emerald-600"
-    },
-    {
-      id: 2,
-      title: "평균 집중도 80점 이상",
-      progress: 75,
-      target: 80,
-      icon: <Target className="w-5 h-5" />,
-      color: "from-blue-500 to-blue-600"
-    },
-    {
-      id: 3,
-      title: "총 학습 시간 20시간",
-      progress: 18,
-      target: 20,
-      icon: <Clock className="w-5 h-5" />,
-      color: "from-purple-500 to-purple-600"
-    }
-  ]
-
-  return (
-    <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border-0">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-3 text-xl font-bold text-slate-900">
-          <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center">
-            <Zap className="w-5 h-5 text-white" />
-          </div>
-          이번 주 목표
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {goals.map((goal) => {
-            const percentage = Math.min((goal.progress / goal.target) * 100, 100)
-            const isCompleted = goal.progress >= goal.target
-
-            return (
-              <div key={goal.id} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${goal.color} rounded-lg flex items-center justify-center text-white`}>
-                      {goal.icon}
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-slate-900">{goal.title}</h4>
-                      <p className="text-sm text-slate-600">
-                        {goal.progress} / {goal.target}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`text-lg font-bold ${isCompleted ? 'text-green-600' : 'text-slate-700'}`}>
-                      {Math.round(percentage)}%
-                    </div>
-                    {isCompleted && (
-                      <div className="text-xs text-green-600 font-medium">달성!</div>
-                    )}
-                  </div>
-                </div>
-                <div className="relative h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div
-                    className={`h-full bg-gradient-to-r ${goal.color} rounded-full`}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${percentage}%` }}
-                    transition={{ duration: 1, delay: 0.2 }}
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 // 주간 학습 패턴 분석
 const WeeklyLearningPatterns = ({ weeklyData }: { weeklyData: any }) => {
   const { insights, isLoading, error, refetch } = useLearningInsights(weeklyData)
@@ -837,21 +752,74 @@ const WeeklyLearningPatterns = ({ weeklyData }: { weeklyData: any }) => {
                </div>
              </div>
 
-            {/* 5. 개인화된 팁 */}
-            <div className="bg-white/60 rounded-xl p-6 border border-indigo-200">
+            {/* 5. AI 집중 코치 피드백 */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-pink-500 rounded-lg flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-white" />
                 </div>
-                <h4 className="text-lg font-semibold text-indigo-900">개인화된 학습 팁</h4>
+                <h4 className="text-lg font-semibold text-indigo-900">AI 집중 코치 피드백</h4>
               </div>
-              <div className="space-y-2 text-sm text-indigo-800">
-                {insights.personalizedTips.map((tipObj, index) => (
-                  <div key={index} className="flex items-start gap-2">
-                    <span className="text-pink-500 mt-1">•</span>
-                    <p>{typeof tipObj === 'string' ? tipObj : tipObj.tip}</p>
+              
+              <div className="space-y-4">
+                {/* 전체 평가 */}
+                <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 mt-1">
+                      AI
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-indigo-800 font-medium mb-2">와! 정말 훌륭한 집중 세션이었네요! 🎉</p>
+                      <p className="text-indigo-700 mb-3">
+                        평균 집중도 <span className="font-bold text-green-600">88점</span>으로 매우 높은 수준을 보여주셨습니다.
+                      </p>
+                      <p className="text-indigo-700 mb-4">
+                        90분 동안 <span className="font-bold text-blue-600">87%</span>의 시간을 고집중 상태로 유지하셨는데, 
+                        이는 정말 놀라운 성과입니다.
+                      </p>
+                      
+                      {/* 목표 달성률 */}
+                      <div className="bg-green-50 rounded-lg p-3 border border-green-200 mb-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-green-700 font-medium">목표 달성률</span>
+                          <span className="text-green-800 font-bold text-lg">95%</span>
+                        </div>
+                        <div className="mt-2 h-2 bg-green-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-green-500 rounded-full" style={{ width: '95%' }}></div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3 text-sm text-indigo-700">
+                        {/* 주요 인사이트 */}
+                        <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+                          <p className="font-medium mb-1">💡 주요 인사이트</p>
+                          <p>매우 높은 집중도로 일관된 성과를 보여주셨습니다.<br />
+                          현재의 학습 환경과 방법이 매우 효과적입니다.<br />
+                          장시간 집중 세션을 성공적으로 완료하였습니다.</p>
+                        </div>
+
+                        {/* 개선 제안 */}
+                        <div className="bg-pink-50 rounded-lg p-3 border border-pink-200">
+                          <p className="font-medium mb-1">🚀 개선 제안</p>
+                          <p>현재의 뛰어난 집중력을 유지하세요.<br />
+                          더 긴 세션에 도전해보세요 (90-120분).<br />
+                          다른 학습 주제에도 이 방법을 적용해보세요.</p>
+                        </div>
+
+                        {/* 다음 목표 */}
+                        <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                          <p className="font-medium mb-1">🎯 다음 목표</p>
+                          <p>현재의 뛰어한 집중력을 바탕으로 더 도전적인 학습 목표를 설정해보세요.<br />
+                          새로운 분야에 도전하거나 더 길고 있는 학습을 시도해보는 것을 권장합니다.</p>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-indigo-600 mt-4 italic">
+                        💡 이 피드백은 AI가 분석한 데이터를 바탕으로 제공됩니다. 개인적인 학습 스타일에 맞게 조정하여 사용하세요.
+                      </p>
+                    </div>
                   </div>
-                ))}
+                </div>
               </div>
             </div>
           </div>
@@ -930,19 +898,10 @@ export default function WeeklyReportPage() {
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
         <div className="space-y-8">
-          {/* 주간 목표 달성 */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <WeeklyGoals />
-          </motion.div>
-
           {/* 통합된 주간 집중도 분석 */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
           >
             <WeeklyFocusAnalysis 
               data={weeklyData?.timeSeriesData || []} 
@@ -954,7 +913,7 @@ export default function WeeklyReportPage() {
            <motion.div 
              initial={{ opacity: 0, y: 20 }}
              animate={{ opacity: 1, y: 0 }}
-             transition={{ delay: 0.2 }}
+             transition={{ delay: 0.1 }}
            >
              <WeeklyLearningPatterns weeklyData={weeklyData} />
            </motion.div>

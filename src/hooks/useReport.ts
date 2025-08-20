@@ -535,11 +535,125 @@ export function useTodaySessions(date: string) {
   })
 } 
 
+// Mock 세션 데이터 생성 함수
+const generateMockSessionData = (sessionId: string) => {
+  // 현실적인 집중도 데이터 생성 (90분 세션)
+  const generateFocusSamples = () => {
+    const samples = []
+    const startTime = new Date('2024-12-20T09:00:00Z')
+    const duration = 90 * 60 * 1000 // 90분
+    
+    for (let i = 0; i < 180; i++) { // 30초마다 샘플링
+      const timestamp = new Date(startTime.getTime() + (i * 30 * 1000))
+      
+      // 시간에 따른 집중도 패턴 생성
+      let baseScore = 85
+      
+      // 초반 15분: 집중도 상승
+      if (i < 30) {
+        baseScore = 70 + (i * 0.5)
+      }
+      // 15-30분: 최고 집중
+      else if (i < 60) {
+        baseScore = 85 + Math.sin((i - 30) * 0.1) * 10
+      }
+      // 30-45분: 약간 하락
+      else if (i < 90) {
+        baseScore = 85 + Math.sin((i - 60) * 0.08) * 8
+      }
+      // 45-60분: 중간 휴식 후 회복
+      else if (i < 120) {
+        baseScore = 82 + Math.sin((i - 90) * 0.12) * 12
+      }
+      // 60-75분: 다시 집중
+      else if (i < 150) {
+        baseScore = 88 + Math.sin((i - 120) * 0.1) * 7
+      }
+      // 75-90분: 마무리 집중
+      else {
+        baseScore = 85 + Math.sin((i - 150) * 0.15) * 5
+      }
+      
+      // 랜덤 변동 추가
+      const score = Math.max(0, Math.min(100, baseScore + (Math.random() - 0.5) * 10))
+      
+      samples.push({
+        id: i + 1,
+        session_id: sessionId,
+        ts: timestamp.toISOString(),
+        focus_score: Math.round(score * 100) / 100,
+        score_conf: 0.85 + Math.random() * 0.1,
+        created_at: timestamp.toISOString()
+      })
+    }
+    return samples
+  }
+
+  // 이벤트 데이터 생성
+  const generateEvents = () => [
+    {
+      id: 1,
+      session_id: sessionId,
+      ts: '2024-12-20T09:15:00Z',
+      event_type: 'phone_check',
+      duration: 30,
+      severity: 'low',
+      description: '짧은 휴대폰 확인',
+      created_at: '2024-12-20T09:15:00Z'
+    },
+    {
+      id: 2,
+      session_id: sessionId,
+      ts: '2024-12-20T09:45:00Z',
+      event_type: 'distraction',
+      duration: 120,
+      severity: 'medium',
+      description: '외부 소음으로 인한 집중력 저하',
+      created_at: '2024-12-20T09:45:00Z'
+    },
+    {
+      id: 3,
+      session_id: sessionId,
+      ts: '2024-12-20T10:15:00Z',
+      event_type: 'deep_focus',
+      duration: 1200,
+      severity: 'positive',
+      description: '20분간 깊은 집중 상태 달성',
+      created_at: '2024-12-20T10:15:00Z'
+    }
+  ]
+
+  return {
+    session: {
+      session_id: sessionId,
+      user_id: '8e8ef69c-1f6e-4e04-9265-1f409fb47339',
+      started_at: '2024-12-20T09:00:00Z',
+      ended_at: '2024-12-20T10:30:00Z',
+      focus_score: 86.5,
+      duration_minutes: 90,
+      goal_min: 60, // 목표 시간 60분 추가
+      session_type: 'focus',
+      status: 'completed',
+      context_tag: '알고리즘 문제 풀이',
+      created_at: '2024-12-20T09:00:00Z',
+      updated_at: '2024-12-20T10:30:00Z'
+    },
+    samples: generateFocusSamples(),
+    events: generateEvents()
+  }
+}
+
 // 특정 세션의 리포트 데이터 조회
 export function useSessionReport(sessionId: string) {
   return useQuery({
     queryKey: [...reportKeys.all, 'session', sessionId],
     queryFn: async () => {
+      console.log('📊 세션 리포트 Mock 데이터 생성:', sessionId)
+      
+      // 항상 Mock 데이터 사용 (데모용)
+      return generateMockSessionData(sessionId)
+      
+      /* 실제 API 호출 코드 (주석 처리)
       const { supabaseBrowser } = await import('@/lib/supabase/client')
       const supabase = supabaseBrowser()
       
@@ -595,10 +709,12 @@ export function useSessionReport(sessionId: string) {
       })
 
       return {
+      return {
         session,
         samples: allSamples,
         events: events || []
       }
+      */
     },
     staleTime: 5 * 60 * 1000,
     enabled: !!sessionId,
