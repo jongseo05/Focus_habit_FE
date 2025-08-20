@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useWebRTC } from './useWebRTC'
 import { useSignaling } from './useSignaling'
+import { useCameraStateSync } from './useCameraStateSync'
 import type { RoomParticipant } from '@/types/social'
 
 interface UseVideoRoomProps {
@@ -21,6 +22,11 @@ interface UseVideoRoomReturn {
   toggleVideo: () => Promise<void>
   toggleAudio: () => Promise<void>
   connectedPeers: string[]
+  // 카메라 상태 동기화 관련 추가
+  participantsCameraState: { [userId: string]: { is_video_enabled: boolean; is_audio_enabled: boolean; updated_at: string } }
+  syncCameraStates: () => Promise<void>
+  isCameraStateLoading: boolean
+  cameraStateError: string | null
 }
 
 export function useVideoRoom({
@@ -48,12 +54,26 @@ export function useVideoRoom({
     setSignalingCallbacks
   } = useWebRTC()
 
-  // 시그널링 훅
+  // 카메라 상태 동기화 훅
+  const {
+    participantsCameraState,
+    updateCameraState,
+    syncCameraStates,
+    isLoading: isCameraStateLoading,
+    error: cameraStateError,
+    handleCameraStateUpdate
+  } = useCameraStateSync({
+    roomId,
+    userId
+  })
+
+  // 시그널링 훅 (카메라 상태 콜백 포함)
   const {
     isConnected: isSignalingConnected,
     sendOffer,
     sendAnswer,
-    sendIceCandidate
+    sendIceCandidate,
+    sendCameraStateUpdate
   } = useSignaling({
     roomId,
     userId,
@@ -68,7 +88,8 @@ export function useVideoRoom({
     onUserLeft: (leftUserId) => {
       disconnectFromPeer(leftUserId)
       setConnectedPeers(prev => prev.filter(id => id !== leftUserId))
-    }
+    },
+    onCameraStateUpdate: handleCameraStateUpdate
   })
 
   // 시그널링 콜백 설정
@@ -111,25 +132,48 @@ export function useVideoRoom({
     setConnectedPeers([])
   }, [stopLocalStream, participants, userId, disconnectFromPeer])
 
-  // 비디오 토글
+  // 비디오 토글 (카메라 상태 동기화 포함)
   const toggleVideo = useCallback(async () => {
-    if (isVideoEnabled) {
-      stopVideo()
-    } else {
-      await startVideo()
+    try {
+      if (isVideoEnabled) {
+        stopVideo()
+        await updateCameraState(false, isAudioEnabled)
+        if (sendCameraStateUpdate) {
+          sendCameraStateUpdate(false, isAudioEnabled)
+        }
+      } else {
+        await startVideo()
+        await updateCameraState(true, isAudioEnabled)
+        if (sendCameraStateUpdate) {
+          sendCameraStateUpdate(true, isAudioEnabled)
+        }
+      }
+    } catch (error) {
+      console.error('비디오 토글 중 오류:', error)
     }
-  }, [isVideoEnabled, startVideo, stopVideo])
+  }, [isVideoEnabled, startVideo, stopVideo, updateCameraState, isAudioEnabled, sendCameraStateUpdate])
 
-  // 오디오 토글
+  // 오디오 토글 (카메라 상태 동기화 포함)
   const toggleAudio = useCallback(async () => {
     if (localStream) {
       const audioTrack = localStream.getAudioTracks()[0]
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled
-        setIsAudioEnabled(audioTrack.enabled)
+        const newAudioState = !audioTrack.enabled
+        audioTrack.enabled = newAudioState
+        setIsAudioEnabled(newAudioState)
+        
+        // 카메라 상태 동기화
+        try {
+          await updateCameraState(isVideoEnabled, newAudioState)
+          if (sendCameraStateUpdate) {
+            sendCameraStateUpdate(isVideoEnabled, newAudioState)
+          }
+        } catch (error) {
+          console.error('오디오 상태 동기화 중 오류:', error)
+        }
       }
     }
-  }, [localStream])
+  }, [localStream, updateCameraState, isVideoEnabled, sendCameraStateUpdate])
 
   // 연결된 피어 목록 업데이트
   useEffect(() => {
@@ -177,6 +221,11 @@ export function useVideoRoom({
     stopVideo,
     toggleVideo,
     toggleAudio,
-    connectedPeers
+    connectedPeers,
+    // 카메라 상태 동기화 관련
+    participantsCameraState,
+    syncCameraStates,
+    isCameraStateLoading,
+    cameraStateError
   }
 }

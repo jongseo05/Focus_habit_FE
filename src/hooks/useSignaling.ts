@@ -3,7 +3,7 @@ import { supabaseBrowser } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface SignalingMessage {
-  type: 'offer' | 'answer' | 'ice-candidate' | 'join' | 'leave' | 'user-joined' | 'user-left'
+  type: 'offer' | 'answer' | 'ice-candidate' | 'join' | 'leave' | 'user-joined' | 'user-left' | 'camera-state-update'
   from: string
   to?: string
   roomId: string
@@ -19,6 +19,8 @@ interface UseSignalingProps {
   onIceCandidate: (from: string, candidate: RTCIceCandidateInit) => void
   onUserJoined: (userId: string) => void
   onUserLeft: (userId: string) => void
+  // 카메라 상태 관련 콜백 추가
+  onCameraStateUpdate?: (userId: string, isVideoEnabled: boolean, isAudioEnabled: boolean) => void
 }
 
 export function useSignaling({
@@ -28,7 +30,8 @@ export function useSignaling({
   onAnswer,
   onIceCandidate,
   onUserJoined,
-  onUserLeft
+  onUserLeft,
+  onCameraStateUpdate
 }: UseSignalingProps) {
   const supabase = supabaseBrowser()
   const channelRef = useRef<RealtimeChannel | null>(null)
@@ -68,6 +71,15 @@ export function useSignaling({
                 break
               case 'user-left':
                 onUserLeft(message.data.userId)
+                break
+              case 'camera-state-update':
+                if (onCameraStateUpdate) {
+                  onCameraStateUpdate(
+                    message.from,
+                    message.data.isVideoEnabled,
+                    message.data.isAudioEnabled
+                  )
+                }
                 break
             }
           })
@@ -194,6 +206,30 @@ export function useSignaling({
     }
   }, [userId, roomId])
 
+  // 카메라 상태 전송
+  const sendCameraStateUpdate = useCallback((isVideoEnabled: boolean, isAudioEnabled: boolean) => {
+    if (channelRef.current && roomJoined.current) {
+      const message: SignalingMessage = {
+        type: 'camera-state-update',
+        from: userId,
+        roomId,
+        data: { 
+          isVideoEnabled,
+          isAudioEnabled 
+        },
+        timestamp: Date.now()
+      }
+      
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'signaling',
+        payload: message
+      })
+      
+      console.log('카메라 상태 전송:', { isVideoEnabled, isAudioEnabled })
+    }
+  }, [userId, roomId])
+
   // 컴포넌트 마운트 시 자동으로 룸 입장
   useEffect(() => {
     joinRoom()
@@ -210,6 +246,7 @@ export function useSignaling({
     leaveRoom,
     sendOffer,
     sendAnswer,
-    sendIceCandidate
+    sendIceCandidate,
+    sendCameraStateUpdate
   }
 }

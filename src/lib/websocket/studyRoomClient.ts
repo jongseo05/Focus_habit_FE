@@ -7,7 +7,7 @@ import type { WebSocketMessage } from '@/types/websocket'
 import type { StudyRoom, ParticipantWithUser } from '@/types/social'
 
 interface StudyRoomWebSocketMessage {
-  type: 'join_room' | 'leave_room' | 'focus_update' | 'encouragement' | 'room_ended' | 'participant_update'
+  type: 'join_room' | 'leave_room' | 'focus_update' | 'encouragement' | 'room_ended' | 'participant_update' | 'camera_state_update' | 'update_camera_state' | 'camera_state_sync'
   room_id: string
   user_id: string
   timestamp: number
@@ -21,6 +21,9 @@ interface StudyRoomEventHandlers {
   onEncouragement?: (senderId: string, senderName: string, message: string) => void
   onRoomEnded?: () => void
   onError?: (error: string) => void
+  // 카메라 상태 관련 이벤트 핸들러 추가
+  onCameraStateUpdate?: (userId: string, isVideoEnabled: boolean, isAudioEnabled: boolean) => void
+  onCameraStateSync?: (participants: Array<{ user_id: string; is_video_enabled: boolean; is_audio_enabled: boolean; updated_at: string }>) => void
 }
 
 export class StudyRoomWebSocketClient {
@@ -113,6 +116,34 @@ export class StudyRoomWebSocketClient {
     })
   }
 
+  // 카메라 상태 업데이트 전송
+  sendCameraStateUpdate(isVideoEnabled: boolean, isAudioEnabled: boolean): void {
+    if (!this.currentRoomId || !this.userId) return
+    
+    this.sendMessage({
+      type: 'update_camera_state',
+      room_id: this.currentRoomId,
+      user_id: this.userId,
+      timestamp: Date.now(),
+      data: {
+        is_video_enabled: isVideoEnabled,
+        is_audio_enabled: isAudioEnabled
+      }
+    })
+  }
+
+  // 카메라 상태 동기화 요청
+  requestCameraStateSync(): void {
+    if (!this.currentRoomId || !this.userId) return
+    
+    this.sendMessage({
+      type: 'camera_state_sync',
+      room_id: this.currentRoomId,
+      user_id: this.userId,
+      timestamp: Date.now()
+    })
+  }
+
   // 연결 성공 처리
   private handleConnect(event: Event): void {
     console.log('스터디룸 WebSocket 연결됨')
@@ -184,6 +215,22 @@ export class StudyRoomWebSocketClient {
         case 'room_ended':
           this.eventHandlers.onRoomEnded?.()
           this.disconnect()
+          break
+
+        case 'camera_state_update':
+          if (!isOwnMessage && studyRoomMessage.data?.is_video_enabled !== undefined && studyRoomMessage.data?.is_audio_enabled !== undefined) {
+            this.eventHandlers.onCameraStateUpdate?.(
+              studyRoomMessage.user_id,
+              studyRoomMessage.data.is_video_enabled,
+              studyRoomMessage.data.is_audio_enabled
+            )
+          }
+          break
+
+        case 'camera_state_sync':
+          if (studyRoomMessage.data?.participants) {
+            this.eventHandlers.onCameraStateSync?.(studyRoomMessage.data.participants)
+          }
           break
 
         default:

@@ -153,3 +153,39 @@ export interface WebSocketConnectionState {
   reconnectAttempts: number
 }
 
+// 카메라 상태 업데이트 메시지
+export interface CameraStateMessage extends WebSocketMessage {
+  type: 'camera_state_update'
+  data: {
+    user_id: string
+    room_id: string
+    is_video_enabled: boolean
+    is_audio_enabled: boolean
+    timestamp: string
+  }
+}
+
+// 카메라 상태 변경 요청 메시지
+export interface CameraStateUpdateRequest extends WebSocketMessage {
+  type: 'update_camera_state'
+  data: {
+    room_id: string
+    is_video_enabled: boolean
+    is_audio_enabled: boolean
+  }
+}
+
+// 카메라 상태 동기화 응답 메시지
+export interface CameraStateSyncResponse extends WebSocketMessage {
+  type: 'camera_state_sync'
+  data: {
+    room_id: string
+    participants: Array<{
+      user_id: string
+      is_video_enabled: boolean
+      is_audio_enabled: boolean
+      updated_at: string
+    }>
+  }
+}
+

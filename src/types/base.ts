@@ -37,3 +37,26 @@ export interface ApiError {
   message: string
   errors?: ValidationError[]
 }
+
+// 카메라 상태 API 응답 타입
+export interface CameraStateUpdateRequest {
+  is_video_enabled: boolean
+  is_audio_enabled: boolean
+}
+
+export interface CameraStateResponse {
+  user_id: UUID
+  room_id: UUID
+  is_video_enabled: boolean
+  is_audio_enabled: boolean
+  camera_updated_at: Timestamp
+}
+
+export interface ParticipantsCameraStateResponse {
+  participants: Array<{
+    user_id: UUID
+    is_video_enabled: boolean
+    is_audio_enabled: boolean
+    camera_updated_at: Timestamp
+  }>
+}

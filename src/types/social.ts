@@ -36,6 +36,10 @@ export interface RoomParticipant {
   last_activity: Timestamp
   is_video_on?: boolean
   is_mic_on?: boolean
+  // 카메라 상태 추가
+  is_video_enabled: boolean
+  is_audio_enabled: boolean
+  camera_updated_at: Timestamp
 }
 
 // 공통 ParticipantWithUser 인터페이스 (타입 충돌 해결)
@@ -45,6 +49,10 @@ export interface ParticipantWithUser extends RoomParticipant {
     avatar_url?: string
   }
   current_focus_score: number // required로 설정
+  // 카메라 상태도 required로 설정
+  is_video_enabled: boolean
+  is_audio_enabled: boolean
+  camera_updated_at: Timestamp
 }
 
 export interface CreateStudyRoomData {
@@ -532,6 +540,40 @@ export interface FriendEncouragementMessageWS {
     content: string
     message_type: string
     timestamp: Timestamp
+  }
+}
+
+// 카메라 상태 관련 WebSocket 메시지
+export interface CameraStateUpdateMessage {
+  type: 'camera_state_update'
+  data: {
+    user_id: UUID
+    room_id: UUID
+    is_video_enabled: boolean
+    is_audio_enabled: boolean
+    timestamp: Timestamp
+  }
+}
+
+export interface CameraStateRequestMessage {
+  type: 'update_camera_state'
+  data: {
+    room_id: UUID
+    is_video_enabled: boolean
+    is_audio_enabled: boolean
+  }
+}
+
+export interface CameraStateSyncMessage {
+  type: 'camera_state_sync'
+  data: {
+    room_id: UUID
+    participants: Array<{
+      user_id: UUID
+      is_video_enabled: boolean
+      is_audio_enabled: boolean
+      updated_at: Timestamp
+    }>
   }
 }
 

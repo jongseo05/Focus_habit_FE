@@ -26,7 +26,7 @@ export async function GET(
       return authResult
     }
     
-    // 1. 먼저 참가자 목록 조회
+    // 1. 먼저 참가자 목록 조회 (카메라 상태 포함)
     const { data: roomParticipants, error: participantsError } = await supabase
       .from('room_participants')
       .select(`
@@ -38,7 +38,10 @@ export async function GET(
         left_at,
         current_focus_score,
         is_connected,
-        last_activity
+        last_activity,
+        is_video_enabled,
+        is_audio_enabled,
+        camera_updated_at
       `)
       .eq('room_id', roomId)
       .is('left_at', null) // 아직 나가지 않은 참가자만
@@ -105,6 +108,10 @@ export async function GET(
         focus_score: p.current_focus_score,
         last_activity: p.last_activity || p.joined_at,
         is_connected: p.is_connected || true,
+        // 카메라 상태 추가
+        is_video_enabled: p.is_video_enabled || false,
+        is_audio_enabled: p.is_audio_enabled || false,
+        camera_updated_at: p.camera_updated_at || p.joined_at,
         user: {
           name: profile?.display_name || `사용자-${p.user_id.slice(-4)}`,
           avatar_url: profile?.avatar_url || null

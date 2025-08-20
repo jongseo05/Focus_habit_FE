@@ -24,6 +24,13 @@ interface StudyRoomState {
   currentFocusScore: number
   averageFocusScore: number
   
+  // 카메라 상태 관리
+  participantCameraStates: Map<string, {
+    isVideoEnabled: boolean
+    isAudioEnabled: boolean
+    updatedAt: string
+  }>
+  
   // UI 상태
   activeTab: 'session' | 'challenges' | 'chat'
   showNotifications: boolean
@@ -35,6 +42,9 @@ interface StudyRoomState {
     showFocusScore: boolean
     enableEncouragement: boolean
     soundEnabled: boolean
+    // 카메라 관련 설정 추가
+    defaultVideoEnabled: boolean
+    defaultAudioEnabled: boolean
   }
 }
 
@@ -57,6 +67,11 @@ interface StudyRoomActions {
   startSession: (sessionId: string) => void
   endSession: () => void
   updateFocusScore: (current: number, average: number) => void
+  
+  // 카메라 상태 관리
+  updateParticipantCameraState: (userId: string, isVideoEnabled: boolean, isAudioEnabled: boolean) => void
+  setParticipantsCameraStates: (states: { [userId: string]: { isVideoEnabled: boolean; isAudioEnabled: boolean; updatedAt: string } }) => void
+  clearParticipantCameraState: (userId: string) => void
   
   // UI 상태
   setActiveTab: (tab: StudyRoomState['activeTab']) => void
@@ -91,6 +106,9 @@ const initialState: StudyRoomState = {
   currentFocusScore: 0,
   averageFocusScore: 0,
   
+  // 카메라 상태 관리
+  participantCameraStates: new Map(),
+  
   // UI 상태
   activeTab: 'session',
   showNotifications: true,
@@ -101,7 +119,9 @@ const initialState: StudyRoomState = {
     autoJoinSession: false,
     showFocusScore: true,
     enableEncouragement: true,
-    soundEnabled: true
+    soundEnabled: true,
+    defaultVideoEnabled: false,
+    defaultAudioEnabled: true
   }
 }
 
@@ -175,6 +195,31 @@ export const useStudyRoomStore = create<StudyRoomStore>()(
         averageFocusScore: average
       }),
       
+      // 카메라 상태 관리
+      updateParticipantCameraState: (userId, isVideoEnabled, isAudioEnabled) => set((state) => {
+        const newStates = new Map(state.participantCameraStates)
+        newStates.set(userId, {
+          isVideoEnabled,
+          isAudioEnabled,
+          updatedAt: new Date().toISOString()
+        })
+        return { participantCameraStates: newStates }
+      }),
+      
+      setParticipantsCameraStates: (states) => set((state) => {
+        const newStates = new Map()
+        Object.entries(states).forEach(([userId, cameraState]) => {
+          newStates.set(userId, cameraState)
+        })
+        return { participantCameraStates: newStates }
+      }),
+      
+      clearParticipantCameraState: (userId) => set((state) => {
+        const newStates = new Map(state.participantCameraStates)
+        newStates.delete(userId)
+        return { participantCameraStates: newStates }
+      }),
+      
       // UI 상태
       setActiveTab: (tab) => set({ activeTab: tab }),
       
@@ -219,6 +264,12 @@ export const useSessionState = () => useStudyRoomStore(state => ({
 }))
 export const useStudyRoomPreferences = () => useStudyRoomStore(state => state.preferences)
 
+// 카메라 상태 관련 훅
+export const useParticipantCameraStates = () => useStudyRoomStore(state => state.participantCameraStates)
+export const useParticipantCameraState = (userId: string) => useStudyRoomStore(state => 
+  state.participantCameraStates.get(userId)
+)
+
 // 액션만 가져오는 훅
 export const useStudyRoomActions = () => useStudyRoomStore(state => ({
   setCurrentRoom: state.setCurrentRoom,
@@ -232,6 +283,9 @@ export const useStudyRoomActions = () => useStudyRoomStore(state => ({
   startSession: state.startSession,
   endSession: state.endSession,
   updateFocusScore: state.updateFocusScore,
+  updateParticipantCameraState: state.updateParticipantCameraState,
+  setParticipantsCameraStates: state.setParticipantsCameraStates,
+  clearParticipantCameraState: state.clearParticipantCameraState,
   setActiveTab: state.setActiveTab,
   setShowNotifications: state.setShowNotifications,
   incrementUnreadNotifications: state.incrementUnreadNotifications,
