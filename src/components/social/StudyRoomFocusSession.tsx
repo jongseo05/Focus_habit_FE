@@ -12,6 +12,8 @@ import { useMicrophoneStream } from '@/hooks/useMediaStream'
 import { useFocusAnalysisWebSocket } from '@/hooks/useFocusAnalysisWebSocket'
 import { useOnlineStatus, useRoomOnlineStatus } from '@/stores/onlineStatusStore'
 import { useStudyRoomPresence } from '@/hooks/useStudyRoomPresence'
+import { useSocialRealtime } from '@/hooks/useSocialRealtime'
+import { useCompetition } from '@/hooks/useCompetition'
 import { RoomPresenceIndicator } from '@/components/studyroom/RoomPresenceIndicator'
 import HybridAudioPipeline from '@/components/HybridAudioPipeline'
 import WebcamAnalysisDisplay from '@/components/WebcamAnalysisDisplay'
@@ -65,6 +67,105 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     userId: currentUserId,
     enabled: true
   })
+
+  // ✨ 경쟁 상태 관리 (이미 활성화된 경쟁 확인용)
+  const competitionState = useCompetition({
+    roomId,
+    isHost: false // 일반 참여자로 취급
+  })
+
+  // ✨ 소셜 실시간 이벤트 (집중세션 시작 이벤트 수신용)
+  const socialRealtime = useSocialRealtime({
+    onFocusSessionStarted: useCallback(async (payload: any) => {
+      console.log('StudyRoomFocusSession: 집중세션 시작 이벤트 수신 (소셜 실시간):', payload)
+      
+      // 페이로드에서 세션 데이터 추출
+      const sessionUserId = payload?.user_id
+      const sessionRoomId = payload?.room_id
+      const sessionId = payload?.id
+      
+      console.log('StudyRoomFocusSession: 세션 데이터 확인:', {
+        sessionId,
+        sessionUserId,
+        sessionRoomId,
+        currentUserId,
+        roomId
+      })
+      
+      if (sessionId && sessionUserId === currentUserId && sessionRoomId === roomId) {
+        console.log('StudyRoomFocusSession: 현재 사용자의 세션으로 UI 상태 업데이트')
+        
+        // 1. Zustand 스토어 상태를 서버 세션과 동기화
+        sessionActions.startSession()
+        
+        // 2. 웹캠 권한 요청 및 스트림 생성 (경쟁 자동 시작용)
+        console.log('StudyRoomFocusSession: 경쟁 자동 시작을 위해 웹캠 권한 요청')
+        try {
+          // 웹캠 스트림 생성 (createDirectMediaStream을 직접 호출하지 않고 권한만 요청)
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 } }
+          })
+          
+          if (stream) {
+            console.log('StudyRoomFocusSession: 경쟁용 웹캠 스트림 생성 성공')
+            setDirectMediaStream(stream)
+            setShowWebcam(true) // 웹캠 UI 표시
+            setVideoStreamConnected(true) // 비디오 스트림 연결 상태 업데이트
+          } else {
+            console.warn('StudyRoomFocusSession: 경쟁용 웹캠 스트림 생성 실패')
+          }
+        } catch (error) {
+          console.error('StudyRoomFocusSession: 경쟁용 웹캠 권한 요청 실패:', error)
+        }
+        
+        console.log('StudyRoomFocusSession: 자동 세션 시작 완료, sessionId:', sessionId)
+      } else {
+        console.log('StudyRoomFocusSession: 세션 조건 불일치 - UI 업데이트 건너뜀')
+      }
+    }, [currentUserId, roomId, sessionActions])
+  })
+
+  // ✨ 경쟁 자동 세션 시작 이벤트 처리 (커스텀 이벤트 - 백업용)
+  useEffect(() => {
+    const handleAutoSessionStart = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const eventData = customEvent.detail
+      console.log('StudyRoomFocusSession: 자동 세션 시작 이벤트 수신 (커스텀 이벤트):', eventData)
+      
+      // 이벤트 데이터 구조 확인 및 추출
+      const sessionData = eventData?.sessionData || eventData
+      const sessionId = eventData?.sessionId || sessionData?.id
+      const sessionUserId = sessionData?.user_id
+      const sessionRoomId = eventData?.roomId || sessionData?.room_id
+      
+      console.log('StudyRoomFocusSession: 이벤트 데이터 파싱:', {
+        sessionId,
+        sessionUserId,
+        sessionRoomId,
+        currentUserId,
+        roomId
+      })
+      
+      if (sessionId && sessionUserId === currentUserId && sessionRoomId === roomId) {
+        console.log('StudyRoomFocusSession: 현재 사용자의 자동 세션으로 UI 상태 업데이트')
+        
+        // Zustand 스토어 상태를 서버 세션과 동기화 - startSession 호출
+        sessionActions.startSession()
+        
+        // 추가로 세션 ID 설정이 필요할 수 있음 (별도 액션이 있는지 확인 필요)
+        console.log('StudyRoomFocusSession: 자동 세션 시작 완료, sessionId:', sessionId)
+      } else {
+        console.log('StudyRoomFocusSession: 세션 조건 불일치 - UI 업데이트 건너뜀')
+      }
+    }
+
+    // 커스텀 이벤트 리스너 등록
+    window.addEventListener('focus-session-auto-started', handleAutoSessionStart)
+    
+    return () => {
+      window.removeEventListener('focus-session-auto-started', handleAutoSessionStart)
+    }
+  }, [currentUserId, roomId, sessionActions])
 
   // 직접 MediaStream 관리 (useMediaStream 훅 문제 우회)
   const [directMediaStream, setDirectMediaStream] = useState<MediaStream | null>(null)
@@ -194,14 +295,17 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   // 집중도 점수 업데이트 통합 함수 (중복 제거)
   const updateFocusScore = useCallback(async (score: number, confidence: number) => {
     try {
-      console.log('집중도 점수 통합 업데이트 시작:', { score, confidence })
+      console.log('🔥 집중도 점수 통합 업데이트 시작:', { score, confidence })
       
       // 1. 로컬 상태 업데이트
       sessionActions.updateFocusScore(score)
       
       // 2. 부모 컴포넌트에 집중도 업데이트 알림
       if (onFocusScoreUpdate) {
+        console.log('🔥 onFocusScoreUpdate 콜백 호출:', score)
         onFocusScoreUpdate(score)
+      } else {
+        console.warn('⚠️ onFocusScoreUpdate 콜백이 없음')
       }
       
       // 3. 세션 ID 확인
@@ -263,13 +367,13 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   // WebSocket 집중도 분석 (메모이제이션된 설정)
   const websocketConfig = useMemo(() => ({
     userId: currentUserId,
-    enabled: sessionState.isRunning && isCurrentUserOnline,
+    enabled: sessionState.isRunning && isCurrentUserOnline, // WebSocket 다시 활성화
     onFocusScoreUpdate: (score: number, confidence: number) => {
-      console.log('WebSocket 집중도 분석 응답 수신:', { score, confidence })
+      console.log('🔥 WebSocket 집중도 분석 응답 수신:', { score, confidence, timestamp: new Date().toISOString() })
       updateFocusScore(score, confidence)
     },
     onError: (error: any) => {
-      console.error('WebSocket 집중도 분석 오류:', error)
+      console.error('❌ WebSocket 집중도 분석 오류:', error)
     }
   }), [currentUserId, sessionState.isRunning, isCurrentUserOnline, updateFocusScore])
 
@@ -281,6 +385,38 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     connect: wsConnect,
     disconnect: wsDisconnect
   } = useFocusAnalysisWebSocket(websocketConfig)
+
+  // ✨ 웹소켓 연결과 동시에 카메라 자동 시작
+  useEffect(() => {
+    console.log('🔄 웹소켓 연결 상태 변경 감지:', {
+      wsConnected,
+      sessionRunning: sessionState.isRunning,
+      hasDirectStream: !!directMediaStream,
+      competitionActive: competitionState.competition.isActive
+    })
+
+    // 웹소켓이 연결되고 세션이 실행 중이며 카메라가 아직 시작되지 않은 경우
+    if (wsConnected && sessionState.isRunning && !directMediaStream) {
+      console.log('🎥 웹소켓 연결됨 - 자동으로 카메라 시작')
+      
+      const startCameraAutomatically = async () => {
+        try {
+          const stream = await createDirectMediaStream()
+          if (stream) {
+            console.log('✅ 웹소켓 연결 후 카메라 자동 시작 성공')
+            setShowWebcam(true)
+            setVideoStreamConnected(true)
+          } else {
+            console.warn('❌ 웹소켓 연결 후 카메라 자동 시작 실패')
+          }
+        } catch (error) {
+          console.error('❌ 웹소켓 연결 후 카메라 자동 시작 오류:', error)
+        }
+      }
+
+      startCameraAutomatically()
+    }
+  }, [wsConnected, sessionState.isRunning, directMediaStream, createDirectMediaStream, competitionState.competition.isActive])
 
   // 비디오 프레임 캡처 및 전송
   const captureAndSendFrame = useCallback(() => {
@@ -429,31 +565,48 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   useEffect(() => {
     const hasDirectVideoTrack = directMediaStream?.getVideoTracks().some(t => t.enabled && t.readyState === 'live') || false
     
-    console.log('프레임 캡처 useEffect 실행 (직접 스트림):', {
+    console.log('🎥 프레임 캡처 조건 확인 (직접 스트림):', {
       sessionRunning: sessionState.isRunning,
       videoStreamConnected,
       hasDirectVideoTrack,
       wsConnected,
+      directStreamExists: !!directMediaStream,
+      videoTracks: directMediaStream?.getVideoTracks().map(t => ({
+        kind: t.kind,
+        enabled: t.enabled,
+        readyState: t.readyState,
+        label: t.label
+      })) || [],
       interval: !!frameIntervalRef.current,
       directStreamId: directMediaStream?.id
     })
     
     if (sessionState.isRunning && videoStreamConnected && hasDirectVideoTrack && wsConnected) {
-      console.log('프레임 캡처 시작 조건 충족 (직접 스트림)')
+      console.log('🎬 프레임 캡처 시작! 5초마다 전송')
       
       // 5초마다 프레임 캡처 및 전송
       frameIntervalRef.current = setInterval(() => {
+        console.log('⏰ 인터벌 타이머 - 프레임 캡처 시도')
         captureAndSendFrame()
       }, 5000)
       
       // 첫 번째 프레임 즉시 캡처
-      setTimeout(captureAndSendFrame, 100)
+      console.log('🚀 첫 번째 프레임 즉시 캡처 시도')
+      setTimeout(() => {
+        console.log('🎯 첫 번째 프레임 캡처 실행')
+        captureAndSendFrame()
+      }, 100)
     } else {
-      console.log('프레임 캡처 조건 미충족 (직접 스트림)')
+      console.log('❌ 프레임 캡처 조건 미충족:', {
+        sessionRunning: sessionState.isRunning ? '✅' : '❌',
+        videoStreamConnected: videoStreamConnected ? '✅' : '❌',
+        hasDirectVideoTrack: hasDirectVideoTrack ? '✅' : '❌',
+        wsConnected: wsConnected ? '✅' : '❌'
+      })
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current)
         frameIntervalRef.current = null
-        console.log('기존 프레임 캡처 인터벌 정리')
+        console.log('🧹 기존 프레임 캡처 인터벌 정리')
       }
     }
 

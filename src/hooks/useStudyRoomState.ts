@@ -87,13 +87,26 @@ export function useStudyRoomState({ room, userId }: UseStudyRoomStateProps) {
   // 집중도 히스토리 업데이트 함수
   const updateFocusHistory = useCallback((userId: string, score: number, confidence: number = 0.8) => {
     const timestamp = Date.now()
-    setFocusHistoryMap(prev => ({
-      ...prev,
-      [userId]: [
-        ...(prev[userId] || []),
-        { timestamp, score, confidence }
-      ] // 전체 세션 데이터 유지 (누적 추세 표시)
-    }))
+    console.log('📈 집중도 히스토리 업데이트:', { userId, score, confidence, timestamp })
+    
+    setFocusHistoryMap(prev => {
+      const updated = {
+        ...prev,
+        [userId]: [
+          ...(prev[userId] || []),
+          { timestamp, score, confidence }
+        ] // 전체 세션 데이터 유지 (누적 추세 표시)
+      }
+      
+      console.log('📊 업데이트된 집중도 히스토리:', {
+        userId,
+        historyLength: updated[userId].length,
+        allUserIds: Object.keys(updated),
+        recentScores: updated[userId].slice(-3) // 최근 3개
+      })
+      
+      return updated
+    })
   }, [])
 
   // 참조 변수들

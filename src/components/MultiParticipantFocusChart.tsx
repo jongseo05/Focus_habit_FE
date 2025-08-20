@@ -40,6 +40,15 @@ export const MultiParticipantFocusChart = ({
   sessionStartTime,
   className = '' 
 }: MultiParticipantFocusChartProps) => {
+  
+  console.log('🔥 MultiParticipantFocusChart 렌더링 시작:', {
+    participantsCount: participants.length,
+    participants: participants.map(p => ({ userId: p.userId, userName: p.userName, historyCount: p.focusHistory.length })),
+    timeRange,
+    sessionStartTime,
+    timestamp: new Date().toISOString()
+  })
+  
   // 실시간 업데이트를 위한 상태
   const [updateTrigger, setUpdateTrigger] = useState(0)
   
@@ -78,10 +87,23 @@ export const MultiParticipantFocusChart = ({
   const chartData = useMemo(() => {
     const now = Date.now()
     
+    console.log('📊 차트 데이터 준비 시작:', {
+      participantsCount: participants.length,
+      timeRange,
+      sessionStartTime,
+      currentTime: new Date(now).toISOString()
+    })
+    
     // 세션 시작 시간이 있으면 그것을 기준으로, 없으면 기존 방식 사용
     const startTime = sessionStartTime && sessionStartTime > 0
       ? sessionStartTime 
       : now - (timeRange * 60 * 1000)
+      
+    console.log('📊 시간 범위 설정:', {
+      startTime: new Date(startTime).toISOString(),
+      endTime: new Date(now).toISOString(),
+      rangeMinutes: (now - startTime) / 1000 / 60
+    })
 
     // 시간 축 생성 (5초 간격으로 변경 - 집중도 업데이트 주기와 맞춤)
     const timePoints = []
@@ -155,12 +177,30 @@ export const MultiParticipantFocusChart = ({
     // 데이터가 있는 참가자들만 필터링
     const participantsWithData = participantData.filter(p => p.dataPoints.length > 0)
     
+    console.log('📊 차트 데이터 상세 정보:', {
+      totalParticipants: participantData.length,
+      participantsWithData: participantsWithData.length,
+      participantDetails: participantData.map(p => ({
+        userId: p.userId,
+        userName: p.userName,
+        dataPointsCount: p.dataPoints.length,
+        hasRecentData: p.dataPoints.some(point => point.timestamp >= startTime - 30000),
+        latestTimestamp: p.dataPoints.length > 0 ? new Date(Math.max(...p.dataPoints.map(d => d.timestamp))).toLocaleTimeString() : 'N/A'
+      })),
+      timeRange: { startTime: new Date(startTime).toLocaleTimeString(), endTime: new Date(endTime).toLocaleTimeString() }
+    })
+    
     if (participantsWithData.length === 0) {
       return (
         <div className="text-center text-gray-500 py-16">
           <div className="text-lg font-medium mb-2">집중도 데이터 수집 중...</div>
           <div className="text-sm">세션이 진행되면 집중도 차트가 표시됩니다</div>
-          <div className="mt-2 text-xs text-blue-600">참가자: {participantData.length}명</div>
+          <div className="mt-2 text-xs text-blue-600">
+            참가자: {participantData.length}명 | 데이터 있는 참가자: {participantsWithData.length}명
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            시간 범위: {new Date(startTime).toLocaleTimeString()} ~ {new Date(endTime).toLocaleTimeString()}
+          </div>
         </div>
       )
     }

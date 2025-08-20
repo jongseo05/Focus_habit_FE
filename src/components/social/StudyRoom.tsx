@@ -9,6 +9,7 @@ import { useStudyRoomState } from '@/hooks/useStudyRoomState'
 import { useStudyRoomLogic } from '@/hooks/useStudyRoomLogic'
 import { useStudyRoomRealtime } from '@/hooks/useStudyRoomRealtime'
 import { useGroupChallengeAutoUpdate } from '@/hooks/useGroupChallengeAutoUpdate'
+import { useCompetition } from '@/hooks/useCompetition'
 import MultiParticipantFocusChart from '../MultiParticipantFocusChart'
 import { VideoGrid } from './VideoGrid'
 import { ChallengeHUD } from './ChallengeHUD'
@@ -93,10 +94,37 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     userId: user?.id || ''
   })
 
+  // 경쟁 기능 훅
+  const competition = useCompetition({
+    roomId: room?.room_id || '',
+    isHost: state.isHost
+  })
+
   // 자동 챌린지 업데이트 훅
   const challengeAutoUpdate = useGroupChallengeAutoUpdate({
     roomId: room?.room_id
   })
+
+  // 경쟁이 활성화되어 있을 때 세션 시작 시간 자동 설정
+  useEffect(() => {
+    if (competition.competition.isActive && !state.focusSessionStartTime) {
+      // 경쟁 진행 시간을 기반으로 시작 시간 계산
+      const now = Date.now()
+      const competitionDuration = competition.competition.duration || 25 // 기본 25분
+      const timeLeft = competition.competition.timeLeft || 0 // 남은 시간(초)
+      const elapsedSeconds = (competitionDuration * 60) - timeLeft // 경과 시간(초)
+      const competitionStartTime = now - (elapsedSeconds * 1000) // 시작 시간
+        
+      console.log('🏁 경쟁이 활성화되어 있어서 세션 시작 시간 자동 설정:', {
+        competitionDuration,
+        timeLeft,
+        elapsedSeconds,
+        competitionStartTime: new Date(competitionStartTime).toISOString()
+      })
+      
+      state.setFocusSessionStartTime(competitionStartTime)
+    }
+  }, [competition.competition.isActive, competition.competition.duration, competition.competition.timeLeft, state.focusSessionStartTime, state.setFocusSessionStartTime])
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -181,8 +209,10 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
               participants={state.participants}
               onFocusScoreUpdate={(score: number) => {
                 // 집중도 업데이트 시 히스토리에 추가
+                console.log('🎯 StudyRoom에서 집중도 업데이트 받음:', { userId: user?.id, score })
                 if (user?.id) {
                   state.updateFocusHistory(user.id, score, 0.8)
+                  console.log('📊 현재 사용자 집중도 히스토리 업데이트 완료')
                 }
               }}
               onSessionStart={(startTime: number) => {
@@ -198,13 +228,46 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           {/* 집중도 차트 - 전체 너비 */}
           <div className="w-full">
             <MultiParticipantFocusChart
-              participants={state.participants.map(participant => ({
-                userId: participant.user_id,
-                userName: participant.user.name,
-                focusHistory: state.focusHistoryMap[participant.user_id] || [], // 실제 집중도 히스토리
-                currentScore: participant.current_focus_score || 0, // 실제 현재 집중도 점수
-                isOnline: participant.is_connected
-              }))}
+              participants={
+                // 경쟁이 활성화된 경우 경쟁 참가자들의 데이터 사용
+                competition.competition.isActive && competition.competition.participants.length > 0 
+                  ? (() => {
+                      console.log('🏆 경쟁 활성화됨, 참가자 데이터 매핑 시작:', {
+                        competitionParticipants: competition.competition.participants,
+                        focusHistoryMap: state.focusHistoryMap,
+                        focusHistoryKeys: Object.keys(state.focusHistoryMap)
+                      })
+                      
+                      return competition.competition.participants.map((participant: any) => {
+                        const userId = participant.user_id
+                        const focusHistory = state.focusHistoryMap[userId] || []
+                        
+                        console.log(`📊 참가자 ${userId} 차트 데이터:`, {
+                          userId,
+                          userName: participant.user?.name || participant.user?.display_name,
+                          focusHistoryLength: focusHistory.length,
+                          currentScore: participant.current_score,
+                          focusHistory: focusHistory.slice(-5) // 최근 5개만 로그
+                        })
+                        
+                        return {
+                          userId,
+                          userName: participant.user?.name || participant.user?.display_name || 'Unknown',
+                          focusHistory,
+                          currentScore: participant.current_score || 0,
+                          isOnline: true
+                        }
+                      })
+                    })()
+                  // 일반 스터디룸 참가자들의 데이터 사용
+                  : state.participants.map(participant => ({
+                      userId: participant.user_id,
+                      userName: participant.user.name,
+                      focusHistory: state.focusHistoryMap[participant.user_id] || [], // 실제 집중도 히스토리
+                      currentScore: participant.current_focus_score || 0, // 실제 현재 집중도 점수
+                      isOnline: participant.is_connected
+                    }))
+              }
               timeRange={10}
               sessionStartTime={state.focusSessionStartTime || undefined} // 세션 시작 시간 전달
             />
@@ -214,29 +277,49 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
           <div className="w-full">
             <CompetitionPanel
               isHost={state.isHost}
-              isCompetitionActive={false}
+              isCompetitionActive={competition.competition.isActive}
               isBreakTime={false}
-              competitionTimeLeft={0}
-              competitionDuration={25}
-              breakDuration={5}
-              competitionScores={{}}
+              competitionTimeLeft={competition.competition.timeLeft}
+              competitionDuration={competition.settings.duration}
+              breakDuration={competition.settings.breakDuration}
+              competitionScores={competition.competition.participants.reduce((acc: Record<string, number>, p: any) => ({
+                ...acc,
+                [p.user_id]: p.current_score
+              }), {})}
               competitionHistory={state.competitionHistory}
-              participants={state.participants}
-              showCompetitionSettings={false}
-              activeTab="pomodoro"
-              customHours={0}
-              customMinutes={30}
+              participants={competition.competition.isActive && competition.competition.participants.length > 0 
+                ? competition.competition.participants.map((p: any) => ({
+                    user_id: p.user_id,
+                    user: p.user,
+                    // CompetitionPanel에서 필요한 필드들을 기본값으로 추가
+                    participant_id: `comp-${p.user_id}`,
+                    room_id: room?.room_id || '',
+                    is_host: false,
+                    joined_at: new Date().toISOString(),
+                    left_at: undefined,
+                    focus_score: p.current_score,
+                    last_activity: new Date().toISOString(),
+                    is_connected: true,
+                    is_video_enabled: false,
+                    is_audio_enabled: false,
+                    camera_updated_at: new Date().toISOString(),
+                    current_focus_score: p.current_score
+                  })) as any
+                : state.participants
+              }
+              showCompetitionSettings={competition.settings.showSettings}
+              activeTab={competition.settings.activeTab}
+              customHours={competition.settings.customHours}
+              customMinutes={competition.settings.customMinutes}
               hasPendingInvitation={false}
-              onShowCompetitionSettings={() => {}}
-              onActiveTabChange={() => {}}
-              onCompetitionDurationChange={() => {}}
-              onBreakDurationChange={() => {}}
-              onCustomHoursChange={() => {}}
-              onCustomMinutesChange={() => {}}
-              onStartCompetition={() => {
-                // 대결 시작 처리
-              }}
-              onEndCompetition={() => {}}
+              onShowCompetitionSettings={competition.showCompetitionSettings}
+              onActiveTabChange={competition.onActiveTabChange}
+              onCompetitionDurationChange={competition.onCompetitionDurationChange}
+              onBreakDurationChange={competition.onBreakDurationChange}
+              onCustomHoursChange={competition.onCustomHoursChange}
+              onCustomMinutesChange={competition.onCustomMinutesChange}
+              onStartCompetition={competition.startCompetition}
+              onEndCompetition={competition.endCompetition}
             />
           </div>
 

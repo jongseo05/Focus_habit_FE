@@ -177,7 +177,7 @@ export default function CreateStudyRoomForm({ onClose, onSuccess }: CreateStudyR
                   <SelectItem value="study">공부</SelectItem>
                   <SelectItem value="work">업무</SelectItem>
                   <SelectItem value="reading">독서</SelectItem>
-                  <SelectItem value="coding">코딩</SelectItem>
+                  <SelectItem value="other">기타</SelectItem>
                 </SelectContent>
               </Select>
             </div>

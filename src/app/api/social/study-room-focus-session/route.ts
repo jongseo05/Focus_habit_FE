@@ -15,7 +15,7 @@ import {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('스터디룸 세션 생성 요청:', body)
+    console.log('🔥 스터디룸 세션 생성 요청:', JSON.stringify(body, null, 2))
     
     const { 
       room_id, 
@@ -25,20 +25,29 @@ export async function POST(request: NextRequest) {
       notes 
     } = body
 
+    console.log('📋 요청 파라미터 파싱:', {
+      room_id,
+      goal_min,
+      context_tag,
+      session_type,
+      notes
+    })
+
     // 현재 사용자 정보 가져오기
     const supabase = await supabaseServer()
     const authResult = await requireAuth(supabase)
     
     if (authResult instanceof NextResponse) {
-      console.log('인증 실패:', authResult.status, authResult.statusText)
+      console.log('❌ 인증 실패:', authResult.status, authResult.statusText)
       return authResult
     }
     
     const { user } = authResult
-    console.log('인증된 사용자:', user.id)
+    console.log('✅ 인증된 사용자:', user.id)
 
     // 🚀 최적화: 병렬 처리로 참가자 확인과 기존 세션 종료를 동시에 실행
     const now = new Date().toISOString()
+    console.log('🔍 병렬 검증 시작:', { timestamp: now })
     
     const [participantResult, existingSessionResult, eligibleParticipantsResult] = await Promise.allSettled([
       // 스터디룸 참가자 확인

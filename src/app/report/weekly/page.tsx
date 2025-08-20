@@ -3,7 +3,7 @@
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BarChart3, ArrowLeft, Calendar, Loader2, AlertCircle, Activity, Clock, TrendingUp, Target, Zap } from "lucide-react"
+import { BarChart3, ArrowLeft, Calendar, Loader2, AlertCircle, TrendingUp, Target, Clock, Zap, Activity } from "lucide-react"
 import Link from "next/link"
 import { useWeeklyReport } from "@/hooks/useWeeklyReport"
 import { useLearningInsights } from "@/hooks/useLearningInsights"
@@ -454,7 +454,90 @@ const WeeklyFocusAnalysis = ({
   )
 }
 
+// 주간 목표 달성 컴포넌트
+const WeeklyGoals = () => {
+  const goals = [
+    {
+      id: 1,
+      title: "5일 연속 학습",
+      progress: 4,
+      target: 5,
+      icon: <TrendingUp className="w-5 h-5" />,
+      color: "from-green-500 to-emerald-600"
+    },
+    {
+      id: 2,
+      title: "평균 집중도 80점 이상",
+      progress: 75,
+      target: 80,
+      icon: <Target className="w-5 h-5" />,
+      color: "from-blue-500 to-blue-600"
+    },
+    {
+      id: 3,
+      title: "총 학습 시간 20시간",
+      progress: 18,
+      target: 20,
+      icon: <Clock className="w-5 h-5" />,
+      color: "from-purple-500 to-purple-600"
+    }
+  ]
 
+  return (
+    <Card className="rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 text-xl font-bold text-slate-900">
+          <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center">
+            <Zap className="w-5 h-5 text-white" />
+          </div>
+          이번 주 목표
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {goals.map((goal) => {
+            const percentage = Math.min((goal.progress / goal.target) * 100, 100)
+            const isCompleted = goal.progress >= goal.target
+
+            return (
+              <div key={goal.id} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 bg-gradient-to-br ${goal.color} rounded-lg flex items-center justify-center text-white`}>
+                      {goal.icon}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-900">{goal.title}</h4>
+                      <p className="text-sm text-slate-600">
+                        {goal.progress} / {goal.target}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-lg font-bold ${isCompleted ? 'text-green-600' : 'text-slate-700'}`}>
+                      {Math.round(percentage)}%
+                    </div>
+                    {isCompleted && (
+                      <div className="text-xs text-green-600 font-medium">달성!</div>
+                    )}
+                  </div>
+                </div>
+                <div className="relative h-3 bg-slate-100 rounded-full overflow-hidden">
+                  <motion.div
+                    className={`h-full bg-gradient-to-r ${goal.color} rounded-full`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${percentage}%` }}
+                    transition={{ duration: 1, delay: 0.2 }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 // 주간 학습 패턴 분석
 const WeeklyLearningPatterns = ({ weeklyData }: { weeklyData: any }) => {
@@ -847,7 +930,13 @@ export default function WeeklyReportPage() {
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
         <div className="space-y-8">
-
+          {/* 주간 목표 달성 */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <WeeklyGoals />
+          </motion.div>
 
           {/* 통합된 주간 집중도 분석 */}
           <motion.div 

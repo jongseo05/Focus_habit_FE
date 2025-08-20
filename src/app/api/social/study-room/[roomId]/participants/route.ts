@@ -56,13 +56,13 @@ export async function GET(
       return createSimpleSuccessResponse([], '참가자가 없습니다.')
     }
 
-    // 2. 참가자들의 user_id로 프로필 정보 조회 (user_profile 테이블 시도)
+    // 2. 참가자들의 user_id로 프로필 정보 조회
     const userIds = roomParticipants.map(p => p.user_id)
     let profiles: any[] = []
     
-    // 먼저 user_profile 테이블 시도
-    const { data: userProfiles, error: userProfileError } = await supabase
-      .from('user_profile')
+    // profiles 테이블에서 프로필 정보 조회
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
       .select(`
         user_id,
         display_name,
@@ -70,28 +70,12 @@ export async function GET(
         status
       `)
       .in('user_id', userIds)
-
-    if (!userProfileError && userProfiles) {
-      profiles = userProfiles
+    
+    if (!profilesError && profilesData) {
+      profiles = profilesData
     } else {
-      // user_profile 실패 시 profiles 테이블 시도
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select(`
-          user_id,
-          display_name,
-          avatar_url,
-          status
-        `)
-        .in('user_id', userIds)
-      
-      if (!profilesError && profilesData) {
-        profiles = profilesData
-      } else {
-        console.error('프로필 조회 실패 (user_profile):', userProfileError)
-        console.error('프로필 조회 실패 (profiles):', profilesError)
-        // 프로필 조회 실패해도 기본 정보로 진행
-      }
+      console.error('프로필 조회 실패:', profilesError)
+      // 프로필 조회 실패해도 기본 정보로 진행
     }
 
     // 3. 데이터 병합 및 변환

@@ -295,8 +295,9 @@ export function CompetitionPanel({
 
       {/* 대결 설정 모달 */}
       {showCompetitionSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="bg-white border border-gray-200 shadow-lg max-w-2xl w-full">
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm" onClick={() => onShowCompetitionSettings(false)} />
+          <Card className="relative bg-white border border-gray-200 shadow-xl max-w-2xl w-full">
             <CardContent className="p-6">
               <div className="space-y-6">
                 <div className="text-center">

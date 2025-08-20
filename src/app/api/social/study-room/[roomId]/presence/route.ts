@@ -216,36 +216,21 @@ export async function GET(
     const userIds = presentParticipants.map(p => p.user_id)
     let profiles: any[] = []
     
-    // 먼저 user_profile 테이블 시도
-    const { data: userProfiles, error: userProfileError } = await supabase
-      .from('user_profile')
+    // profiles 테이블에서 프로필 정보 조회
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
       .select(`
         user_id,
         display_name,
         avatar_url
       `)
       .in('user_id', userIds)
-
-    if (!userProfileError && userProfiles) {
-      profiles = userProfiles
+    
+    if (!profilesError && profilesData) {
+      profiles = profilesData
     } else {
-      // user_profile 실패 시 profiles 테이블 시도
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select(`
-          user_id,
-          display_name,
-          avatar_url
-        `)
-        .in('user_id', userIds)
-      
-      if (!profilesError && profilesData) {
-        profiles = profilesData
-      } else {
-        console.error('프로필 조회 실패 (user_profile):', userProfileError)
-        console.error('프로필 조회 실패 (profiles):', profilesError)
-        // 프로필 조회 실패해도 기본 정보로 진행
-      }
+      console.error('프로필 조회 실패:', profilesError)
+      // 프로필 조회 실패해도 기본 정보로 진행
     }
 
     // 온라인 상태도 함께 계산하고 프로필 정보 병합
