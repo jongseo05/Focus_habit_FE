@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOnlineStatus } from '@/stores/onlineStatusStore'
+import { supabaseBrowser } from '@/lib/supabase/client'
 import type { ParticipantWithUser } from '@/types/social'
 
 interface PresentParticipant extends ParticipantWithUser {
@@ -256,7 +257,7 @@ export function useStudyRoomPresence({
     }
   }, [roomId, userId, enabled])
 
-  // 페이지 가시성 변경 감지
+  // 페이지 가시성 변경 감지 (탭 복귀 시에만 재입장)
   useEffect(() => {
     if (!enabled || !roomId || !userId) return
 
@@ -265,19 +266,18 @@ export function useStudyRoomPresence({
         clearTimeout(enterTimeoutRef.current)
       }
 
-      if (document.hidden) {
-        // 페이지가 숨겨지면 즉시 퇴장
-        leaveRoom()
-      } else {
-        // 페이지가 다시 보이면 잠깐 후 입장 (중복 요청 방지)
+      if (!document.hidden) {
+        // 페이지가 다시 보이면 잠깐 후 입장 (탭 복귀 시 재입장)
         enterTimeoutRef.current = setTimeout(() => {
           enterRoom()
         }, 500)
       }
+      // 페이지가 숨겨져도 퇴장하지 않음 (다른 탭으로 이동하는 것은 정상적인 사용)
     }
 
     const handleBeforeUnload = () => {
-      // 페이지를 떠날 때 퇴장 (navigator.sendBeacon 사용)
+      // 페이지를 실제로 떠날 때만 퇴장 (navigator.sendBeacon 사용)
+      console.log('👋 페이지 떠남 - 퇴장 처리')
       if (isPresent) {
         navigator.sendBeacon(
           `/api/social/study-room/${roomId}/presence`, 
@@ -298,31 +298,64 @@ export function useStudyRoomPresence({
     }
   }, [roomId, userId, enabled, isPresent, enterRoom, leaveRoom])
 
-  // 컴포넌트 마운트 시 입장, 언마운트 시 퇴장
+  // 컴포넌트 마운트 시 입장, 언마운트 시에만 퇴장
   useEffect(() => {
     if (!enabled || !roomId || !userId) return
 
     // 마운트 시 입장
     enterRoom()
 
-    // 주기적으로 참가자 상태 새로고침 (10초마다)
-    refreshIntervalRef.current = setInterval(refreshPresence, 10000)
+    // 주기적인 참가자 상태 새로고림은 제거 (이벤트 기반으로 처리)
+    // API 호출을 줄이기 위해 polling 제거
 
     return () => {
-      // 언마운트 시 퇴장
+      // 언마운트 시에만 퇴장 (실제 컴포넌트가 제거될 때만)
+      console.log('🔄 useStudyRoomPresence 언마운트 - 퇴장 처리')
       leaveRoom()
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current)
       }
     }
-  }, [roomId, userId, enabled, enterRoom, leaveRoom, refreshPresence])
+  }, [roomId, userId, enabled, enterRoom, leaveRoom])
 
-  // 초기 로드 시 참가자 상태 조회
+  // 초기 로드 시 참가자 상태 조회 및 실시간 구독
   useEffect(() => {
-    if (enabled && roomId) {
-      refreshPresence()
+    if (!enabled || !roomId) return
+
+    // 초기 상태 로드
+    refreshPresence()
+
+    // 🎯 Supabase 실시간 구독으로 다른 사용자 상태 변화 감지
+    const supabase = supabaseBrowser()
+    const channel = supabase
+      .channel(`room-presence-${roomId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'room_participants',
+        filter: `room_id=eq.${roomId}`
+      }, (payload: any) => {
+        console.log('🔔 실시간 참가자 상태 변화 감지:', payload)
+        
+        // 현재 사용자의 변화가 아닐 때만 새로고침 (API 호출 최소화)
+        if (payload.new?.user_id !== userId && payload.old?.user_id !== userId) {
+          console.log('👥 다른 사용자 상태 변화 - 새로고침')
+          setTimeout(() => {
+            refreshPresence()
+          }, 500) // 약간의 지연 후 새로고침
+        } else {
+          console.log('👤 현재 사용자 변화 - 새로고침 생략')
+        }
+      })
+      .subscribe((status: any) => {
+        console.log('📡 실시간 구독 상태:', status)
+      })
+
+    return () => {
+      console.log('📡 실시간 구독 해제')
+      channel.unsubscribe()
     }
-  }, [roomId, enabled, refreshPresence])
+  }, [roomId, enabled, refreshPresence, userId])
 
   return {
     // 상태

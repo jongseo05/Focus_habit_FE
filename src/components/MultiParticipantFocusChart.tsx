@@ -124,7 +124,7 @@ export const MultiParticipantFocusChart = ({
   // SVG 차트 렌더링
   const renderChart = () => {
     const { timePoints, participantData, startTime, endTime } = chartData
-    const width = 800 // 적당한 크기
+    const width = 1000 // 가로 폭을 200 증가 (800 → 1000)
     const height = 400 // 적당한 높이
     const padding = 60 // 여백
 
@@ -188,7 +188,7 @@ export const MultiParticipantFocusChart = ({
     }
 
     return (
-      <div className="relative w-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8">
+      <div className="relative w-full rounded-2xl p-8">
         <svg 
           width="100%" 
           height={height} 
@@ -372,8 +372,6 @@ export const MultiParticipantFocusChart = ({
             <div className="text-xl font-semibold text-gray-800 mb-2">집중 세션을 시작해주세요!</div>
             <div className="text-gray-600">버튼을 눌러 집중도 분석을 시작하면</div>
             <div className="text-gray-600">실시간 차트를 확인할 수 있어요</div>
-            <div className="mt-6 px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-            </div>
           </div>
         ) : chartData.participantData.every(p => p.dataPoints.length === 0) ? (
           <div className="text-center text-gray-500 py-16">
