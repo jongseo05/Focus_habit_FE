@@ -127,6 +127,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   // ✨ 경쟁 자동 세션 시작 이벤트 처리 (커스텀 이벤트 - 백업용)
   useEffect(() => {
+  // 함수 형태 isSessionActive()를 호출해야 실제 활성 여부 확인 가능
+  const isActiveFn = sessionState?.isSessionActive as unknown as (() => boolean) | undefined
     const handleAutoSessionStart = (event: Event) => {
       const customEvent = event as CustomEvent
       const eventData = customEvent.detail
@@ -151,6 +153,25 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         
         // Zustand 스토어 상태를 서버 세션과 동기화 - startSession 호출
         sessionActions.startSession()
+        // 서버 세션 ID/데이터 저장 (isSessionActive 작동 위해)
+        try {
+          if (sessionSync?.setCurrentSession && sessionData) {
+            sessionSync.setCurrentSession(sessionId, {
+              session_id: sessionId,
+              started_at: sessionData.started_at || new Date().toISOString(),
+              goal_min: sessionData.goal_min ?? null,
+              context_tag: sessionData.context_tag ?? '스터디룸 집중 세션',
+              session_type: sessionData.session_type ?? 'study_room',
+              notes: sessionData.notes ?? null,
+              focus_score: sessionData.focus_score ?? null
+            })
+            console.log('StudyRoomFocusSession: setCurrentSession 호출 완료')
+          } else {
+            console.log('StudyRoomFocusSession: setCurrentSession 사용 불가 (sessionSync 혹은 sessionData 부족)')
+          }
+        } catch (e) {
+          console.warn('StudyRoomFocusSession: setCurrentSession 중 오류', e)
+        }
         
         // 추가로 세션 ID 설정이 필요할 수 있음 (별도 액션이 있는지 확인 필요)
         console.log('StudyRoomFocusSession: 자동 세션 시작 완료, sessionId:', sessionId)
@@ -161,11 +182,48 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
     // 커스텀 이벤트 리스너 등록
     window.addEventListener('focus-session-auto-started', handleAutoSessionStart)
+    // 경쟁 종료/세션 자동 종료 이벤트 -> UI 리셋
+    const handleAutoSessionEnded = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const detail = customEvent.detail
+      console.log('StudyRoomFocusSession: 자동 세션 종료 이벤트 수신:', detail)
+      // 현재 사용자가 경쟁 세션 중이라면 세션 상태 종료 처리
+  // currentSessionId 누락 상황에서도 isRunning이면 강제 종료
+  if (sessionState?.isRunning) {
+        // 세션 종료 (store에 stopSession 메서드 존재)
+        if (typeof sessionActions.stopSession === 'function') {
+          sessionActions.stopSession()
+        } else if (typeof sessionActions.pauseSession === 'function') {
+          // fallback
+          sessionActions.pauseSession()
+        }
+        // 서버 세션 정보도 정리
+        try {
+          // sessionSync는 훅 상단에서 이미 정의되어 있음
+          // @ts-ignore 안전 호출
+          if (sessionSync?.clearCurrentSession) sessionSync.clearCurrentSession()
+        } catch (e) {
+          console.warn('세션 정리 중 경고:', e)
+        }
+        // 웹캠/오디오 UI 복구
+        setShowWebcam(false)
+        setShowAudioPipeline(false)
+        // 스트림 정리
+        if (directMediaStream) {
+          directMediaStream.getTracks().forEach(t => t.stop())
+          setDirectMediaStream(null)
+          setVideoStreamConnected(false)
+        }
+        console.log('StudyRoomFocusSession: 경쟁 종료로 세션 UI 리셋 완료')
+      }
+    }
+    window.addEventListener('focus-session-auto-ended', handleAutoSessionEnded)
     
     return () => {
       window.removeEventListener('focus-session-auto-started', handleAutoSessionStart)
+      window.removeEventListener('focus-session-auto-ended', handleAutoSessionEnded)
     }
-  }, [currentUserId, roomId, sessionActions])
+  }, [currentUserId, roomId, sessionActions, sessionState?.isRunning, sessionSync])
 
   // 직접 MediaStream 관리 (useMediaStream 훅 문제 우회)
   const [directMediaStream, setDirectMediaStream] = useState<MediaStream | null>(null)

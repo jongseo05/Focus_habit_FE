@@ -134,6 +134,22 @@ export function useStudyRoomRealtime({
           console.log('  - userId 존재:', !!userId)
         }
       })
+      .on('broadcast', { event: 'competition_ended' }, async (payload) => {
+        console.log('🏁 [V2] 경쟁 종료 알림 수신!', payload)
+        onNotification('집중도 대결이 종료되었습니다.', 'info')
+        // UI 복구용 커스텀 이벤트
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('focus-session-auto-ended', {
+            detail: {
+              competitionId: payload.payload?.competition_id,
+              endedAt: payload.payload?.ended_at,
+              sessions: payload.payload?.sessions || []
+            }
+          }))
+        }
+        // 참가자 목록 재로딩
+        await loadParticipants()
+      })
       .subscribe((status) => {
         const timestamp = new Date().toISOString()
         console.log(`📡 [V2] [${timestamp}] Supabase 채널 구독 상태 변경:`)

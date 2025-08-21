@@ -10,7 +10,7 @@ export interface FocusSessionData {
   started_at: string
   goal_min: number | null
   context_tag: string | null
-  session_type: 'study' | 'work' | 'reading'
+  session_type: 'study' | 'work' | 'reading' | 'study_room'
   notes: string | null
   focus_score: number | null
 }

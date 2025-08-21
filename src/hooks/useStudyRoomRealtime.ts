@@ -198,6 +198,22 @@ export function useStudyRoomRealtime({
           console.log('  - userId 존재:', !!userId)
         }
       })
+      .on('broadcast', { event: 'competition_ended' }, async (payload) => {
+        console.log('🏁 경쟁 종료 알림 수신!', payload)
+        addNotification('집중도 대결이 종료되었습니다.', 'leave')
+        // 로컬 UI 복구용 커스텀 이벤트 발생
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('focus-session-auto-ended', {
+            detail: {
+              competitionId: payload.payload?.competition_id,
+              endedAt: payload.payload?.ended_at,
+              sessions: payload.payload?.sessions || []
+            }
+          }))
+        }
+        // 참가자 목록 새로고침 (점수/상태 갱신)
+        await loadInitialParticipants()
+      })
       .subscribe((status) => {
         const timestamp = new Date().toISOString()
         console.log(`📡 [${timestamp}] 채널 구독 상태 변경:`)
