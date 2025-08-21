@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useUser } from '@/hooks/useAuth'
 import { useEndStudyRoom, useLeaveStudyRoom } from '@/hooks/useSocial'
 import { useVideoRoom } from '@/hooks/useVideoRoom'
@@ -100,6 +100,58 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
     isHost: state.isHost
   })
 
+  // 집중 세션 참가자 (하위 컴포넌트 이벤트 수신)
+  const [sessionParticipantIds, setSessionParticipantIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!detail) return
+      if (detail.roomId && room?.room_id && detail.roomId !== room.room_id) return
+      setSessionParticipantIds(new Set(detail.participantIds || []))
+    }
+    window.addEventListener('studyroom-session-participants-changed', handler)
+    return () => window.removeEventListener('studyroom-session-participants-changed', handler)
+  }, [room?.room_id])
+
+  // directMediaStream fallback (현재는 debug 용 - 필요시 StudyRoomFocusSession이 localStream을 재사용하므로 유지)
+  const [directFallbackStream, setDirectFallbackStream] = useState<MediaStream | null>(null)
+  useEffect(() => {
+    const handleReady = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!detail) return
+      if (detail.roomId && room?.room_id && detail.roomId !== room.room_id) return
+      if (videoRoom.localStream) return // 이미 WebRTC localStream 확보되면 무시
+      if (detail.stream) {
+        console.log('[StudyRoom] direct stream ready 이벤트 수신 & fallback 적용', detail)
+        setDirectFallbackStream(detail.stream as MediaStream)
+      } else {
+        console.log('[StudyRoom] direct stream ready detail.stream 없음', detail)
+      }
+    }
+    const handleUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!detail) return
+      if (detail.roomId && room?.room_id && detail.roomId !== room.room_id) return
+      if (videoRoom.localStream) return
+      if (detail.stream) {
+        console.log('[StudyRoom] direct stream updated 이벤트 수신 & fallback 갱신', detail)
+        setDirectFallbackStream(detail.stream as MediaStream)
+      }
+    }
+    window.addEventListener('studyroom-direct-stream-ready', handleReady)
+    window.addEventListener('studyroom-direct-stream-updated', handleUpdated)
+    return () => {
+      window.removeEventListener('studyroom-direct-stream-ready', handleReady)
+      window.removeEventListener('studyroom-direct-stream-updated', handleUpdated)
+    }
+  }, [room?.room_id, videoRoom.localStream])
+
+  // 비디오 자동 시작 디바운스용 ref (Hook은 컴포넌트 최상위에서 선언)
+  const startVideoInProgressRef = useRef(false)
+  const lastStartAttemptRef = useRef(0)
+
+  // (중복 선언 제거됨)
+
   // 자동 챌린지 업데이트 훅
   const challengeAutoUpdate = useGroupChallengeAutoUpdate({
     roomId: room?.room_id
@@ -125,6 +177,75 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
       state.setFocusSessionStartTime(competitionStartTime)
     }
   }, [competition.competition.isActive, competition.competition.duration, competition.competition.timeLeft, state.focusSessionStartTime, state.setFocusSessionStartTime])
+
+  // StudyRoomFocusSession 측에서 요청하는 카메라 자동 시작 이벤트 처리
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!detail) return
+      if (detail.roomId && room?.room_id && detail.roomId !== room.room_id) return
+      if (videoRoom.localStream) return
+      const now = Date.now()
+      if (startVideoInProgressRef.current && now - lastStartAttemptRef.current < 2000) return
+      startVideoInProgressRef.current = true
+      lastStartAttemptRef.current = now
+      videoRoom.startVideo()
+        .then(() => console.log('[StudyRoom] startVideo 성공'))
+        .catch(err => console.warn('자동 비디오 시작 실패:', err))
+        .finally(() => setTimeout(() => { startVideoInProgressRef.current = false }, 1500))
+    }
+    window.addEventListener('studyroom-request-start-video', handler)
+    return () => window.removeEventListener('studyroom-request-start-video', handler)
+  }, [room?.room_id, videoRoom.localStream, videoRoom.startVideo])
+
+  // ================= Development Diagnostics =================
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    ;(window as any).__studyRoomDebug = () => {
+      const participantsSnapshot = state.participants.map(p => ({
+        participant_id: p.participant_id,
+        user_id: p.user_id,
+        name: p.user?.name,
+        is_connected: p.is_connected,
+        hasRemoteStream: videoRoom.remoteStreams.has(p.user_id)
+      }))
+      const localTracks = videoRoom.localStream ? videoRoom.localStream.getTracks().map(t => ({
+        kind: t.kind,
+        id: t.id,
+        enabled: t.enabled,
+        readyState: t.readyState,
+        label: t.label
+      })) : []
+      const diagnostic = {
+        roomId: room?.room_id,
+        currentUserId: user?.id,
+        participantCount: state.participants.length,
+        participantUserIds: state.participants.map(p => p.user_id),
+        hasCurrentUserInParticipants: !!state.participants.find(p => p.user_id === user?.id),
+        sessionParticipantIds: Array.from(sessionParticipantIds),
+        hasLocalStream: !!videoRoom.localStream,
+        localStreamId: videoRoom.localStream?.id,
+        localTracks,
+        remoteStreamIds: Array.from(videoRoom.remoteStreams.keys()),
+        isVideoEnabled: videoRoom.isVideoEnabled,
+        isAudioEnabled: videoRoom.isAudioEnabled,
+        focusSessionRunning: state.focusSessionStartTime != null, // proxy indicator
+      }
+      // Pretty logs
+      console.group('%cStudyRoom Debug Snapshot','color:#2563eb;font-weight:bold;')
+      console.table(participantsSnapshot)
+      console.log('Diagnostic:', diagnostic)
+      console.groupEnd()
+      return diagnostic
+    }
+    ;(window as any).__logLocalTracks = () => (videoRoom.localStream?.getTracks().forEach(t => console.log('track', t.kind, t.id, t.label, t.readyState, 'enabled=', t.enabled)), true)
+    console.info('%c[StudyRoom] 디버그 함수 등록: __studyRoomDebug(), __logLocalTracks()','color:#2563eb')
+    const autoDump = () => {
+      ;(window as any).__studyRoomDebug?.()
+    }
+    window.addEventListener('studyroom-debug-dump', autoDump)
+    return () => window.removeEventListener('studyroom-debug-dump', autoDump)
+  }, [room?.room_id, user?.id, state.participants, sessionParticipantIds, videoRoom.localStream, videoRoom.remoteStreams, videoRoom.isVideoEnabled, videoRoom.isAudioEnabled, state.focusSessionStartTime])
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -193,11 +314,12 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
             <VideoGrid
               participants={state.participants}
               currentUserId={user?.id || ''}
-              localStream={videoRoom.localStream}
+                localStream={videoRoom.localStream || directFallbackStream}
               remoteStreams={videoRoom.remoteStreams}
               onParticipantClick={(participantId) => {
                 // 참가자 클릭 핸들러
               }}
+              sessionParticipantIds={sessionParticipantIds}
             />
           </div>
 
@@ -207,6 +329,8 @@ export function StudyRoom({ room, onClose }: StudyRoomProps) {
               roomId={room?.room_id || ''}
               currentUserId={user?.id || ''}
               participants={state.participants}
+              localStream={videoRoom.localStream || directFallbackStream}
+              remoteStreams={videoRoom.remoteStreams}
               onFocusScoreUpdate={(score: number) => {
                 // 집중도 업데이트 시 히스토리에 추가
                 console.log('🎯 StudyRoom에서 집중도 업데이트 받음:', { userId: user?.id, score })

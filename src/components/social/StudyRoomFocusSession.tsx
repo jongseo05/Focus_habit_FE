@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { VideoGrid } from './VideoGrid'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,8 @@ import WebcamAnalysisDisplay from '@/components/WebcamAnalysisDisplay'
 import CameraPermissionLayer from '@/components/CameraPermissionLayer'
 import MicrophonePermissionLayer from '@/components/MicrophonePermissionLayer'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useUserPreferencesStore } from '@/stores/userPreferencesStore'
+import { Switch } from '@/components/ui/switch'
 
 interface StudyRoomFocusSessionProps {
   roomId: string
@@ -34,6 +37,9 @@ interface StudyRoomFocusSessionProps {
       avatar_url?: string
     }
   }>
+  // WebRTC 비디오 공유 스트림 (상위 StudyRoom에서 전달)
+  localStream?: MediaStream | null
+  remoteStreams?: Map<string, MediaStream> | null
   onFocusScoreUpdate?: (score: number) => void
   onSessionStart?: (startTime: number) => void
   onSessionComplete?: (sessionData: {
@@ -52,6 +58,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   roomId,
   currentUserId,
   participants = [],
+  localStream = null,
+  remoteStreams = null,
   onFocusScoreUpdate,
   onSessionStart,
   onSessionComplete
@@ -60,6 +68,26 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
   const sessionState = useFocusSessionState()
   const sessionActions = useFocusSessionActions()
   const sessionSync = useFocusSessionSync()
+
+  // === 세션 참가자 추적 (focus_session_started/ended 기반) ===
+  const [sessionParticipantIds, setSessionParticipantIds] = useState<Set<string>>(new Set())
+  const addParticipant = useCallback((uid: string) => {
+    setSessionParticipantIds(prev => {
+      if (prev.has(uid)) return prev
+      const next = new Set(prev)
+      next.add(uid)
+      return next
+    })
+  }, [])
+  const removeParticipant = useCallback((uid: string) => {
+    setSessionParticipantIds(prev => {
+      if (!prev.has(uid)) return prev
+      const next = new Set(prev)
+      next.delete(uid)
+      return next
+    })
+  }, [])
+  const clearParticipants = useCallback(() => setSessionParticipantIds(new Set()), [])
 
   // ✨ 새로운 스터디룸 실시간 입장/퇴장 상태 관리
   const roomPresence = useStudyRoomPresence({
@@ -76,7 +104,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   // ✨ 소셜 실시간 이벤트 (집중세션 시작 이벤트 수신용)
   const socialRealtime = useSocialRealtime({
-    onFocusSessionStarted: useCallback(async (payload: any) => {
+  onFocusSessionStarted: useCallback(async (payload: any) => {
       console.log('StudyRoomFocusSession: 집중세션 시작 이벤트 수신 (소셜 실시간):', payload)
       
       // 페이로드에서 세션 데이터 추출
@@ -92,37 +120,70 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         roomId
       })
       
-      if (sessionId && sessionUserId === currentUserId && sessionRoomId === roomId) {
-        console.log('StudyRoomFocusSession: 현재 사용자의 세션으로 UI 상태 업데이트')
-        
-        // 1. Zustand 스토어 상태를 서버 세션과 동기화
-        sessionActions.startSession()
-        
-        // 2. 웹캠 권한 요청 및 스트림 생성 (경쟁 자동 시작용)
-        console.log('StudyRoomFocusSession: 경쟁 자동 시작을 위해 웹캠 권한 요청')
-        try {
-          // 웹캠 스트림 생성 (createDirectMediaStream을 직접 호출하지 않고 권한만 요청)
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 480 } }
-          })
-          
-          if (stream) {
-            console.log('StudyRoomFocusSession: 경쟁용 웹캠 스트림 생성 성공')
-            setDirectMediaStream(stream)
-            setShowWebcam(true) // 웹캠 UI 표시
-            setVideoStreamConnected(true) // 비디오 스트림 연결 상태 업데이트
-          } else {
-            console.warn('StudyRoomFocusSession: 경쟁용 웹캠 스트림 생성 실패')
-          }
-        } catch (error) {
-          console.error('StudyRoomFocusSession: 경쟁용 웹캠 권한 요청 실패:', error)
+      // 모든 참가자(현재 룸, 온라인/프레즌스 충족)는 자동 시작 대상
+      if (sessionId && sessionRoomId === roomId) {
+        const isSelf = sessionUserId === currentUserId
+        // 이미 참여 중이면 무시
+        if (!sessionParticipantIds.has(sessionUserId)) addParticipant(sessionUserId)
+
+        // 본인 아닌 타인이 시작했어도 자동 세션 동기화 (로컬 UI용)
+        if (!sessionState.isRunning) {
+          console.log('StudyRoomFocusSession: 세션 자동 동기화 시작 (initiated by another user)')
+          sessionActions.startSession()
         }
-        
-        console.log('StudyRoomFocusSession: 자동 세션 시작 완료, sessionId:', sessionId)
-      } else {
-        console.log('StudyRoomFocusSession: 세션 조건 불일치 - UI 업데이트 건너뜀')
+
+        // 사용자 환경설정 확인 (타인 시작 시 자동 카메라)
+        const autoStartPref = useUserPreferencesStore.getState().preferences.autoStartCameraOnSession
+        const shouldAutoStartCamera = (isSelf || autoStartPref)
+
+        if (shouldAutoStartCamera) {
+          console.log('StudyRoomFocusSession: 자동 웹캠 활성화 조건 충족 (isSelf=%s, pref=%s)', isSelf, autoStartPref)
+          try {
+            // 우선 WebRTC localStream 없으면 비디오룸 시작 (상위 전달 localStream 활용 가정)
+            if (!localStream) {
+              // 비디오룸 훅이 이 컴포넌트에 직접 없으므로 커스텀 이벤트로 상위에 startVideo 요청
+              window.dispatchEvent(new CustomEvent('studyroom-request-start-video', { detail: { roomId } }))
+            }
+            // 분석용 directMediaStream 없으면 생성 (중복 스트림 방지 TODO: WebRTC 스트림 재사용 리팩터)
+            if (!directMediaStream) {
+              const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 } }
+              })
+              if (stream) {
+                setDirectMediaStream(stream)
+                setShowWebcam(true)
+                setVideoStreamConnected(true)
+              }
+            }
+          } catch (e) {
+            console.warn('웹캠 자동 시작 실패:', e)
+            if (!isSelf && autoStartPref) {
+              // 권한 거부 시 자동 시작 비활성화하여 반복 팝업 방지
+              useUserPreferencesStore.getState().setAutoStartCameraOnSession(false)
+            }
+          }
+        }
+        console.log('StudyRoomFocusSession: 자동 세션 동기화 완료')
       }
-    }, [currentUserId, roomId, sessionActions])
+    }, [currentUserId, roomId, sessionActions, addParticipant, sessionState.isRunning, sessionParticipantIds])
+    ,
+    onFocusSessionEnded: useCallback((payload: any) => {
+      const endedUserId = payload?.ended_by || payload?.user_id
+      const sessionId = payload?.id || payload?.session_id
+      const currentSessionId = sessionSync.currentSessionId
+
+      if (endedUserId) removeParticipant(endedUserId)
+
+      // 나의 세션 전체 종료 판단만 여기서 (스트림 정리는 아래 추가 effect에서 directMediaStream 선언 후 처리)
+      if (sessionId && currentSessionId && sessionId === currentSessionId) {
+        if (sessionState.isRunning) sessionActions.stopSession()
+        if (sessionSync.clearCurrentSession) sessionSync.clearCurrentSession()
+        clearParticipants()
+        // 스트림/UI 정리는 별도 effect 트리거용 상태 변화로 충분
+        setShowWebcam(false)
+        setShowAudioPipeline(false)
+      }
+    }, [removeParticipant, sessionSync.currentSessionId, sessionState.isRunning, sessionActions, sessionSync, clearParticipants])
   })
 
   // ✨ 경쟁 자동 세션 시작 이벤트 처리 (커스텀 이벤트 - 백업용)
@@ -152,7 +213,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         console.log('StudyRoomFocusSession: 현재 사용자의 자동 세션으로 UI 상태 업데이트')
         
         // Zustand 스토어 상태를 서버 세션과 동기화 - startSession 호출
-        sessionActions.startSession()
+  sessionActions.startSession()
+  addParticipant(currentUserId)
         // 서버 세션 ID/데이터 저장 (isSessionActive 작동 위해)
         try {
           if (sessionSync?.setCurrentSession && sessionData) {
@@ -189,7 +251,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       console.log('StudyRoomFocusSession: 자동 세션 종료 이벤트 수신:', detail)
       // 현재 사용자가 경쟁 세션 중이라면 세션 상태 종료 처리
   // currentSessionId 누락 상황에서도 isRunning이면 강제 종료
-  if (sessionState?.isRunning) {
+      if (sessionState?.isRunning) {
         // 세션 종료 (store에 stopSession 메서드 존재)
         if (typeof sessionActions.stopSession === 'function') {
           sessionActions.stopSession()
@@ -205,6 +267,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         } catch (e) {
           console.warn('세션 정리 중 경고:', e)
         }
+        clearParticipants()
         // 웹캠/오디오 UI 복구
         setShowWebcam(false)
         setShowAudioPipeline(false)
@@ -223,10 +286,28 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       window.removeEventListener('focus-session-auto-started', handleAutoSessionStart)
       window.removeEventListener('focus-session-auto-ended', handleAutoSessionEnded)
     }
-  }, [currentUserId, roomId, sessionActions, sessionState?.isRunning, sessionSync])
+  }, [currentUserId, roomId, sessionActions, sessionState?.isRunning, sessionSync, clearParticipants])
+
+  // directMediaStream 선언 이후에 스트림 정리 관련 effect들을 배치해야 하므로 아래로 이동
 
   // 직접 MediaStream 관리 (useMediaStream 훅 문제 우회)
   const [directMediaStream, setDirectMediaStream] = useState<MediaStream | null>(null)
+  // 경쟁 종료 broadcast (competition_ended) 대비: 상위 훅이 별도 이벤트 던지지 못하는 경우 직접 수신 (전역 custom event 사용 가정)
+  useEffect(() => {
+    const handler = () => {
+      if (sessionState.isRunning) sessionActions.stopSession()
+      if (sessionSync.clearCurrentSession) sessionSync.clearCurrentSession()
+      clearParticipants()
+      if (directMediaStream) {
+        directMediaStream.getTracks().forEach(t => t.stop())
+        setDirectMediaStream(null)
+      }
+      setShowWebcam(false)
+      setShowAudioPipeline(false)
+    }
+    window.addEventListener('studyroom-competition-ended', handler)
+    return () => window.removeEventListener('studyroom-competition-ended', handler)
+  }, [sessionState.isRunning, sessionActions, sessionSync, clearParticipants, directMediaStream])
   const [directStreamError, setDirectStreamError] = useState<string | null>(null)
   const [directStreamLoading, setDirectStreamLoading] = useState(false)
   
@@ -256,6 +337,31 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     }))
   }, [participants.map(p => p.participant_id).join(',')]) // 참가자 ID만 비교하여 불필요한 재계산 방지
 
+  // 세션 참여자 필터링된 참가자 목록
+  const sessionParticipants = useMemo(() => {
+    if (!sessionParticipantIds.size) return []
+    return participants.filter(p => sessionParticipantIds.has(p.user_id)) as any
+  }, [participants, sessionParticipantIds])
+
+  // 상위 VideoGrid 하이라이트 용도로 sessionParticipantIds 브로드캐스트
+  useEffect(() => {
+    const detail = { roomId, participantIds: Array.from(sessionParticipantIds) }
+    window.dispatchEvent(new CustomEvent('studyroom-session-participants-changed', { detail }))
+  }, [sessionParticipantIds, roomId])
+
+  // 세션 참여자용 스트림 필터링 (원본 remoteStreams 에서 필요한 것만 추출)
+  const sessionRemoteStreams = useMemo(() => {
+    if (!remoteStreams) return new Map<string, MediaStream>()
+    const filtered = new Map<string, MediaStream>()
+    sessionParticipantIds.forEach(uid => {
+      if (uid !== currentUserId) {
+        const s = remoteStreams.get(uid)
+        if (s) filtered.set(uid, s)
+      }
+    })
+    return filtered
+  }, [remoteStreams, sessionParticipantIds, currentUserId])
+
   // 참가자 데이터를 전역 스토어에 동기화 (최적화)
   useEffect(() => {
     if (participants.length > 0) {
@@ -283,6 +389,10 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   // 직접 MediaStream 생성 함수
   const createDirectMediaStream = useCallback(async (): Promise<MediaStream | null> => {
+    if (directMediaStream && directMediaStream.getVideoTracks().some(t => t.readyState === 'live')) {
+      console.log('직접 스트림 이미 존재 - 재사용')
+      return directMediaStream
+    }
     try {
       setDirectStreamLoading(true)
       setDirectStreamError(null)
@@ -337,18 +447,68 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     }
   }, [])
 
+  // WebRTC 우선 확보 후 fallback 로직 (중복 방지)
+  const ensureVideoStream = useCallback(async () => {
+    try {
+      // 1) WebRTC localStream 시도 (상위 요청 이벤트)
+      if (!localStream) {
+        window.dispatchEvent(new CustomEvent('studyroom-request-start-video', { detail: { roomId, reason: 'ensure-video-stream' } }))
+        const ok = await new Promise<boolean>(resolve => {
+          const start = performance.now()
+            ;(function waitLoop() {
+              if (localStreamRef.current) return resolve(true)
+              if (performance.now() - start > 1500) return resolve(false)
+              setTimeout(waitLoop, 100)
+            })()
+        })
+        if (ok && localStreamRef.current) {
+          console.log('✅ WebRTC localStream 확보 성공 (ensure)')
+          setDirectMediaStream(prev => prev || localStreamRef.current!)
+          setShowWebcam(true)
+          setVideoStreamConnected(true)
+          return localStreamRef.current
+        }
+      } else {
+        console.log('✅ 이미 WebRTC localStream 존재')
+        if (!directMediaStream) {
+          setDirectMediaStream(localStream)
+          setShowWebcam(true)
+          setVideoStreamConnected(true)
+        }
+        return localStream
+      }
+      // 2) fallback
+      console.log('⚠️ WebRTC localStream 미확보 → fallback getUserMedia 실행')
+      const stream = await createDirectMediaStream()
+      if (stream) {
+        setShowWebcam(true)
+        setVideoStreamConnected(true)
+        return stream
+      }
+      return null
+    } catch (e) {
+      console.warn('ensureVideoStream 실패', e)
+      return null
+    }
+  }, [localStream, createDirectMediaStream, directMediaStream, roomId])
+
   // 직접 MediaStream 정리 함수
   const cleanupDirectMediaStream = useCallback(() => {
     if (directMediaStream) {
-      console.log('직접 MediaStream 정리')
-      directMediaStream.getTracks().forEach(track => {
-        track.stop()
-        console.log(`트랙 정리: ${track.kind} - ${track.label}`)
-      })
+      // WebRTC localStream과 동일 객체인 경우 stop하면 비디오룸도 끊기므로 구분
+      if (directMediaStream === localStream) {
+        console.log('directMediaStream은 WebRTC localStream 재사용 중 - stop 생략')
+      } else {
+        console.log('직접 MediaStream 정리 (standalone)')
+        directMediaStream.getTracks().forEach(track => {
+          track.stop()
+          console.log(`트랙 정리: ${track.kind} - ${track.label}`)
+        })
+      }
       setDirectMediaStream(null)
       setVideoStreamConnected(false)
     }
-  }, [directMediaStream])
+  }, [directMediaStream, localStream])
 
   // 집중도 점수 업데이트 통합 함수 (중복 제거)
   const updateFocusScore = useCallback(async (score: number, confidence: number) => {
@@ -455,26 +615,10 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
     // 웹소켓이 연결되고 세션이 실행 중이며 카메라가 아직 시작되지 않은 경우
     if (wsConnected && sessionState.isRunning && !directMediaStream) {
-      console.log('🎥 웹소켓 연결됨 - 자동으로 카메라 시작')
-      
-      const startCameraAutomatically = async () => {
-        try {
-          const stream = await createDirectMediaStream()
-          if (stream) {
-            console.log('✅ 웹소켓 연결 후 카메라 자동 시작 성공')
-            setShowWebcam(true)
-            setVideoStreamConnected(true)
-          } else {
-            console.warn('❌ 웹소켓 연결 후 카메라 자동 시작 실패')
-          }
-        } catch (error) {
-          console.error('❌ 웹소켓 연결 후 카메라 자동 시작 오류:', error)
-        }
-      }
-
-      startCameraAutomatically()
+      console.log('🎥 웹소켓 연결됨 - ensureVideoStream 실행')
+      ensureVideoStream()
     }
-  }, [wsConnected, sessionState.isRunning, directMediaStream, createDirectMediaStream, competitionState.competition.isActive])
+  }, [wsConnected, sessionState.isRunning, directMediaStream, ensureVideoStream, competitionState.competition.isActive])
 
   // 비디오 프레임 캡처 및 전송
   const captureAndSendFrame = useCallback(() => {
@@ -579,7 +723,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   // 직접 스트림을 비디오 요소에 연결
   useEffect(() => {
-    if (directMediaStream && videoRef.current) {
+  if (directMediaStream && videoRef.current) {
       console.log('비디오 요소에 직접 스트림 연결:', {
         streamId: directMediaStream.id,
         videoElement: !!videoRef.current
@@ -732,7 +876,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       
       // 1. 로컬 세션 시작
       console.log('1. 로컬 세션 시작')
-      sessionActions.startSession()
+  sessionActions.startSession()
+  addParticipant(currentUserId)
       
       // 세션 시작 시간을 부모에 알림
       if (onSessionStart) {
@@ -775,108 +920,54 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
       const result = await response.json()
       console.log('3. 세션 생성 성공:', result.data.session_id)
-      sessionSync.setCurrentSession(result.data.session_id, result.data)
+  sessionSync.setCurrentSession(result.data.session_id, result.data)
+  addParticipant(currentUserId)
 
-      // 3. 미디어 스트림 시작
-      console.log('4. 미디어 스트림 시작 시도')
-      
-      // 기존 스트림 정리
-      console.log('3. 기존 스트림 정리...')
-      cleanupDirectMediaStream()
-      if (microphoneStream.stream) {
-        console.log('기존 마이크 스트림 정리')
-        await microphoneStream.stopStream()
+      // 3. 미디어 스트림: WebRTC localStream 우선 시도 → 일정 시간 내 미도착 시 직접 캡처 fallback
+      window.dispatchEvent(new CustomEvent('studyroom-request-start-video', { detail: { roomId, reason: 'focus-session-start' } }))
+      console.log('4. WebRTC localStream 대기 후 fallback 준비')
+
+      const waitForLocalStream = async (timeoutMs = 2000) => {
+        const start = performance.now()
+        while (performance.now() - start < timeoutMs) {
+          if (localStreamRef.current) return true
+          await new Promise(r => setTimeout(r, 100))
+        }
+        return false
       }
-      
-      // 비디오 스트림 직접 생성
-      try {
-        console.log('=== 직접 비디오 스트림 생성 프로세스 ===')
-        
-        // 1. 카메라 권한 재확인
-        console.log('1. 카메라 권한 재확인 중...')
-        const cameraPermission = await navigator.permissions.query({ name: 'camera' as PermissionName })
-        console.log('현재 카메라 권한 상태:', cameraPermission.state)
-        
-        if (cameraPermission.state === 'denied') {
-          throw new Error('카메라 권한이 거부되었습니다. 브라우저 설정에서 카메라 권한을 허용해주세요.')
-        }
-        
-        // 2. 직접 MediaStream 생성
-        console.log('2. 직접 MediaStream 생성 시작...')
-        const stream = await createDirectMediaStream()
-        
-        if (!stream) {
-          throw new Error('직접 MediaStream 생성에 실패했습니다.')
-        }
-        
-        // 3. 스트림 검증
-        const videoTracks = stream.getVideoTracks()
-        const audioTracks = stream.getAudioTracks()
-        
-        console.log('3. 스트림 검증 완료:', {
-          streamId: stream.id,
-          videoTracksCount: videoTracks.length,
-          audioTracksCount: audioTracks.length,
-          streamActive: stream.active
-        })
-        
-        // 4. 비디오 트랙 상태 검사
-        if (videoTracks.length === 0) {
-          if (audioTracks.length > 0) {
-            console.warn('비디오 트랙이 없지만 오디오 트랙은 있습니다. 오디오만으로 진행합니다.')
-          } else {
-            throw new Error('비디오와 오디오 트랙 모두 가져올 수 없습니다. 카메라와 마이크 연결을 확인해주세요.')
-          }
-        } else {
-          // 비디오 트랙 상태 상세 확인
-          const videoTrack = videoTracks[0]
-          console.log('비디오 트랙 상태:', {
-            id: videoTrack.id,
-            kind: videoTrack.kind,
-            label: videoTrack.label,
-            enabled: videoTrack.enabled,
-            readyState: videoTrack.readyState,
-            muted: videoTrack.muted
-          })
-          
-          if (videoTrack.readyState === 'ended') {
-            throw new Error('비디오 트랙이 종료된 상태입니다. 카메라 연결을 확인해주세요.')
-          }
-          
-          console.log('비디오 트랙 상태 양호')
-        }
-        
+
+      const localStreamRef = { current: localStream }
+      // 최신 props 반영 위한 작은 effect 없이 즉시 참조 업데이트
+      localStreamRef.current = localStream
+      const hasLocal = await waitForLocalStream()
+
+      if (hasLocal && localStreamRef.current) {
+        console.log('✅ WebRTC localStream 확보 - 직접 스트림 재사용')
+        setDirectMediaStream(localStreamRef.current)
         setShowWebcam(true)
-        console.log('직접 비디오 스트림 생성 프로세스 완료')
-        
-      } catch (videoError) {
-        console.error('직접 비디오 스트림 생성 실패:', videoError)
-        console.error('직접 스트림 상태:', {
-          hasDirectStream: !!directMediaStream,
-          directStreamError,
-          directStreamLoading
-        })
-        
-        // 에러 타입에 따른 상세 처리
-        let errorMessage = '비디오 스트림을 시작할 수 없습니다.'
-        
-        if (videoError instanceof Error) {
-          if (videoError.message.includes('Permission denied') || videoError.message.includes('권한')) {
-            errorMessage = '카메라 권한이 필요합니다. 브라우저에서 카메라 권한을 허용해주세요.'
-          } else if (videoError.message.includes('NotFoundError') || videoError.message.includes('카메라')) {
-            errorMessage = '카메라를 찾을 수 없습니다. 카메라가 연결되어 있는지 확인해주세요.'
-          } else if (videoError.message.includes('NotReadableError')) {
-            errorMessage = '카메라가 다른 애플리케이션에서 사용 중일 수 있습니다.'
-          } else {
-            errorMessage = videoError.message
-          }
+        setVideoStreamConnected(true)
+      } else {
+        console.log('⚠️ localStream 미도착 - fallback getUserMedia 시도')
+        cleanupDirectMediaStream()
+        if (microphoneStream.stream) {
+          console.log('기존 마이크 스트림 정리')
+          await microphoneStream.stopStream()
         }
-        
-        console.error('최종 에러 메시지:', errorMessage)
-        alert(errorMessage) // 사용자에게 명확한 안내
-        
-        sessionActions.stopSession()
-        return
+        try {
+          const perm = await navigator.permissions.query({ name: 'camera' as PermissionName })
+          if (perm.state === 'denied') throw new Error('카메라 권한이 거부되었습니다.')
+          const stream = await createDirectMediaStream()
+          if (!stream) throw new Error('직접 MediaStream 생성 실패')
+          const vt = stream.getVideoTracks()
+          if (vt.length === 0) console.warn('비디오 트랙 없음 - 오디오만 진행')
+          setShowWebcam(true)
+          console.log('✅ fallback 스트림 확보')
+        } catch (videoError) {
+          console.error('fallback 스트림 생성 실패:', videoError)
+          sessionActions.stopSession()
+          alert(videoError instanceof Error ? videoError.message : '비디오 스트림 시작 실패')
+          return
+        }
       }
       
       // 오디오 스트림 시작
@@ -979,6 +1070,36 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     onSessionStart
   ])
 
+  // 마지막으로 브로드캐스트한 스트림 ID 추적 (무한 루프 방지)
+  const lastBroadcastStreamIdRef = useRef<string | null>(null)
+
+  // 상위 localStream 참조 최신화용 ref
+  const localStreamRef = useRef<MediaStream | null>(localStream)
+  useEffect(() => { localStreamRef.current = localStream }, [localStream])
+
+  // WebRTC localStream 등장 시 directMediaStream 재사용 (중복 캡처 방지)
+  useEffect(() => {
+    if (!sessionState.isRunning) return
+    if (!localStream) return
+    if (directMediaStream) return // 이미 분석용 스트림 존재
+    console.log('🔁 WebRTC localStream 발견 -> adopt')
+    setDirectMediaStream(localStream)
+    setShowWebcam(true)
+    setVideoStreamConnected(true)
+    if (localStream.id !== lastBroadcastStreamIdRef.current) {
+      window.dispatchEvent(new CustomEvent('studyroom-direct-stream-ready', { detail: { roomId, stream: localStream, streamId: localStream.id, source: 'webrtc-adopt' } }))
+      lastBroadcastStreamIdRef.current = localStream.id
+    }
+  }, [sessionState.isRunning, localStream, directMediaStream, roomId])
+
+  // directMediaStream 생성/변경 시 상위에 공유 (fallback 표시 목적)
+  useEffect(() => {
+    if (!directMediaStream) return
+    if (directMediaStream.id === lastBroadcastStreamIdRef.current) return // 이미 보낸 스트림
+    window.dispatchEvent(new CustomEvent('studyroom-direct-stream-updated', { detail: { roomId, stream: directMediaStream, streamId: directMediaStream.id, source: directMediaStream === localStream ? 'webrtc' : 'direct' } }))
+    lastBroadcastStreamIdRef.current = directMediaStream.id
+  }, [directMediaStream, roomId, localStream])
+
   // 세션 종료
   const handleStopSession = useCallback(async () => {
     console.log('=== 세션 종료 시작 ===')
@@ -1064,6 +1185,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
           <CardTitle className="flex items-center gap-2">
             <Brain className="w-5 h-5" />
             스터디룸 집중 세션
+            <PreferenceAutoCamSwitch />
             {roomPresence.isPresent ? (
               <Badge variant="default" className="text-xs">
                 룸 입장 중
@@ -1175,6 +1297,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         </CardContent>
       </Card>
 
+  {/* 별도 세션 전용 그리드 제거: 메인 VideoGrid에서 하이라이트 (StudyRoom 상위에서 전달) */}
+
       {/* 비디오 및 분석 영역 */}
       {showWebcam && (
         <Card>
@@ -1265,6 +1389,18 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
           }}
         />
       )}
+    </div>
+  )
+})
+
+// 분리된 자동 캠 스위치 (Zustand 구독 최소화)
+const PreferenceAutoCamSwitch = React.memo(function PreferenceAutoCamSwitch() {
+  const auto = useUserPreferencesStore(s => s.preferences.autoStartCameraOnSession)
+  const setAuto = useUserPreferencesStore.getState().setAutoStartCameraOnSession
+  return (
+    <div className="ml-auto flex items-center gap-2 text-xs font-normal">
+      <span>타인 시작 시 자동 캠</span>
+      <Switch checked={auto} onCheckedChange={v => setAuto(v)} />
     </div>
   )
 })

@@ -13,6 +13,8 @@ interface VideoGridProps {
   localStream: MediaStream | null
   remoteStreams: Map<string, MediaStream> | null
   onParticipantClick?: (participantId: string) => void
+  // 집중 세션에 참여 중인 user_id 목록 (선택)
+  sessionParticipantIds?: Set<string> | string[]
 }
 
 
@@ -25,7 +27,8 @@ function VideoTile({
   localStream, 
   remoteStreams, 
   gridLayout, 
-  onParticipantClick 
+  onParticipantClick,
+  sessionParticipantIds
 }: {
   participant: ParticipantWithUser
   index: number
@@ -34,10 +37,12 @@ function VideoTile({
   remoteStreams: Map<string, MediaStream> | null
   gridLayout: '1' | '2' | '3' | '4'
   onParticipantClick?: (participantId: string) => void
+  sessionParticipantIds?: Set<string> | string[]
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const isLocal = participant.user_id === currentUserId
   const stream = isLocal ? localStream : (remoteStreams && remoteStreams instanceof Map ? remoteStreams.get(participant.user_id) : null)
+  const inSession = sessionParticipantIds ? (sessionParticipantIds instanceof Set ? sessionParticipantIds.has(participant.user_id) : (sessionParticipantIds as string[]).includes(participant.user_id)) : false
 
   // 원격 스트림 연결
   useEffect(() => {
@@ -51,7 +56,7 @@ function VideoTile({
       className="relative cursor-pointer w-full h-full"
       onClick={() => onParticipantClick?.(participant.participant_id)}
     >
-      <Card className="h-full bg-gradient-to-br from-blue-100 to-blue-200 border-0 overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl">
+      <Card className={`h-full bg-gradient-to-br from-blue-100 to-blue-200 border-0 overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl relative ${inSession ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : ''}`}>
         <CardContent className="p-0 h-full">
           {stream ? (
             <video
@@ -80,6 +85,13 @@ function VideoTile({
               </Badge>
             </div>
           )}
+          {inSession && (
+            <div className="absolute top-3 right-3">
+              <Badge variant="outline" className="bg-white/80 backdrop-blur text-blue-600 border-blue-400 shadow px-2 py-0.5 text-xs font-semibold">
+                세션
+              </Badge>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -91,7 +103,8 @@ export function VideoGrid({
   currentUserId, 
   localStream, 
   remoteStreams = new Map(), 
-  onParticipantClick 
+  onParticipantClick,
+  sessionParticipantIds
 }: VideoGridProps) {
   const [gridLayout, setGridLayout] = useState<'1' | '2' | '3' | '4'>('1')
 
@@ -153,7 +166,7 @@ export function VideoGrid({
     <Card className="bg-white border-0 shadow-lg rounded-xl">
       <CardContent className="p-0">
         <div className={`grid ${getGridClasses()} gap-6 h-[416px] w-full p-6`}>
-          {participants.map((participant, index) => (
+      {participants.map((participant, index) => (
             <VideoTile
               key={participant.participant_id}
               participant={participant as ParticipantWithUser}
@@ -163,6 +176,7 @@ export function VideoGrid({
               remoteStreams={remoteStreams || new Map()}
               gridLayout={gridLayout}
               onParticipantClick={onParticipantClick}
+        sessionParticipantIds={sessionParticipantIds}
             />
           ))}
         </div>
