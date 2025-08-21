@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Users, UserPlus, UserMinus, Search } from 'lucide-react'
+import { Users, UserPlus, UserMinus, Search, Check, Clock, X } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useFriendsOnlineStatus } from '@/stores/onlineStatusStore'
@@ -21,13 +21,15 @@ function AddFriendResults({
   searchTerm, 
   searchResults, 
   isSearching,
-  sendRequestMutation, 
-  handleSendRequest 
+  sendRequestMutation,
+  cancelRequestMutation, 
+  handleSendRequest
 }: {
   searchTerm: string
   searchResults: any[]
   isSearching: boolean
   sendRequestMutation: any
+  cancelRequestMutation: any
   handleSendRequest: (userId: string, userName: string) => void
 }) {
   if (searchTerm.trim().length >= 2 && isSearching) {
@@ -45,43 +47,107 @@ function AddFriendResults({
   if (searchResults && searchResults.length > 0) {
     return (
       <div className="space-y-3">
-        {searchResults.map((user) => (
-          <div
-            key={user.user_id}
-            className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={user.avatar_url} alt={user.display_name} />
-                <AvatarFallback>
-                  {user.display_name.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-medium">{user.display_name}</h4>
-                  <Badge variant="secondary" className="text-xs">
-                    @{user.handle}
-                  </Badge>
+        {searchResults.map((user) => {
+          // 디버깅용 로그 추가
+          console.log('사용자 상태 확인:', {
+            name: user.display_name,
+            user_id: user.user_id,
+            is_friend: user.is_friend,
+            has_pending_request: user.has_pending_request
+          })
+          return (
+            <div
+              key={user.user_id}
+              className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={user.avatar_url} alt={user.display_name} />
+                  <AvatarFallback>
+                    {user.display_name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-medium">{user.display_name}</h4>
+                    <Badge variant="secondary" className="text-xs">
+                      @{user.handle}
+                    </Badge>
+                    {/* 디버깅용 상태 표시 */}
+                    {user.is_friend && (
+                      <Badge variant="outline" className="text-xs text-green-600">
+                        이미친구
+                      </Badge>
+                    )}
+                    {user.has_pending_request && (
+                      <Badge variant="outline" className="text-xs text-orange-600">
+                        요청중
+                      </Badge>
+                    )}
+                  </div>
+                  {user.bio && (
+                    <p className="text-sm text-gray-500">{user.bio}</p>
+                  )}
                 </div>
-                {user.bio && (
-                  <p className="text-sm text-gray-500">{user.bio}</p>
+              </div>
+              
+              {/* 친구 상태에 따른 버튼 표시 */}
+              <div className="flex items-center gap-2">
+                {user.is_friend ? (
+                  <>
+                    <Badge variant="default" className="bg-green-100 text-green-800">
+                      <Check className="h-3 w-3 mr-1" />
+                      친구
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        // 친구 프로필 보기 또는 메시지 보내기 기능
+                        console.log('친구와 상호작용:', user.display_name)
+                      }}
+                      className="text-xs"
+                    >
+                      프로필 보기
+                    </Button>
+                  </>
+                ) : user.has_pending_request ? (
+                  <>
+                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                      <Clock className="h-3 w-3 mr-1" />
+                      요청 대기중
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        cancelRequestMutation.mutate(user.user_id)
+                      }}
+                      disabled={cancelRequestMutation.isPending}
+                      className="text-xs text-red-600 hover:text-red-700"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      취소
+                    </Button>
+                  </>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSendRequest(user.user_id, user.display_name)}
+                      disabled={sendRequestMutation.isPending}
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      친구 추가
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleSendRequest(user.user_id, user.display_name)}
-              disabled={sendRequestMutation.isPending}
-            >
-              <UserPlus className="h-4 w-4 mr-2" />
-              친구 추가
-            </Button>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -130,14 +196,19 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
       if (!response.ok) {
         throw new Error('친구 목록을 불러오는데 실패했습니다.')
       }
-      return response.json()
+      const data = await response.json()
+      console.log('친구 목록 API 응답:', data) // 디버깅용 로그 추가
+      console.log('friendsData.data 구조:', data.data) // 실제 데이터 구조 확인
+      console.log('friendsData.data.friends:', data.data?.friends) // 친구 배열 확인
+      return data
     }
   })
 
   // 친구 목록을 전역 스토어에 동기화
   useEffect(() => {
-    if (friendsData?.friends && friendsData.friends.length > 0) {
-      const friendsWithStatus = friendsData.friends.map((friend: any) => ({
+    if (friendsData?.data?.friends && friendsData.data.friends.length > 0) {
+      console.log('전역 스토어에 친구 데이터 동기화:', friendsData.data.friends)
+      const friendsWithStatus = friendsData.data.friends.map((friend: any) => ({
         user_id: friend.friend_id,
         activity_status: friend.activity_status || 'offline',
         current_focus_score: friend.current_focus_score,
@@ -163,7 +234,13 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
         const response = await fetch(`/api/social/friends/search?search=${encodeURIComponent(value)}`)
         if (response.ok) {
           const data = await response.json()
-          setSearchResults(data.results || [])
+          console.log('친구 검색 API 응답:', data) // 디버깅용 로그 추가
+          // 표준 API 응답 구조에 맞게 수정
+          if (data.success && data.data) {
+            setSearchResults(data.data.results || [])
+          } else {
+            setSearchResults([])
+          }
         } else {
           setSearchResults([])
         }
@@ -192,7 +269,7 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
   // 친구 요청 전송
   const sendRequestMutation = useMutation({
     mutationFn: async ({ to_user_id, message }: { to_user_id: string; message?: string }) => {
-      const response = await fetch('/api/social/friends/requests', {
+      const response = await fetch('/api/social/friends', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,13 +283,51 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
       }
       
       return response.json()
+    },
+    onSuccess: () => {
+      toast.success('친구 요청을 보냈습니다.')
+      queryClient.invalidateQueries({ queryKey: ['friends'] })
+      // 검색 결과 새로고침
+      if (searchTerm.trim().length >= 2) {
+        handleSearchChange(searchTerm)
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error.message || '친구 요청 전송에 실패했습니다.')
+    }
+  })
+
+  // 친구 요청 취소
+  const cancelRequestMutation = useMutation({
+    mutationFn: async (to_user_id: string) => {
+      const response = await fetch(`/api/social/friends/requests?from_user_id=${to_user_id}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '친구 요청 취소에 실패했습니다.')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      toast.success('친구 요청을 취소했습니다.')
+      queryClient.invalidateQueries({ queryKey: ['friends'] })
+      // 검색 결과 새로고침
+      if (searchTerm.trim().length >= 2) {
+        handleSearchChange(searchTerm)
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error.message || '친구 요청 취소에 실패했습니다.')
     }
   })
 
   // 친구 삭제
   const removeFriendMutation = useMutation({
     mutationFn: async (friendId: string) => {
-      const response = await fetch(`/api/social/friends/${friendId}`, {
+      const response = await fetch(`/api/social/friends?friendId=${friendId}`, {
         method: 'DELETE',
       })
       
@@ -237,13 +352,15 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
         to_user_id: userId,
         message: undefined
       })
-      toast.success(`${userName}님에게 친구 요청을 보냈습니다.`)
-      // 친구 추가 모드 종료
-      setShowAddFriendMode(false)
-      setSearchTerm('')
+      // 검색 결과 즉시 새로고침
+      if (searchTerm.trim().length >= 2) {
+        await handleSearchChange(searchTerm)
+      }
+      // 친구 추가 모드는 유지하여 사용자가 계속 검색할 수 있도록 함
       onFriendAdded?.()
     } catch (error: any) {
-      toast.error(error.message || '친구 요청 전송에 실패했습니다.')
+      // sendRequestMutation의 onError에서 이미 처리되므로 중복 토스트 제거
+      console.error('친구 요청 전송 실패:', error)
     }
   }
 
@@ -353,7 +470,7 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            친구 목록 ({friendsData?.total_count || 0})
+            친구 목록 ({friendsData?.data?.total_count || 0})
           </CardTitle>
           {!showAddFriendMode && onAddFriend && (
             <Button onClick={handleAddFriendMode} variant="outline" size="sm">
@@ -387,12 +504,13 @@ export function FriendsList({ onAddFriend, onFriendAdded }: FriendsListProps) {
               searchResults={searchResults}
               isSearching={isSearching}
               sendRequestMutation={sendRequestMutation}
+              cancelRequestMutation={cancelRequestMutation}
               handleSendRequest={handleSendRequest}
             />
           </div>
-        ) : friendsData?.friends && friendsData.friends.length > 0 ? (
+        ) : friendsData?.data?.friends && friendsData.data.friends.length > 0 ? (
           <div className="space-y-3">
-            {friendsData.friends.map((friend: any) => (
+            {friendsData.data.friends.map((friend: any) => (
               <div
                 key={friend.friendship_id}
                 className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"

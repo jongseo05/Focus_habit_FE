@@ -6,13 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Search, UserPlus, Check, X } from 'lucide-react'
+import { Search, UserPlus, Check, X, Clock } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useFriendsOnlineStatus } from '@/stores/onlineStatusStore'
+import { useFriendSearch } from '@/hooks/useSocial'
+import type { FriendSearchResult } from '@/types/social'
 
 interface FriendSearchProps {
-  onUserSelect?: (user: any) => void
+  onUserSelect?: (user: FriendSearchResult) => void
   mode?: 'search' | 'add'
   onClose?: () => void
 }
@@ -22,15 +24,17 @@ function SearchResults({
   searchTerm, 
   searchResults, 
   isSearching,
+  error,
   sendRequestMutation, 
   setSelectedUser, 
   mode 
 }: {
   searchTerm: string
-  searchResults: any[]
+  searchResults: FriendSearchResult[]
   isSearching: boolean
+  error: string | null
   sendRequestMutation: any
-  setSelectedUser: (user: any) => void
+  setSelectedUser: (user: FriendSearchResult) => void
   mode: 'search' | 'add'
 }) {
   // 전역 친구 온라인 상태 사용
@@ -66,6 +70,15 @@ function SearchResults({
       default:
         return '오프라인'
     }
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <div className="text-red-500 mb-2">검색 오류</div>
+        <p className="text-gray-500">{error}</p>
+      </div>
+    )
   }
 
   if (searchTerm.trim().length >= 2 && isSearching) {
@@ -123,6 +136,7 @@ function SearchResults({
                 </Badge>
               ) : user.has_pending_request ? (
                 <Badge variant="outline" className="text-orange-600 border-orange-600">
+                  <Clock className="h-3 w-3 mr-1" />
                   요청 대기 중
                 </Badge>
               ) : mode === 'add' ? (
@@ -168,16 +182,23 @@ function SearchResults({
 }
 
 export function FriendSearch({ onUserSelect, mode = 'search', onClose }: FriendSearchProps) {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [selectedUser, setSelectedUser] = useState<FriendSearchResult | null>(null)
   const queryClient = useQueryClient()
+  
+  // 검색 훅 사용
+  const { 
+    searchQuery, 
+    setSearchQuery, 
+    searchResults, 
+    isSearching, 
+    error, 
+    debouncedSearch 
+  } = useFriendSearch()
 
   // 친구 요청 전송
   const sendRequestMutation = useMutation({
     mutationFn: async ({ to_user_id, message }: { to_user_id: string; message?: string }) => {
-      const response = await fetch('/api/social/friends/requests', {
+      const response = await fetch('/api/social/friends', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -201,45 +222,15 @@ export function FriendSearch({ onUserSelect, mode = 'search', onClose }: FriendS
     }
   })
 
-  // 실시간 검색을 위한 처리
-  const handleSearchChange = async (value: string) => {
-    setSearchTerm(value)
-    
-    if (value.trim().length >= 2) {
-      setIsSearching(true)
-      try {
-        const response = await fetch(`/api/social/friends/search?search=${encodeURIComponent(value.trim())}`)
-        if (response.ok) {
-          const result = await response.json()
-          // 표준 API 응답 구조에 맞게 데이터 추출
-          if (result.success && result.data) {
-            setSearchResults(Array.isArray(result.data.results) ? result.data.results : Array.isArray(result.data) ? result.data : [])
-          } else {
-            setSearchResults([])
-          }
-        } else {
-          setSearchResults([])
-        }
-      } catch (error) {
-        console.error('친구 검색 중 오류 발생:', error)
-        setSearchResults([])
-      } finally {
-        setIsSearching(false)
-      }
-    } else {
-      setSearchResults([])
-      setIsSearching(false)
-    }
-  }
-
   // 검색창 입력 처리
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    handleSearchChange(value)
+    setSearchQuery(value)
+    debouncedSearch(value)
   }
 
   // 사용자 선택 처리
-  const handleUserSelect = (user: any) => {
+  const handleUserSelect = (user: FriendSearchResult) => {
     setSelectedUser(user)
     onUserSelect?.(user)
   }
@@ -256,12 +247,12 @@ export function FriendSearch({ onUserSelect, mode = 'search', onClose }: FriendS
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             placeholder="사용자명 또는 핸들로 검색..."
-            value={searchTerm}
+            value={searchQuery}
             onChange={handleInputChange}
             className="pl-10"
           />
         </div>
-        {searchTerm.trim().length > 0 && searchTerm.trim().length < 2 && (
+        {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
           <p className="text-sm text-gray-500">최소 2자 이상 입력해주세요</p>
         )}
       </CardHeader>
@@ -293,9 +284,10 @@ export function FriendSearch({ onUserSelect, mode = 'search', onClose }: FriendS
           </div>
         ) : (
           <SearchResults
-            searchTerm={searchTerm}
+            searchTerm={searchQuery}
             searchResults={searchResults}
             isSearching={isSearching}
+            error={error}
             sendRequestMutation={sendRequestMutation}
             setSelectedUser={handleUserSelect}
             mode={mode}

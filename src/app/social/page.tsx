@@ -48,7 +48,8 @@ import Link from 'next/link'
 import { useSignOut, useAuth } from '@/hooks/useAuth'
 import { FriendsList } from '@/components/social/FriendsList'
 import { FriendRequests } from '@/components/social/FriendRequests'
-import { FriendRanking } from '@/components/social/FriendRanking'
+import { FriendComparison } from '@/components/social/FriendComparison'
+import { useFriendsList } from '@/hooks/useSocial'
 
 function SocialPageContent() {
   const searchParams = useSearchParams()
@@ -64,6 +65,9 @@ function SocialPageContent() {
   // Auth hooks
   const { user } = useAuth()
   const signOut = useSignOut()
+  
+  // 친구 목록 데이터
+  const { data: friendsData } = useFriendsList()
   
   // Mock notifications for header
   const notifications = [
@@ -491,25 +495,30 @@ function SocialPageContent() {
             </TabsContent>
 
             {/* 친구 탭 */}
-            <TabsContent value="friends" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 친구 목록 */}
-                <FriendsList 
-                  onAddFriend={() => {
-                    // 친구 목록 컴포넌트 내부에서 처리됨
-                  }}
-                  onFriendAdded={() => {
-                    // 친구 목록 새로고침 (React Query가 자동으로 처리)
-                  }}
-                />
-                
-                {/* 친구 요청 */}
-                <FriendRequests />
-              </div>
-             
-              {/* 친구 랭킹 */}
-              <FriendRanking />
-            </TabsContent>
+             <TabsContent value="friends" className="space-y-6">
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 {/* 친구 목록 */}
+                 <FriendsList 
+                   onAddFriend={() => {
+                     // 친구 목록 컴포넌트 내부에서 처리됨
+                   }}
+                   onFriendAdded={() => {
+                     // 친구 목록 새로고침 (React Query가 자동으로 처리)
+                   }}
+                 />
+                 
+                 {/* 친구 요청 */}
+                 <FriendRequests />
+               </div>
+              
+               {/* 친구 랭킹 */}
+               
+               
+               {/* 친구 비교 통계 - 친구가 있을 때만 표시 */}
+               {friendsData?.friends && friendsData.friends.length > 0 && (
+                 <FriendComparison />
+               )}
+             </TabsContent>
           </Tabs>
         </div>
       </div>

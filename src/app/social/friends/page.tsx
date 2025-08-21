@@ -5,8 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FriendsList } from '@/components/social/FriendsList'
 import { FriendRequests } from '@/components/social/FriendRequests'
 import { FriendSearch } from '@/components/social/FriendSearch'
-import { FriendRanking } from '@/components/social/FriendRanking'
-import { Users, UserPlus, Search, TrendingUp } from 'lucide-react'
+
+import { FriendComparison } from '@/components/social/FriendComparison'
+import { Users, UserPlus, Search, TrendingUp, BarChart3 } from 'lucide-react'
 
 export default function FriendsPage() {
   const [activeTab, setActiveTab] = useState('friends')
@@ -22,7 +23,7 @@ export default function FriendsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="friends" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             친구 목록
@@ -39,6 +40,10 @@ export default function FriendsPage() {
             <TrendingUp className="h-4 w-4" />
             친구 랭킹
           </TabsTrigger>
+          <TabsTrigger value="stats" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            친구 통계
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="friends" className="space-y-6">
@@ -54,7 +59,11 @@ export default function FriendsPage() {
         </TabsContent>
 
         <TabsContent value="ranking" className="space-y-6">
-          <FriendRanking />
+  
+        </TabsContent>
+
+        <TabsContent value="stats" className="space-y-6">
+          <FriendComparison />
         </TabsContent>
       </Tabs>
     </div>

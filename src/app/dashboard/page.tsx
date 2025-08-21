@@ -62,7 +62,7 @@ import ChallengeProgressCard from "@/components/social/ChallengeProgressCard"
 import RealtimeFocusChart from "@/components/RealtimeFocusChart"
 import { usePersonalChallenges } from "@/hooks/usePersonalChallenges"
 
-import { useFriendRanking, useStudyRoomChallenges } from "@/hooks/useSocial"
+import { useStudyRoomChallenges } from "@/hooks/useSocial"
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -84,7 +84,7 @@ import {
 
 // Import separated social components
 import {
-  DashboardFriendRanking,
+
   DashboardTeamGoals
 } from "@/components/dashboard/social"
 
@@ -1435,7 +1435,7 @@ function DashboardContent() {
                   <TabsTrigger value="team">팀 목표</TabsTrigger>
                 </TabsList>
                 <TabsContent value="friends" className="mt-6">
-                  <DashboardFriendRanking />
+  
                 </TabsContent>
                 <TabsContent value="team" className="mt-6">
                   <DashboardTeamGoals />

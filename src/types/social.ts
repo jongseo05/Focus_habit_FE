@@ -328,17 +328,7 @@ export interface FriendSearchResult {
   last_activity?: Timestamp
 }
 
-// 친구 랭킹 정보
-export interface FriendRanking {
-  user_id: UUID
-  display_name: string
-  avatar_url?: string
-  handle: string
-  total_focus_time: number
-  average_focus_score: number
-  rank: number
-  period: 'daily' | 'weekly' | 'monthly'
-}
+
 
 // =====================================================
 // 4. 그룹 챌린지 관련 타입
@@ -596,11 +586,7 @@ export interface FriendSearchResponse {
   total_count: number
 }
 
-export interface FriendRankingResponse {
-  rankings: FriendRanking[]
-  user_rank?: number
-  period: string
-}
+
 
 export interface FriendComparisonResponse {
   comparisons: FriendComparisonView[]

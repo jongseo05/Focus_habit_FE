@@ -1,18 +1,40 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useUser } from '@/hooks/useAuth'
 import type { 
   StudyRoom, 
   RoomParticipant, 
+  ParticipantWithUser,
   CreateStudyRoomData,
   FocusCompetition,
-  UserFriend,
-  FriendsListResponse,
-  CreateFriendRequestData,
-  FriendRequestResponse,
-  FriendRankingResponse,
-  FriendRequestsView
+  CompetitionParticipant,
+  CompetitionResult,
+  EncouragementMessage,
+  UserAchievement,
+  AchievementDefinition,
+  Challenge,
+  ChallengeConfig,
+  ChallengeParticipant as ChallengeParticipantType,
+  ChallengeInvitation,
+  ChallengeInvitationResponse,
+  ChallengeTick,
+  GroupChallenge,
+  GroupChallengeParticipant,
+  FriendRequestsView,
+  FriendSearchResult
 } from '@/types/social'
+
+// debounce 유틸리티
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }
+}
 
 // =====================================================
 // 1. 스터디룸 관련 훅
@@ -242,7 +264,7 @@ export function useTickChallenge() {
 export function useFriendsList() {
   return useQuery({
     queryKey: ['friends-list'],
-    queryFn: async (): Promise<FriendsListResponse> => {
+    queryFn: async (): Promise<any> => { // FriendsListResponse 타입 제거
       const response = await fetch('/api/social/friends')
       if (!response.ok) {
         throw new Error('친구 목록을 불러오는데 실패했습니다.')
@@ -287,7 +309,7 @@ export function useCreateFriendRequest() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async (data: CreateFriendRequestData): Promise<FriendRequestResponse> => {
+    mutationFn: async (data: any): Promise<any> => { // CreateFriendRequestData 타입 제거
       const response = await fetch('/api/social/friends/requests', {
         method: 'POST',
         headers: {
@@ -351,6 +373,29 @@ export function useRejectFriendRequest() {
     },
   })
 }
+
+// 친구 삭제 훅
+export function useDeleteFriend() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ friendId }: { friendId: string }): Promise<void> => {
+      const response = await fetch(`/api/social/friends/${friendId}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error('친구 삭제에 실패했습니다.')
+      }
+    },
+    onSuccess: () => {
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['friends-list'] })
+    },
+  })
+}
+
+
 
 // =====================================================
 // 5. 통계 관련 훅
@@ -459,35 +504,7 @@ export function useStudyRoomChallenges(options?: { enabled?: boolean }) {
   })
 }
 
-// 친구 랭킹 조회
-export function useFriendRanking(
-  period: 'daily' | 'weekly' | 'monthly' = 'weekly',
-  options?: { enabled?: boolean }
-) {
-  const { data: user } = useUser()
 
-  return useQuery({
-    queryKey: ['friend-ranking', period],
-    queryFn: async (): Promise<FriendRankingResponse> => {
-      if (!user) throw new Error('로그인이 필요합니다.')
-      const response = await fetch(`/api/social/friends/ranking?period=${period}`)
-      if (!response.ok) {
-        throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
-      }
-      const result = await response.json()
-      // 표준 API 응답에서 data 필드만 반환
-      return result.data || { rankings: [], user_rank: null, period }
-    },
-    enabled: options?.enabled !== undefined ? options.enabled && !!user : !!user,
-    staleTime: 10000, // 10초
-    refetchInterval: false, // 자동 새로고침 비활성화 (대시보드에서 사용 시)
-    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
-    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션 (대시보드에서 사용 시)
-    // 성능 최적화 추가
-    refetchOnMount: false, // 마운트 시 자동 새로고침 비활성화
-    refetchOnReconnect: false, // 재연결 시 자동 새로고침 비활성화
-  })
-}
 
 // =====================================================
 // 7. 추가 친구 관련 훅 (누락된 함수들)
@@ -499,43 +516,61 @@ export const useFriends = useFriendsList
 // 친구 검색
 export function useFriendSearch() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const searchFriends = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([])
+      setError(null)
       return
     }
 
     setIsSearching(true)
+    setError(null)
+    
     try {
-      const response = await fetch(`/api/social/friends/search?q=${encodeURIComponent(query)}`)
-      if (response.ok) {
-        const result = await response.json()
+      const response = await fetch(`/api/social/friends/search?search=${encodeURIComponent(query.trim())}`)
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
         // 표준 API 응답 구조에 맞게 데이터 추출
-        if (result.success && result.data) {
-          setSearchResults(Array.isArray(result.data.results) ? result.data.results : Array.isArray(result.data) ? result.data : [])
-        } else {
-          setSearchResults([])
-        }
+        const results = result.data?.results || []
+        setSearchResults(Array.isArray(results) ? results : [])
       } else {
         setSearchResults([])
+        setError(result.error || '검색에 실패했습니다.')
       }
     } catch (error) {
       console.error('친구 검색 중 오류 발생:', error)
       setSearchResults([])
+      setError('검색 중 오류가 발생했습니다.')
     } finally {
       setIsSearching(false)
     }
   }
+
+  // 디바운스된 검색 (실시간 검색용)
+  const debouncedSearch = useCallback(
+    debounce((query: string) => {
+      if (query.trim().length >= 2) {
+        searchFriends(query)
+      } else {
+        setSearchResults([])
+      }
+    }, 300),
+    []
+  )
 
   return {
     searchQuery,
     setSearchQuery,
     searchResults,
     isSearching,
+    error,
     searchFriends,
+    debouncedSearch,
   }
 }
 
@@ -583,22 +618,94 @@ export function useRespondToFriendRequest() {
   }
 }
 
-// 친구 삭제
-export function useRemoveFriend() {
+// 친구 삭제 (useDeleteFriend와 동일한 기능)
+export const useRemoveFriend = useDeleteFriend
+
+// 친구 활동 상태 조회 훅
+export function useFriendActivityStatus() {
+  const { data: user } = useUser()
+  
+  return useQuery({
+    queryKey: ['friend-activity-status'],
+    queryFn: async (): Promise<any[]> => {
+      const response = await fetch('/api/social/friends/activity-status')
+      if (!response.ok) {
+        throw new Error('친구 활동 상태를 불러오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || []
+    },
+    enabled: !!user,
+    staleTime: 30000, // 30초
+    refetchInterval: 60000, // 1분마다 자동 새로고침
+    refetchOnWindowFocus: true, // 윈도우 포커스 시 새로고침
+    gcTime: 5 * 60 * 1000, // 5분 후 가비지 컬렉션
+  })
+}
+
+// 친구 활동 상태 업데이트 훅
+export function useUpdateFriendActivityStatus() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async ({ friendId }: { friendId: string }): Promise<void> => {
-      const response = await fetch(`/api/social/friends/${friendId}`, {
-        method: 'DELETE',
+    mutationFn: async (data: {
+      status?: 'online' | 'offline' | 'focusing' | 'break' | 'away'
+      current_focus_score?: number
+      current_session_id?: string | null
+    }): Promise<any> => {
+      const response = await fetch('/api/social/friends/activity-status', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
       
       if (!response.ok) {
-        throw new Error('친구 삭제에 실패했습니다.')
+        throw new Error('활동 상태 업데이트에 실패했습니다.')
       }
+      
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['friends-list'] })
+      // 성공 시 관련 쿼리만 무효화
+      queryClient.invalidateQueries({ queryKey: ['friend-activity-status'] })
     },
+  })
+}
+
+// 친구 비교 통계 조회 훅
+export function useFriendComparison(
+  period: 'daily' | 'weekly' | 'monthly' = 'weekly',
+  friendId?: string
+) {
+  const { data: user } = useUser()
+  
+  return useQuery({
+    queryKey: ['friend-comparison', period, friendId],
+    queryFn: async (): Promise<any> => {
+      const params = new URLSearchParams({ period })
+      if (friendId) {
+        params.append('friend_id', friendId)
+      }
+      
+      const response = await fetch(`/api/social/friends/comparison?${params}`)
+      if (!response.ok) {
+        throw new Error('친구 비교 통계를 불러오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || null
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5분
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 10 * 60 * 1000, // 10분 후 가비지 컬렉션
   })
 }
