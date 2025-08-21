@@ -1,36 +1,11 @@
-'use client'
+// =====================================================
+// 경쟁 기능 훅 (V2 - 새로운 competitionStore 사용)
+// =====================================================
 
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-
-interface CompetitionState {
-  id: string | null
-  isActive: boolean
-  timeLeft: number
-  duration: number
-  participants: Array<{
-    user_id: string
-    user: {
-      display_name: string
-      avatar_url?: string
-    }
-    current_score: number
-    rank?: number
-  }>
-  host: {
-    display_name: string
-  } | null
-  winner_id: string | null
-}
-
-interface CompetitionSettings {
-  showSettings: boolean
-  activeTab: 'pomodoro' | 'custom'
-  duration: number
-  breakDuration: number
-  customHours: number
-  customMinutes: number
-}
+import { useCompetitionStore } from '@/stores/competitionStore'
+import { supabaseBrowser } from '@/lib/supabase/client'
 
 interface UseCompetitionProps {
   roomId: string
@@ -38,286 +13,358 @@ interface UseCompetitionProps {
 }
 
 export function useCompetition({ roomId, isHost }: UseCompetitionProps) {
-  const [competition, setCompetition] = useState<CompetitionState>({
-    id: null,
-    isActive: false,
-    timeLeft: 0,
-    duration: 25,
-    participants: [],
-    host: null,
-    winner_id: null
-  })
-
-  const [settings, setSettings] = useState<CompetitionSettings>({
-    showSettings: false,
-    activeTab: 'pomodoro',
-    duration: 25,
-    breakDuration: 5,
-    customHours: 0,
-    customMinutes: 30
-  })
-
-  const [isLoading, setIsLoading] = useState(false)
-
-  // 경쟁 상태 조회
-  const fetchCompetitionStatus = useCallback(async () => {
-    console.log('🔄 경쟁 상태 조회 시작, roomId:', roomId)
-    try {
-      const response = await fetch(`/api/social/study-room/${roomId}/competition`)
-      console.log('📡 경쟁 API 응답 상태:', response.status, response.statusText)
-      
-      if (response.ok) {
-        const data = await response.json()
-        console.log('📊 경쟁 API 응답 데이터:', data)
-        
-        // API 응답 구조에 맞게 파싱
-        const competitionData = data.competition
-        const isActive = competitionData && competitionData.is_active
-        
-        console.log('🎯 경쟁 데이터 파싱:', {
-          competitionExists: !!competitionData,
-          isActive: isActive,
-          participantsCount: data.participants?.length || 0,
-          competitionData: competitionData // 전체 구조 확인
-        })
-        
-        // 남은 시간 계산
-        let timeLeft = 0
-        if (isActive && competitionData.started_at && competitionData.duration_minutes) {
-          const startedAt = new Date(competitionData.started_at).getTime()
-          const duration = competitionData.duration_minutes * 60 * 1000 // 밀리초로 변환
-          const now = new Date().getTime()
-          const endTime = startedAt + duration
-          timeLeft = Math.max(0, Math.floor((endTime - now) / 1000)) // 초 단위
-          
-          console.log('⏰ 시간 계산:', {
-            startedAt: new Date(competitionData.started_at).toLocaleString(),
-            durationMinutes: competitionData.duration_minutes,
-            timeLeftSeconds: timeLeft
-          })
-        }
-        
-        // 참가자 데이터 변환 (API의 profiles를 user 구조로 변환)
-        const transformedParticipants = (data.participants || []).map((participant: any) => {
-          const transformed = {
-            user_id: participant.user_id,
-            user: {
-              display_name: participant.profiles?.display_name || 'Unknown User',
-              avatar_url: participant.profiles?.avatar_url
-            },
-            current_score: participant.current_score || 0,
-            rank: participant.rank
-          }
-          
-          console.log('👤 참가자 데이터 변환:', {
-            user_id: participant.user_id,
-            original_profiles: participant.profiles,
-            transformed_user: transformed.user,
-            current_score: transformed.current_score
-          })
-          
-          return transformed
-        })
-        
-        console.log('✅ 경쟁 상태 업데이트:', {
-          id: competitionData?.competition_id,
-          isActive: isActive,
-          timeLeft: timeLeft,
-          participantsCount: transformedParticipants.length
-        })
-        
-        setCompetition({
-          id: competitionData?.competition_id || null,
-          isActive: isActive || false,
-          timeLeft: timeLeft,
-          duration: competitionData?.duration_minutes || 25,
-          participants: transformedParticipants,
-          host: competitionData?.host_id || null,
-          winner_id: competitionData?.winner_id || null
-        })
-      } else {
-        const errorData = await response.text()
-        console.error('❌ 경쟁 상태 조회 실패:', response.status, errorData)
-      }
-    } catch (error) {
-      console.error('❌ 경쟁 상태 조회 중 오류:', error)
-    }
-  }, [roomId])
-
-  // 경쟁 시작
-  const startCompetition = useCallback(async () => {
-    if (!isHost) {
-      toast.error('방장만 경쟁을 시작할 수 있습니다')
-      return
-    }
-
-    setIsLoading(true)
-    console.log('🚀 경쟁 시작 요청, 설정:', settings)
-    
-    try {
-      const duration = settings.activeTab === 'pomodoro' 
-        ? settings.duration 
-        : settings.customHours * 60 + settings.customMinutes
-
-      console.log('⏱️ 계산된 경쟁 시간:', { duration, activeTab: settings.activeTab })
-
-      const response = await fetch(`/api/social/study-room/${roomId}/competition/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          duration,
-          break_duration: settings.breakDuration
-        })
-      })
-
-      console.log('📡 경쟁 시작 API 응답 상태:', response.status, response.statusText)
-      const data = await response.json()
-      console.log('📊 경쟁 시작 API 응답 데이터:', data)
-
-      if (response.ok) {
-        toast.success('집중도 대결이 시작되었습니다!')
-        setSettings(prev => ({ ...prev, showSettings: false }))
-        
-        // 경쟁 시작 후 즉시 상태 업데이트
-        const immediateState = {
-          isActive: true,
-          timeLeft: duration * 60, // 분을 초로 변환
-          duration: duration
-        }
-        console.log('✨ 즉시 UI 업데이트:', immediateState)
-        
-        setCompetition(prev => ({
-          ...prev,
-          ...immediateState
-        }))
-        
-        // 서버에서 최신 상태도 가져오기
-        console.log('🔄 경쟁 상태 새로고침 예약 (500ms 후)')
-        setTimeout(() => {
-          console.log('🔄 경쟁 상태 새로고침 실행')
-          fetchCompetitionStatus()
-        }, 500) // 500ms 후 서버 상태 동기화
-      } else {
-        console.error('❌ 경쟁 시작 실패:', data.error)
-        toast.error(data.error || '경쟁 시작에 실패했습니다')
-      }
-    } catch (error) {
-      console.error('❌ 경쟁 시작 중 오류:', error)
-      toast.error('경쟁 시작 중 오류가 발생했습니다')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [roomId, isHost, settings, fetchCompetitionStatus])
-
-  // 경쟁 종료
-  const endCompetition = useCallback(async () => {
-    if (!isHost) {
-      toast.error('방장만 경쟁을 종료할 수 있습니다')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const response = await fetch(`/api/social/study-room/${roomId}/competition/end`, {
-        method: 'POST'
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        toast.success('집중도 대결이 종료되었습니다!')
-        
-        // 경쟁 종료 후 즉시 상태 업데이트
-        setCompetition(prev => ({
-          ...prev,
-          isActive: false,
-          timeLeft: 0
-        }))
-        
-        // 서버에서 최신 상태도 가져오기
-        setTimeout(() => {
-          fetchCompetitionStatus()
-        }, 500)
-      } else {
-        toast.error(data.error || '경쟁 종료에 실패했습니다')
-      }
-    } catch (error) {
-      console.error('Failed to end competition:', error)
-      toast.error('경쟁 종료 중 오류가 발생했습니다')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [roomId, isHost, fetchCompetitionStatus])
-
-  // 실시간 타이머 업데이트
-  useEffect(() => {
-    if (!competition.isActive || competition.timeLeft <= 0) return
-
-    const timer = setInterval(() => {
-      setCompetition(prev => {
-        if (prev.timeLeft <= 1) {
-          // 시간이 끝나면 상태 새로고침
-          fetchCompetitionStatus()
-          return { ...prev, timeLeft: 0, isActive: false }
-        }
-        return { ...prev, timeLeft: prev.timeLeft - 1 }
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [competition.isActive, competition.timeLeft, fetchCompetitionStatus])
-
-  // 주기적으로 상태 업데이트 (실시간 점수 등)
-  useEffect(() => {
-    if (!competition.isActive) return
-
-    const interval = setInterval(() => {
-      fetchCompetitionStatus()
-    }, 5000) // 5초마다 업데이트
-
-    return () => clearInterval(interval)
-  }, [competition.isActive, fetchCompetitionStatus])
-
-  // 초기 상태 로드
-  useEffect(() => {
-    fetchCompetitionStatus()
-  }, [fetchCompetitionStatus])
-
-  return {
+  const {
     // 상태
-    competition,
-    settings,
+    roomId: storeRoomId,
+    competitionId,
+    isActive,
+    timeLeft,
+    duration,
+    startedAt,
+    endedAt,
+    participants,
+    hostId,
+    winnerId,
+    rankings,
     isLoading,
+    error,
     
     // 액션
     startCompetition,
     endCompetition,
-    
-    // 설정 핸들러
-    showCompetitionSettings: (show: boolean) => {
-      setSettings(prev => ({ ...prev, showSettings: show }))
-    },
-    
-    onActiveTabChange: (tab: 'pomodoro' | 'custom') => {
-      setSettings(prev => ({ ...prev, activeTab: tab }))
-    },
-    
-    onCompetitionDurationChange: (duration: number) => {
-      setSettings(prev => ({ ...prev, duration }))
-    },
-    
-    onBreakDurationChange: (breakDuration: number) => {
-      setSettings(prev => ({ ...prev, breakDuration }))
-    },
-    
-    onCustomHoursChange: (hours: number) => {
-      setSettings(prev => ({ ...prev, customHours: hours }))
-    },
-    
-    onCustomMinutesChange: (minutes: number) => {
-      setSettings(prev => ({ ...prev, customMinutes: minutes }))
+    updateTimeLeft,
+    addParticipant,
+    updateParticipant,
+    removeParticipant,
+    setParticipants,
+    updateRankings,
+    setWinner,
+    restoreCompetitionState,
+    saveCompetitionState,
+    clearCompetitionState,
+    setLoading,
+    setError
+  } = useCompetitionStore()
+
+  // 실시간 채널 참조
+  const realtimeChannelRef = useRef<any>(null)
+
+  // 경쟁 상태 조회 및 복원 (useCallback으로 먼저 정의)
+  const fetchCompetitionStatus = useCallback(async (isRestoreMode = false) => {
+    if (!roomId) return
+
+    try {
+      console.log('📡 경쟁 상태 API 호출:', `/api/social/study-room/${roomId}/competition`)
+      const response = await fetch(`/api/social/study-room/${roomId}/competition`)
+      const data = await response.json()
+
+      console.log('📊 경쟁 상태 API 응답:', data)
+
+      if (response.ok && data.competition) {
+        const competition = data.competition
+        
+        // 경쟁 상태 업데이트
+        if (competition.is_active) {
+          // 활성 경쟁이 있으면 상태 복원
+          const now = new Date()
+          const startTime = new Date(competition.started_at)
+          const endTime = new Date(competition.ended_at)
+          const elapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000)
+          const totalSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+          const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds)
+          const durationMinutes = Math.floor(totalSeconds / 60)
+
+          // 참가자 정보 변환 (사용자 정보 포함)
+          const participants = data.participants?.map((p: any) => ({
+            userId: p.user_id,
+            totalFocusScore: p.total_focus_score || p.final_score || 0,
+            averageFocusScore: p.average_focus_score || 0,
+            lastUpdated: p.last_updated || new Date().toISOString(),
+            user: p.user || {
+              display_name: `사용자-${p.user_id?.slice(-4)}`,
+              avatar_url: null
+            }
+          })) || []
+
+          // 순위 정보 변환 (사용자 정보 포함)
+          const rankings = data.participants?.map((p: any, index: number) => ({
+            userId: p.user_id,
+            score: p.total_focus_score || p.final_score || 0,
+            rank: index + 1,
+            userName: p.user?.display_name || `사용자-${p.user_id?.slice(-4)}`,
+            avatarUrl: p.user?.avatar_url || '',
+            user: p.user || {
+              display_name: `사용자-${p.user_id?.slice(-4)}`,
+              avatar_url: null
+            }
+          })) || []
+
+          console.log('🔄 경쟁 상태 복원 데이터:', {
+            competitionId: competition.competition_id,
+            isActive: true,
+            timeLeft: remainingSeconds,
+            duration: durationMinutes,
+            participantsCount: participants.length,
+            rankingsCount: rankings.length
+          })
+
+          // 스토어 상태 업데이트
+          setParticipants(participants)
+          updateRankings(rankings)
+          updateTimeLeft(remainingSeconds)
+
+          // 필요한 경우 전체 상태 복원 (useCompetitionStore의 상태 직접 업데이트)
+          if (isRestoreMode) {
+            const store = useCompetitionStore.getState()
+            store.roomId = roomId
+            store.competitionId = competition.competition_id
+            store.isActive = true
+            store.timeLeft = remainingSeconds
+            store.duration = durationMinutes
+            store.startedAt = competition.started_at
+            store.endedAt = competition.ended_at
+            store.hostId = competition.host_id
+            store.winnerId = competition.winner_id || null
+            store.lastUpdated = new Date().toISOString()
+            
+            console.log('✅ 경쟁 상태 전체 복원 완료:', { roomId, competitionId: competition.competition_id, remainingSeconds })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ 경쟁 상태 조회 실패:', error)
     }
+  }, [roomId, setParticipants, updateRankings, updateTimeLeft])
+
+  // 초기 마운트 시 경쟁 상태 확인 및 복원
+  useEffect(() => {
+    if (roomId && !isActive) {
+      console.log('🔍 경쟁 상태 확인 시작:', { roomId })
+      fetchCompetitionStatus(true) // isRestoreMode = true
+    }
+  }, [roomId, isActive, fetchCompetitionStatus])
+
+  // 실시간 이벤트 구독 (roomId가 있으면 항상 구독)
+  useEffect(() => {
+    if (!roomId) return
+
+    console.log('🔗 경쟁 실시간 채널 구독 시작:', `competition-${roomId}`, { isActive, competitionId })
+
+    const channel = supabaseBrowser().channel(`competition-${roomId}`)
+      .on('broadcast', { event: 'competition_update' }, (payload: any) => {
+        console.log('📡 경쟁 실시간 업데이트 수신:', payload)
+        
+        const eventData = payload.payload || payload
+        if (eventData.competition_id === competitionId) {
+          // 경쟁 상태 업데이트
+          if (eventData.timeLeft !== undefined) {
+            updateTimeLeft(eventData.timeLeft)
+          }
+          
+          if (eventData.participants) {
+            setParticipants(eventData.participants)
+          }
+          
+          if (eventData.rankings) {
+            updateRankings(eventData.rankings)
+          }
+          
+          if (eventData.winner_id) {
+            setWinner(eventData.winner_id)
+          }
+        }
+      })
+      .on('broadcast', { event: 'competition_score_update' }, (payload: any) => {
+        console.log('🏆 경쟁 점수 업데이트 수신:', payload)
+        
+        const eventData = payload.payload || payload
+        console.log('🏆 점수 업데이트 데이터:', {
+          eventCompetitionId: eventData.competition_id,
+          currentCompetitionId: competitionId,
+          userId: eventData.user_id,
+          score: eventData.total_focus_score,
+          isActive
+        })
+        
+        // 경쟁이 활성화되어 있고 같은 경쟁이면 점수 업데이트
+        if (isActive && eventData.competition_id === competitionId && eventData.user_id && eventData.total_focus_score !== undefined) {
+          console.log('✅ 참가자 점수 업데이트 실행:', {
+            userId: eventData.user_id,
+            totalFocusScore: eventData.total_focus_score
+          })
+          
+          updateParticipant(eventData.user_id, {
+            totalFocusScore: eventData.total_focus_score,
+            averageFocusScore: eventData.total_focus_score,
+            lastUpdated: new Date().toISOString()
+          })
+        } else {
+          console.log('⚠️ 점수 업데이트 조건 불일치')
+        }
+      })
+      .subscribe()
+
+    realtimeChannelRef.current = channel
+
+    return () => {
+      console.log('🔌 경쟁 실시간 채널 구독 해제:', `competition-${roomId}`)
+      supabaseBrowser().removeChannel(channel)
+    }
+  }, [roomId, isActive, competitionId, updateTimeLeft, setParticipants, updateRankings, setWinner, updateParticipant])
+
+  // 경쟁 시작
+  const handleStartCompetition = useCallback(async (duration: number) => {
+    if (!isHost) {
+      toast.error('방장만 경쟁을 시작할 수 있습니다')
+      return false
+    }
+
+    setLoading(true)
+    try {
+      const success = await startCompetition(roomId, duration)
+      if (success) {
+        toast.success('집중도 대결이 시작되었습니다!')
+        return true
+      } else {
+        toast.error('경쟁 시작에 실패했습니다')
+        return false
+      }
+    } catch (error) {
+      console.error('경쟁 시작 중 오류:', error)
+      toast.error('경쟁 시작 중 오류가 발생했습니다')
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [roomId, isHost, startCompetition, setLoading])
+
+  // 경쟁 종료
+  const handleEndCompetition = useCallback(async () => {
+    if (!isHost) {
+      toast.error('방장만 경쟁을 종료할 수 있습니다')
+      return false
+    }
+
+    setLoading(true)
+    try {
+      const success = await endCompetition()
+      if (success) {
+        toast.success('집중도 대결이 종료되었습니다!')
+        return true
+      } else {
+        toast.error('경쟁 종료에 실패했습니다')
+        return false
+      }
+    } catch (error) {
+      console.error('경쟁 종료 중 오류:', error)
+      toast.error('경쟁 종료 중 오류가 발생했습니다')
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [isHost, endCompetition, setLoading])
+
+  // 타이머 업데이트
+  useEffect(() => {
+    if (!isActive || timeLeft <= 0) return
+
+    const interval = setInterval(() => {
+      const newTimeLeft = timeLeft - 1
+      if (newTimeLeft <= 0) {
+        // 시간 종료 시 자동 종료
+        if (isHost) {
+          handleEndCompetition()
+        }
+      } else {
+        updateTimeLeft(newTimeLeft)
+      }
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [isActive, timeLeft, isHost, handleEndCompetition, updateTimeLeft])
+
+  // 경쟁 상태를 기존 인터페이스와 호환되도록 변환
+  const competition = {
+    id: competitionId,
+    isActive,
+    timeLeft,
+    duration,
+    started_at: startedAt,
+    ended_at: endedAt,
+    participants: participants.map(p => ({
+      user_id: p.userId,
+      totalFocusScore: p.totalFocusScore,
+      current_score: p.totalFocusScore,
+      final_score: p.totalFocusScore,
+      user: (p as any).user || {
+        display_name: `사용자-${p.userId?.slice(-4)}`,
+        avatar_url: null
+      }
+    })),
+    host: hostId ? {
+      display_name: '', // TODO: 사용자 정보 가져오기
+      user_id: hostId
+    } : null,
+    winner_id: winnerId,
+    rankings: rankings.map(r => ({
+      user_id: r.userId,
+      final_score: r.score,
+      rank: r.rank,
+      user: (r as any).user || {
+        display_name: r.userName || `사용자-${r.userId?.slice(-4)}`,
+        avatar_url: r.avatarUrl || null
+      }
+    })),
+    lastUpdated: new Date().toISOString()
+  }
+
+  // UI 설정 관련
+  const {
+    showSettings,
+    activeTab,
+    customHours,
+    customMinutes,
+    breakDuration,
+    setShowSettings,
+    setActiveTab,
+    setCustomHours,
+    setCustomMinutes,
+    setBreakDuration
+  } = useCompetitionStore()
+
+  const settings = {
+    showSettings,
+    activeTab,
+    duration,
+    breakDuration,
+    customHours,
+    customMinutes
+  }
+
+  return {
+    competition,
+    settings,
+    isLoading,
+    error,
+    startCompetition: handleStartCompetition,
+    endCompetition: handleEndCompetition,
+    fetchCompetitionStatus,
+    saveCompetitionState,
+    clearCompetitionState,
+    showCompetitionSettings: showSettings,
+    onActiveTabChange: setActiveTab,
+    onCompetitionDurationChange: (duration: number) => {
+      // 경쟁 시간 설정 - activeTab에 따라 처리
+      if (activeTab === 'custom') {
+        setCustomMinutes(duration)
+      }
+      // pomodoro 탭의 경우 미리 정의된 값들을 사용하므로 별도 처리 불필요
+    },
+    onBreakDurationChange: setBreakDuration,
+    onCustomHoursChange: setCustomHours,
+    onCustomMinutesChange: setCustomMinutes,
+    onStartCompetition: handleStartCompetition,
+    onEndCompetition: handleEndCompetition,
+    setShowCompetitionSettings: setShowSettings
   }
 }

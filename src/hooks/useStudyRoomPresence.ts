@@ -257,7 +257,7 @@ export function useStudyRoomPresence({
     }
   }, [roomId, userId, enabled])
 
-  // 페이지 가시성 변경 감지 (탭 복귀 시에만 재입장)
+  // 📱 페이지 가시성 변경 감지 (새로고침 및 탭 복귀 시 재연결)
   useEffect(() => {
     if (!enabled || !roomId || !userId) return
 
@@ -267,9 +267,13 @@ export function useStudyRoomPresence({
       }
 
       if (!document.hidden) {
-        // 페이지가 다시 보이면 잠깐 후 입장 (탭 복귀 시 재입장)
+        // 페이지가 다시 보이면 입장 (새로고침/탭 복귀 시 재입장)
         enterTimeoutRef.current = setTimeout(() => {
+          console.log('👁️ 페이지 가시성 복원 - 재입장 시도')
           enterRoom()
+          
+          // 🔄 새로고침 후 경쟁 상태는 사용자가 수동으로 복원하도록 변경
+          // 자동 복원 제거됨
         }, 500)
       }
       // 페이지가 숨겨져도 퇴장하지 않음 (다른 탭으로 이동하는 것은 정상적인 사용)

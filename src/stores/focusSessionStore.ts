@@ -1,5 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { 
+  saveFocusSessionState, 
+  loadFocusSessionState, 
+  clearFocusSessionState 
+} from '@/lib/utils/sessionPersistence'
 
 // =====================================================
 // 집중세션 전용 Zustand 스토어
@@ -44,6 +49,7 @@ interface FocusSessionActions {
   resumeSession: () => void
   stopSession: () => void
   updateElapsed: () => void
+  setElapsed: (seconds: number) => void
   updateFocusScore: (score: number) => void
   
   // === 서버 세션 관리 ===
@@ -63,6 +69,12 @@ interface FocusSessionActions {
   formatTime: (seconds: number) => string
   getDuration: () => number // 현재 세션 지속 시간 (분)
   isSessionActive: () => boolean
+  
+  // === 상태 복원 관리 ===
+  restoreSessionState: () => boolean
+  saveSessionState: () => void
+  clearSessionState: () => void
+  
   reset: () => void
 }
 
@@ -224,6 +236,13 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
         })
       },
       
+      setElapsed: (seconds: number) => {
+        set((state) => ({
+          ...state,
+          elapsed: seconds
+        }))
+      },
+      
       updateFocusScore: (score: number) => {
         set({ focusScore: Math.max(0, Math.min(100, score)) })
       },
@@ -324,6 +343,43 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
         return state.isRunning && !!state.currentSessionId
       },
       
+      // === 상태 복원 관리 ===
+      restoreSessionState: () => {
+        const savedState = loadFocusSessionState()
+        if (savedState) {
+          set({
+            isRunning: savedState.isRunning,
+            isPaused: savedState.isPaused,
+            elapsed: savedState.elapsed,
+            focusScore: savedState.focusScore,
+            startTime: savedState.startTime,
+            currentSessionId: savedState.sessionId
+          })
+          console.log('집중 세션 상태 복원 완료')
+          return true
+        }
+        return false
+      },
+      
+      saveSessionState: () => {
+        const state = get()
+        saveFocusSessionState({
+          sessionId: state.currentSessionId,
+          isRunning: state.isRunning,
+          isPaused: state.isPaused,
+          elapsed: state.elapsed,
+          focusScore: state.focusScore,
+          startTime: state.startTime,
+          goalMinutes: null,
+          sessionType: 'study_room',
+          roomId: null
+        })
+      },
+      
+      clearSessionState: () => {
+        clearFocusSessionState()
+      },
+      
       reset: () => {
         set(initialState)
       }
@@ -365,6 +421,7 @@ export const useFocusSessionActions = () => ({
   resumeSession: useFocusSessionStore((state) => state.resumeSession),
   stopSession: useFocusSessionStore((state) => state.stopSession),
   updateElapsed: useFocusSessionStore((state) => state.updateElapsed),
+  setElapsed: useFocusSessionStore((state) => state.setElapsed),
   updateFocusScore: useFocusSessionStore((state) => state.updateFocusScore)
 })
 

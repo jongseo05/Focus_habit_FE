@@ -17,17 +17,25 @@ export async function POST(
 
     const { roomId } = await params
 
-  // 현재 활성 경쟁 조회
-    const { data: competition, error: competitionError } = await supabase
+    // 🔍 현재 활성 경쟁 조회 (새로고침 후에도 안정적으로)
+    const { data: competitions, error: competitionError } = await supabase
       .from('focus_competitions')
-      .select('competition_id, host_id')
+      .select('competition_id, host_id, started_at, duration_minutes, ended_at, is_active')
       .eq('room_id', roomId)
       .eq('is_active', true)
-      .single()
+      .order('started_at', { ascending: false }) // 최신 경쟁 우선
 
-    if (competitionError || !competition) {
+    if (competitionError) {
+      console.error('❌ 경쟁 조회 오류:', competitionError)
+      return createErrorResponse('Failed to query competition', 500)
+    }
+
+    // 경쟁이 없으면 종료 불가
+    if (!competitions || competitions.length === 0) {
       return createErrorResponse('No active competition found', 404)
     }
+
+    const competition = competitions[0]
 
     // 방장 권한 확인
     if (competition.host_id !== user.id) {
@@ -65,41 +73,16 @@ export async function POST(
 
           const finalScore = session.focus_score || 0
 
-            // 참가자 점수 업데이트
+          // 참가자 점수 업데이트
           await supabase
             .from('competition_participants')
             .update({
-              final_score: finalScore,
-              session_id: session.session_id
+              total_focus_score: finalScore,
+              average_focus_score: finalScore,
+              focus_time_minutes: session.started_at ? Math.round((now.getTime() - new Date(session.started_at).getTime()) / 60000) : 0
             })
             .eq('competition_id', competition.competition_id)
             .eq('user_id', session.user_id)
-
-          // 지속 시간 계산
-          const durationMin = session.started_at ? Math.round((now.getTime() - new Date(session.started_at).getTime()) / 60000) : 0
-
-          // 비동기 챌린지 업데이트 (에러는 로그)
-          updatePersonalChallenges(supabase, session.user_id, durationMin, finalScore).catch(e => console.error('personal challenge update error', e))
-          updateGroupChallenges(supabase, roomId, session.user_id, durationMin, finalScore).catch(e => console.error('group challenge update error', e))
-
-          // 실시간 브로드캐스트 (참여자 개별 세션 종료)
-          try {
-            await supabase
-              .channel(`social_room:${roomId}`)
-              .send({
-                type: 'broadcast',
-                event: 'focus_session_ended',
-                payload: {
-                  session_id: session.session_id,
-                  user_id: session.user_id,
-                  final_focus_score: finalScore,
-                  duration_min: durationMin,
-                  ended_at: now.toISOString()
-                }
-              })
-          } catch (e) {
-            console.error('focus_session_ended broadcast failed', e)
-          }
 
           endedSessions.push({
             session_id: session.session_id,
@@ -112,9 +95,9 @@ export async function POST(
       // 순위 계산
       const { data: scored } = await supabase
         .from('competition_participants')
-        .select('user_id, final_score')
+        .select('user_id, total_focus_score')
         .eq('competition_id', competition.competition_id)
-        .order('final_score', { ascending: false })
+        .order('total_focus_score', { ascending: false })
 
       if (scored && scored.length > 0) {
         for (let i = 0; i < scored.length; i++) {
@@ -147,33 +130,70 @@ export async function POST(
       return createErrorResponse('Failed to end competition', 500)
     }
 
-    // 실시간 경쟁 종료 브로드캐스트
-    try {
+    // 🚀 경쟁 종료 후 참가자 활동 시간 업데이트 (재경쟁 시작을 위해)
+    if (participants && participants.length > 0) {
+      const userIds = participants.map(p => p.user_id)
       await supabase
+        .from('room_participants')
+        .update({ 
+          last_activity: now.toISOString(),
+          // is_connected는 유지 (경쟁 종료해도 연결 상태 유지)
+        })
+        .in('user_id', userIds)
+        .eq('room_id', roomId)
+        .is('left_at', null)
+      
+      console.log('🔄 경쟁 종료 후 참가자 활동 시간 업데이트 완료:', userIds.length, '명')
+    }
+
+    // 🔄 실시간 경쟁 종료 브로드캐스트 (중복 방지 + 순서 보장)
+    const broadcastPayload = {
+      competition_id: competition.competition_id,
+      ended_at: now.toISOString(),
+      sessions: endedSessions,
+      sequence_id: Date.now(), // 이벤트 순서 식별용
+      room_id: roomId
+    }
+
+    // 병렬 브로드캐스트로 성능 향상, 하지만 실패 시 fallback 제공
+    const broadcastPromises = [
+      supabase
         .channel(`social_room:${roomId}`)
         .send({
           type: 'broadcast',
           event: 'competition_ended',
-          payload: {
-            competition_id: competition.competition_id,
-            ended_at: now.toISOString(),
-            sessions: endedSessions
-          }
-        })
+          payload: broadcastPayload
+        }),
       // 호환성: 기존 경쟁 시작 채널에도 종료 이벤트 송신
-      await supabase
+      supabase
         .channel(`room-participants-${roomId}`)
         .send({
           type: 'broadcast',
           event: 'competition_ended',
-          payload: {
-            competition_id: competition.competition_id,
-            ended_at: now.toISOString(),
-            sessions: endedSessions
-          }
+          payload: broadcastPayload
         })
+    ]
+
+    try {
+      const results = await Promise.allSettled(broadcastPromises)
+      
+      let successCount = 0
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          successCount++
+        } else {
+          console.error(`브로드캐스트 실패 (채널 ${index}):`, result.reason)
+        }
+      })
+      
+      console.log(`📡 경쟁 종료 브로드캐스트 완료: ${successCount}/${results.length} 채널 성공`)
+      
+      // 최소 1개 채널이라도 성공해야 함
+      if (successCount === 0) {
+        console.error('❌ 모든 브로드캐스트 채널 실패 - 클라이언트에서 polling으로 상태 확인 필요')
+      }
     } catch (e) {
-      console.error('competition_ended broadcast failed', e)
+      console.error('❌ competition_ended broadcast failed:', e)
     }
 
     return createSuccessResponse({
@@ -185,113 +205,5 @@ export async function POST(
   } catch (error) {
     console.error('End competition error:', error)
     return createErrorResponse('Internal server error', 500)
-  }
-}
-
-// --- 재사용 (간단 버전) 개인 챌린지 업데이트 ---
-async function updatePersonalChallenges(supabase: any, userId: string, durationMin: number, focusScore: number) {
-  try {
-    const { data: challenges } = await supabase
-      .from('personal_challenge')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .is('completed_at', null)
-    if (!challenges) return
-    for (const c of challenges) {
-      let inc = 0
-      switch (c.type) {
-        case 'focus_time': inc = durationMin; break
-        case 'study_sessions': inc = 1; break
-        case 'focus_score': inc = focusScore > 0 ? focusScore : 0; break
-        case 'streak_days': {
-          const today = new Date().toISOString().split('T')[0]
-          if (c.last_updated && c.last_updated.startsWith(today)) inc = 0; else inc = 1
-          break
-        }
-      }
-      if (inc === 0) continue
-      const newProgress = (c.current_progress || 0) + inc
-      const completionPercentage = Math.min((newProgress / c.target_value) * 100, 100)
-      const isCompleted = newProgress >= c.target_value
-      await supabase
-        .from('personal_challenge')
-        .update({
-          current_progress: newProgress,
-            completion_percentage: completionPercentage,
-          is_completed: isCompleted,
-          completed_at: isCompleted ? new Date().toISOString() : null,
-          last_updated: new Date().toISOString()
-        })
-        .eq('challenge_id', c.challenge_id)
-    }
-  } catch (e) {
-    console.error('updatePersonalChallenges failed', e)
-  }
-}
-
-// --- 재사용 (간단 버전) 그룹 챌린지 업데이트 ---
-async function updateGroupChallenges(supabase: any, roomId: string, userId: string, durationMin: number, focusScore: number) {
-  try {
-    const { data: challenges } = await supabase
-      .from('group_challenge')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('is_active', true)
-      .is('is_completed', false)
-    if (!challenges) return
-    for (const c of challenges) {
-      let inc = 0
-      switch (c.type) {
-        case 'focus_time': inc = durationMin; break
-        case 'study_sessions': inc = 1; break
-        case 'focus_score': inc = focusScore > 0 ? focusScore : 0; break
-        case 'streak_days': {
-          const today = new Date().toISOString().split('T')[0]
-          const { data: lastPart } = await supabase
-            .from('group_challenge_participant')
-            .select('last_contribution_at')
-            .eq('challenge_id', c.challenge_id)
-            .eq('user_id', userId)
-            .single()
-          if (!lastPart || !lastPart.last_contribution_at || !lastPart.last_contribution_at.startsWith(today)) inc = 1
-          break
-        }
-      }
-      if (inc === 0) continue
-      const { data: existing } = await supabase
-        .from('group_challenge_participant')
-        .select('contribution')
-        .eq('challenge_id', c.challenge_id)
-        .eq('user_id', userId)
-        .single()
-      const newContribution = (existing?.contribution || 0) + inc
-      await supabase
-        .from('group_challenge_participant')
-        .upsert({
-          challenge_id: c.challenge_id,
-          user_id: userId,
-          contribution: newContribution,
-          last_contribution_at: new Date().toISOString()
-        }, { onConflict: 'challenge_id,user_id' })
-      const { data: allParts } = await supabase
-        .from('group_challenge_participant')
-        .select('contribution')
-        .eq('challenge_id', c.challenge_id)
-      const total = allParts?.reduce((s: number, p: any) => s + (p.contribution || 0), 0) || 0
-      const completionPercentage = Math.min((total / c.target_value) * 100, 100)
-      const isCompleted = total >= c.target_value
-      await supabase
-        .from('group_challenge')
-        .update({
-          current_value: total,
-          completion_percentage: completionPercentage,
-          is_completed: isCompleted,
-          updated_at: new Date().toISOString()
-        })
-        .eq('challenge_id', c.challenge_id)
-    }
-  } catch (e) {
-    console.error('updateGroupChallenges failed', e)
   }
 }

@@ -6,6 +6,7 @@ import {
   requireAuth, 
   handleAPIError
 } from '@/lib/api/standardResponse'
+import { filterSessionEligibleParticipants } from '@/lib/utils/onlineStatus'
 
 // =====================================================
 // 스터디룸 집중도 세션 API 라우트
@@ -45,11 +46,11 @@ export async function POST(request: NextRequest) {
     const { user } = authResult
     console.log('✅ 인증된 사용자:', user.id)
 
-    // 🚀 최적화: 병렬 처리로 참가자 확인과 기존 세션 종료를 동시에 실행
+    // 🚀 최적화: 병렬 처리로 참가자 확인, 기존 세션 종료, 활성 경쟁 확인을 동시에 실행
     const now = new Date().toISOString()
     console.log('🔍 병렬 검증 시작:', { timestamp: now })
     
-    const [participantResult, existingSessionResult, eligibleParticipantsResult] = await Promise.allSettled([
+    const [participantResult, existingSessionResult, eligibleParticipantsResult, activeCompetitionResult] = await Promise.allSettled([
       // 스터디룸 참가자 확인
       supabase
         .from('room_participants')
@@ -80,7 +81,15 @@ export async function POST(request: NextRequest) {
         `)
         .eq('room_id', room_id)
         .eq('is_present', true)  // 실제 룸에 있는 사람만
-        .is('left_at', null)
+        .is('left_at', null),
+      
+      // 4. 활성 경쟁 확인
+      supabase
+        .from('focus_competitions')
+        .select('competition_id, room_id, is_active')
+        .eq('room_id', room_id)
+        .eq('is_active', true)
+        .maybeSingle()
     ])
 
     // 참가자 확인 결과 처리
@@ -91,19 +100,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ✨ 새로 추가: 세션 시작 자격 확인
+    // ✨ 세션 시작 자격 확인 (표준 1분 기준 - 공통 유틸리티 사용)
     if (eligibleParticipantsResult.status === 'fulfilled' && eligibleParticipantsResult.value.data) {
       const presentParticipants = eligibleParticipantsResult.value.data
-      const onlineThreshold = 30000 // 30초
-      const currentTime = Date.now()
       
-      // 온라인이면서 룸에 있는 참가자 필터링
-      const eligibleParticipants = presentParticipants.filter(participant => {
-        const lastActivity = new Date(participant.last_activity).getTime()
-        const isOnline = (currentTime - lastActivity) <= onlineThreshold
-        
-        return isOnline && participant.is_present && participant.is_connected
-      })
+      // left_at 속성 추가하여 ParticipantOnlineCheck 타입에 맞춤
+      const participantsWithLeftAt = presentParticipants.map(p => ({
+        ...p,
+        left_at: null // 현재 참가자들은 left_at이 null (아직 나가지 않음)
+      }))
+      
+      // 온라인이면서 룸에 있는 참가자 필터링 (공통 유틸리티 사용)
+      const eligibleParticipants = filterSessionEligibleParticipants(participantsWithLeftAt)
       
       // 최소 1명의 자격 있는 참가자가 필요
       if (eligibleParticipants.length < 1) {
@@ -114,6 +122,15 @@ export async function POST(request: NextRequest) {
       }
       
       console.log(`✅ 세션 시작 자격 확인 완료: ${eligibleParticipants.length}명의 참가자가 참여 가능`)
+    }
+
+    // 🏆 활성 경쟁 확인 결과 처리
+    let activeCompetition = null
+    if (activeCompetitionResult.status === 'fulfilled' && !activeCompetitionResult.value.error && activeCompetitionResult.value.data) {
+      activeCompetition = activeCompetitionResult.value.data
+      console.log('🏆 활성 경쟁 발견:', activeCompetition)
+    } else {
+      console.log('📝 활성 경쟁이 없음 (일반 세션)')
     }
 
     // 🚀 최적화: 기존 세션이 있는 경우에만 종료 처리
@@ -150,6 +167,17 @@ export async function POST(request: NextRequest) {
         '집중도 세션 생성에 실패했습니다.',
         500
       )
+    }
+
+    console.log('✅ 스터디룸 세션 생성 성공:', newSession.session_id)
+
+    // 🏆 활성 경쟁이 있는 경우 로깅 (실제 스키마에는 session_id 컬럼 없음)
+    if (activeCompetition) {
+      console.log('✅ 활성 경쟁에서 세션 시작:', {
+        competition_id: activeCompetition.competition_id,
+        session_id: newSession.session_id,
+        user_id: user.id
+      })
     }
 
     // 🚀 최적화: 실시간 이벤트 브로드캐스트를 비동기로 처리 (응답 지연 방지)
@@ -210,7 +238,7 @@ export async function PUT(request: NextRequest) {
       updateData.focus_score = focus_score
     }
 
-    const [sessionResult, updateResult] = await Promise.allSettled([
+    const [sessionResult, updateResult, competitionResult] = await Promise.allSettled([
       // 세션 소유자 확인
       supabase
         .from('focus_session')
@@ -223,7 +251,15 @@ export async function PUT(request: NextRequest) {
       supabase
         .from('focus_session')
         .update(updateData)
-        .eq('session_id', session_id)
+        .eq('session_id', session_id),
+      
+      // 활성 경쟁 확인 (경쟁 참가자 점수 업데이트용)
+      room_id ? supabase
+        .from('focus_competitions')
+        .select('competition_id, room_id')
+        .eq('room_id', room_id)
+        .eq('is_active', true)
+        .maybeSingle() : Promise.resolve({ data: null, error: null })
     ])
 
     // 세션 확인 결과 처리
@@ -241,6 +277,34 @@ export async function PUT(request: NextRequest) {
         '세션 업데이트에 실패했습니다.',
         500
       )
+    }
+
+    // 🏆 경쟁 참가자 점수 업데이트 (활성 경쟁이 있는 경우)
+    if (focus_score !== undefined && competitionResult.status === 'fulfilled' && competitionResult.value.data) {
+      const activeCompetition = competitionResult.value.data
+      try {
+        // 실제 스키마에 맞는 점수 업데이트
+        const { error: competitionUpdateError } = await supabase
+          .from('competition_participants')
+          .update({
+            total_focus_score: focus_score, // 실제 스키마는 total_focus_score 사용
+            average_focus_score: focus_score // 현재 점수로 평균도 설정
+          })
+          .eq('competition_id', activeCompetition.competition_id)
+          .eq('user_id', user.id)
+
+        if (competitionUpdateError) {
+          console.error('경쟁 참가자 점수 업데이트 실패:', competitionUpdateError)
+        } else {
+          console.log('✅ 경쟁 참가자 점수 업데이트 성공:', {
+            competition_id: activeCompetition.competition_id,
+            user_id: user.id,
+            total_focus_score: focus_score
+          })
+        }
+      } catch (error) {
+        console.error('경쟁 참가자 점수 업데이트 중 오류:', error)
+      }
     }
 
     // 🚀 최적화: 프레임 데이터 저장을 비동기로 처리 (응답 지연 방지)

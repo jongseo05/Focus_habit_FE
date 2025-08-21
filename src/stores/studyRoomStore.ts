@@ -5,6 +5,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { StudyRoom, ParticipantWithUser } from '@/types/social'
+import { 
+  saveStudyRoomSession, 
+  loadStudyRoomSession, 
+  clearStudyRoomSession,
+  saveParticipantCameraStates,
+  loadParticipantCameraStates,
+  clearParticipantCameraStates,
+  hasRestorableState
+} from '@/lib/utils/sessionPersistence'
 
 interface StudyRoomState {
   // 현재 스터디룸 정보
@@ -96,6 +105,12 @@ interface StudyRoomActions {
   
   // 설정
   updatePreferences: (updates: Partial<StudyRoomState['preferences']>) => void
+  
+  // 상태 복원 관리
+  restoreSessionState: () => boolean
+  saveSessionState: () => void
+  clearSessionState: () => void
+  hasRestorableState: () => boolean
   
   // 초기화
   reset: () => void
@@ -312,6 +327,77 @@ export const useStudyRoomStore = create<StudyRoomStore>()(
       updatePreferences: (updates) => set((state) => ({
         preferences: { ...state.preferences, ...updates }
       })),
+      
+      // 상태 복원 관리
+      restoreSessionState: () => {
+        const savedState = loadStudyRoomSession()
+        if (savedState) {
+          set({
+            currentRoom: savedState.roomData,
+            participants: savedState.participants,
+            isHost: savedState.isHost,
+            isConnected: savedState.isConnected,
+            currentSessionId: savedState.currentSessionId,
+            isSessionRunning: savedState.isSessionRunning,
+            sessionStartTime: savedState.sessionStartTime,
+            currentFocusScore: savedState.currentFocusScore,
+            averageFocusScore: savedState.averageFocusScore,
+            activeTab: savedState.activeTab,
+            lastActivity: savedState.lastActivity
+          })
+          
+          // 카메라 상태도 복원
+          if (savedState.roomData) {
+            const cameraStates = loadParticipantCameraStates(savedState.roomData.room_id)
+            if (cameraStates) {
+              set({ participantCameraStates: cameraStates })
+            }
+          }
+          
+          console.log('스터디룸 세션 상태 복원 완료')
+          return true
+        }
+        return false
+      },
+      
+      saveSessionState: () => {
+        const state = get()
+        if (state.currentRoom) {
+          saveStudyRoomSession({
+            roomId: state.currentRoom.room_id,
+            roomData: state.currentRoom,
+            participants: state.participants,
+            isHost: state.isHost,
+            isConnected: state.isConnected,
+            currentSessionId: state.currentSessionId,
+            isSessionRunning: state.isSessionRunning,
+            sessionStartTime: state.sessionStartTime,
+            currentFocusScore: state.currentFocusScore,
+            averageFocusScore: state.averageFocusScore,
+            activeTab: state.activeTab,
+            lastActivity: state.lastActivity
+          })
+          
+          // 카메라 상태도 저장
+          saveParticipantCameraStates(state.currentRoom.room_id, state.participantCameraStates)
+        }
+      },
+      
+      clearSessionState: () => {
+        const state = get()
+        if (state.currentRoom) {
+          clearStudyRoomSession()
+          clearParticipantCameraStates(state.currentRoom.room_id)
+        }
+      },
+      
+      hasRestorableState: () => {
+        const state = get()
+        if (state.currentRoom) {
+          return hasRestorableState(state.currentRoom.room_id)
+        }
+        return hasRestorableState()
+      },
       
       // 초기화
       reset: () => set(initialState)

@@ -244,7 +244,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
     // 커스텀 이벤트 리스너 등록
     window.addEventListener('focus-session-auto-started', handleAutoSessionStart)
-    // 경쟁 종료/세션 자동 종료 이벤트 -> UI 리셋
+    // 경쟁 종료/세션 자동 종료 이벤트 -> UI 리셋 
     const handleAutoSessionEnded = (event: Event) => {
       const customEvent = event as CustomEvent
       const detail = customEvent.detail
@@ -268,16 +268,16 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
           console.warn('세션 정리 중 경고:', e)
         }
         clearParticipants()
-        // 웹캠/오디오 UI 복구
-        setShowWebcam(false)
+        
+        // 🚀 경쟁 종료 시에도 웹캠 그리드는 유지 (집중도 분석만 중지)
+        // 오디오 파이프라인만 중지 (음성 분석 종료)
         setShowAudioPipeline(false)
-        // 스트림 정리
-        if (directMediaStream) {
-          directMediaStream.getTracks().forEach(t => t.stop())
-          setDirectMediaStream(null)
-          setVideoStreamConnected(false)
-        }
-        console.log('StudyRoomFocusSession: 경쟁 종료로 세션 UI 리셋 완료')
+        
+        // 웹캠은 스터디룸에서 계속 사용하므로 유지
+        // setShowWebcam(false) <- 이 줄 제거
+        // directMediaStream 중지하지 않음 <- 웹캠 그리드에서 계속 사용
+        
+        console.log('StudyRoomFocusSession: 경쟁 종료로 집중도 분석만 중지, 웹캠은 유지')
       }
     }
     window.addEventListener('focus-session-auto-ended', handleAutoSessionEnded)
@@ -526,6 +526,19 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         console.warn('⚠️ onFocusScoreUpdate 콜백이 없음')
       }
       
+      // 2.5. 경쟁 중이면 즉시 점수 업데이트 이벤트 발생
+      if (competitionState.competition.isActive) {
+        console.log('🏆 경쟁 중 - 즉시 점수 업데이트 이벤트 발생:', score)
+        // 경쟁 점수 업데이트를 위한 커스텀 이벤트
+        window.dispatchEvent(new CustomEvent('competition-score-updated', {
+          detail: {
+            userId: currentUserId,
+            score: score,
+            timestamp: new Date().toISOString()
+          }
+        }))
+      }
+      
       // 3. 세션 ID 확인
       if (!sessionSync.currentSessionId) {
         console.warn('세션 ID가 없어서 서버 업데이트 불가')
@@ -535,7 +548,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       const timestamp = new Date().toISOString()
       
       // 4. 병렬로 API 호출 (성능 최적화)
-      const [studyRoomResult, focusScoreResult] = await Promise.allSettled([
+      const [studyRoomResult, focusScoreResult, competitionResult] = await Promise.allSettled([
         // 스터디룸 세션 업데이트
         fetch('/api/social/study-room-focus-session', {
           method: 'PUT',
@@ -559,6 +572,13 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
             confidence,
             analysisMethod: 'webcam_analysis'
           })
+        }),
+        
+        // 경쟁 중이면 룸 집중도 점수도 업데이트 (경쟁 점수 반영)
+        fetch(`/api/social/study-room/${roomId}/focus-score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ focus_score: score })
         })
       ])
       
@@ -575,6 +595,13 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       } else {
         console.error('focus_sample 저장 실패:', 
           focusScoreResult.status === 'rejected' ? focusScoreResult.reason : focusScoreResult.value.statusText)
+      }
+      
+      if (competitionResult.status === 'fulfilled' && competitionResult.value.ok) {
+        console.log('경쟁 집중도 점수 업데이트 성공:', score)
+      } else {
+        console.warn('경쟁 집중도 점수 업데이트 실패 (경쟁 중이 아닐 수 있음):', 
+          competitionResult.status === 'rejected' ? competitionResult.reason : competitionResult.value.statusText)
       }
       
     } catch (error) {

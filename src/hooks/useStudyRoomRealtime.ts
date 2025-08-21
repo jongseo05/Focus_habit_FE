@@ -145,7 +145,7 @@ export function useStudyRoomRealtime({
               goal_min: payload.payload.duration,
               context_tag: '집중도 대결',
               session_type: 'study_room',
-              notes: `${payload.payload.title} 참가`
+              notes: `${payload.payload.name} 참가`
             }
             
             console.log('📝 세션 생성 데이터:', sessionData)
@@ -200,19 +200,49 @@ export function useStudyRoomRealtime({
       })
       .on('broadcast', { event: 'competition_ended' }, async (payload) => {
         console.log('🏁 경쟁 종료 알림 수신!', payload)
+        
+        // 🛡️ 중복 이벤트 처리 방지 (sequence_id 기반)
+        const competitionId = payload.payload?.competition_id
+        const sequenceId = payload.payload?.sequence_id
+        
+        if (!competitionId || !sequenceId) {
+          console.warn('⚠️ 경쟁 종료 이벤트에 필수 정보 누락:', { competitionId, sequenceId })
+          return
+        }
+        
+        // 이미 처리된 이벤트인지 확인 (localStorage 사용)
+        const processedKey = `competition_ended_${competitionId}_${sequenceId}`
+        if (typeof window !== 'undefined' && localStorage.getItem(processedKey)) {
+          console.log('🔄 이미 처리된 경쟁 종료 이벤트 무시:', { competitionId, sequenceId })
+          return
+        }
+        
+        // 이벤트 처리 마킹 (5분 후 자동 만료)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(processedKey, Date.now().toString())
+          setTimeout(() => {
+            localStorage.removeItem(processedKey)
+          }, 5 * 60 * 1000) // 5분 후 정리
+        }
+        
         addNotification('집중도 대결이 종료되었습니다.', 'leave')
+        
         // 로컬 UI 복구용 커스텀 이벤트 발생
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('focus-session-auto-ended', {
             detail: {
-              competitionId: payload.payload?.competition_id,
+              competitionId: competitionId,
               endedAt: payload.payload?.ended_at,
-              sessions: payload.payload?.sessions || []
+              sessions: payload.payload?.sessions || [],
+              sequenceId: sequenceId
             }
           }))
         }
+        
         // 참가자 목록 새로고침 (점수/상태 갱신)
         await loadInitialParticipants()
+        
+        console.log('✅ 경쟁 종료 이벤트 처리 완료:', { competitionId, sequenceId })
       })
       .subscribe((status) => {
         const timestamp = new Date().toISOString()

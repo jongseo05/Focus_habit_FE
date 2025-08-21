@@ -30,23 +30,65 @@ export async function POST(
       )
     }
 
-    // 참가자 정보 업데이트
-    const { error: updateError } = await supabase
-      .from('room_participants')
-      .update({
-        current_focus_score: focus_score,
-        last_activity: new Date().toISOString()
-      })
-      .eq('room_id', roomId)
-      .eq('user_id', user.id)
-      .is('left_at', null)
+    // 🚀 최적화: 참가자 정보 업데이트와 활성 경쟁 확인을 병렬로 처리
+    const now = new Date().toISOString()
+    const [participantUpdateResult, activeCompetitionResult] = await Promise.allSettled([
+      // 1. 참가자 정보 업데이트
+      supabase
+        .from('room_participants')
+        .update({
+          current_focus_score: focus_score,
+          last_activity: now
+        })
+        .eq('room_id', roomId)
+        .eq('user_id', user.id)
+        .is('left_at', null),
+      
+      // 2. 활성 경쟁 확인
+      supabase
+        .from('focus_competitions')
+        .select('competition_id, is_active')
+        .eq('room_id', roomId)
+        .eq('is_active', true)
+        .maybeSingle()
+    ])
 
-    if (updateError) {
-      console.error('집중도 업데이트 실패:', updateError)
+    // 참가자 업데이트 결과 확인
+    if (participantUpdateResult.status === 'rejected' || participantUpdateResult.value.error) {
+      console.error('집중도 업데이트 실패:', participantUpdateResult.status === 'rejected' ? participantUpdateResult.reason : participantUpdateResult.value.error)
       return NextResponse.json(
         { error: '집중도 업데이트에 실패했습니다.' },
         { status: 500 }
       )
+    }
+
+    // 🏆 활성 경쟁이 있는 경우 경쟁 참가자 점수도 업데이트
+    let competitionUpdateSuccess = false
+    if (activeCompetitionResult.status === 'fulfilled' && !activeCompetitionResult.value.error && activeCompetitionResult.value.data) {
+      const activeCompetition = activeCompetitionResult.value.data
+      try {
+        const { error: competitionUpdateError } = await supabase
+          .from('competition_participants')
+          .update({
+            total_focus_score: focus_score,
+            average_focus_score: focus_score
+          })
+          .eq('competition_id', activeCompetition.competition_id)
+          .eq('user_id', user.id)
+
+        if (competitionUpdateError) {
+          console.error('경쟁 참가자 점수 업데이트 실패:', competitionUpdateError)
+        } else {
+          competitionUpdateSuccess = true
+          console.log('✅ 경쟁 참가자 점수 업데이트 성공:', {
+            competition_id: activeCompetition.competition_id,
+            user_id: user.id,
+            total_focus_score: focus_score
+          })
+        }
+      } catch (error) {
+        console.error('경쟁 참가자 점수 업데이트 중 오류:', error)
+      }
     }
 
     // focus_updates 테이블에 집중도 업데이트 기록 삽입 (Realtime 이벤트 발생용)
@@ -54,7 +96,11 @@ export async function POST(
       user_id: user.id,
       room_id: roomId,
       focus_score: focus_score,
-      created_at: new Date().toISOString()
+      created_at: now,
+      // 경쟁 정보 추가 (실시간 랭킹 업데이트용)
+      competition_id: activeCompetitionResult.status === 'fulfilled' && !activeCompetitionResult.value.error && activeCompetitionResult.value.data ? 
+        activeCompetitionResult.value.data.competition_id : null,
+      is_competition_update: competitionUpdateSuccess
     }
     
     console.log('focus_updates 삽입 시도:', focusUpdatePayload)
@@ -73,10 +119,38 @@ export async function POST(
       console.log('Realtime 이벤트 발생 예상 - focus_updates 테이블 변경됨')
     }
 
+    // 🏆 실시간 경쟁 점수 브로드캐스트 (경쟁이 활성화된 경우)
+    if (competitionUpdateSuccess && activeCompetitionResult.status === 'fulfilled' && activeCompetitionResult.value.data) {
+      const activeCompetition = activeCompetitionResult.value.data
+      try {
+        const competitionChannelName = `competition-${roomId}`
+        console.log('📡 실시간 경쟁 점수 브로드캐스트 시작:', competitionChannelName)
+        
+        await supabase
+          .channel(competitionChannelName)
+          .send({
+            type: 'broadcast',
+            event: 'competition_score_update',
+            payload: {
+              competition_id: activeCompetition.competition_id,
+              user_id: user.id,
+              total_focus_score: focus_score,
+              room_id: roomId,
+              timestamp: now
+            }
+          })
+        
+        console.log('✅ 실시간 경쟁 점수 브로드캐스트 성공')
+      } catch (error) {
+        console.error('❌ 실시간 경쟁 점수 브로드캐스트 실패:', error)
+      }
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: '집중도가 업데이트되었습니다.',
-      focus_score 
+      focus_score,
+      competition_updated: competitionUpdateSuccess
     })
   } catch (error) {
     console.error('집중도 업데이트 실패:', error)

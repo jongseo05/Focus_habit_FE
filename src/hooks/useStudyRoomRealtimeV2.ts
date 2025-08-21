@@ -93,7 +93,7 @@ export function useStudyRoomRealtime({
               goal_min: payload.payload.duration,
               context_tag: '집중도 대결',
               session_type: 'study_room',
-              notes: `${payload.payload.title} 참가`
+              notes: `${payload.payload.name} 참가`
             }
             
             console.log('📝 [V2] 세션 생성 데이터:', sessionData)

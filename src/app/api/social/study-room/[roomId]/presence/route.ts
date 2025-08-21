@@ -10,6 +10,7 @@ import {
   requireAuth, 
   handleAPIError
 } from '@/lib/api/standardResponse'
+import { isParticipantOnline } from '@/lib/utils/onlineStatus'
 
 // POST: 스터디룸 입장 (실시간 상태 업데이트)
 export async function POST(
@@ -233,13 +234,14 @@ export async function GET(
       // 프로필 조회 실패해도 기본 정보로 진행
     }
 
-    // 온라인 상태도 함께 계산하고 프로필 정보 병합
-    const now = Date.now()
-    const onlineThreshold = 30000 // 30초
-
+    // 🔧 온라인 상태 계산 (표준 1분 기준 - 공통 유틸리티 사용) 및 프로필 정보 병합
     const participantsWithStatus = presentParticipants?.map(participant => {
-      const lastActivity = new Date(participant.last_activity).getTime()
-      const isOnline = (now - lastActivity) <= onlineThreshold
+      // left_at 속성 추가하여 ParticipantOnlineCheck 타입에 맞춤
+      const participantWithLeftAt = {
+        ...participant,
+        left_at: null // 현재 참가자들은 left_at이 null (아직 나가지 않음)
+      }
+      const isOnline = isParticipantOnline(participantWithLeftAt)
       
       // 프로필 정보 찾기
       const profile = profiles.find(p => p.user_id === participant.user_id)
