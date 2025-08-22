@@ -1,2 +1,3 @@
+// 소셜 컴포넌트 exports
+// 현재 사용 중인 소셜 컴포넌트가 없음
 
-export { DashboardTeamGoals } from './DashboardTeamGoals'

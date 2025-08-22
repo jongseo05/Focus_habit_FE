@@ -107,20 +107,20 @@ export interface CompetitionResult {
 // =====================================================
 
 export interface PersonalChallenge {
-  challenge_id: UUID
+  id: number  // 데이터베이스의 실제 기본키는 integer
   user_id: UUID
   title: string
   description: string
   type: 'focus_time' | 'study_sessions' | 'streak_days' | 'focus_score' | 'custom'
   target_value: number
-  current_value: number
+  current_value: number  // 데이터베이스의 실제 컬럼명
   unit: string
   start_date: Timestamp
   end_date: Timestamp
   is_active: boolean
   is_completed: boolean
   created_at: Timestamp
-  updated_at: Timestamp
+  min_session_duration?: number
 }
 
 // =====================================================

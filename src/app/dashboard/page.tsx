@@ -36,9 +36,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useFocusSessionWithGesture } from "@/hooks/useFocusSessionWithGesture"
@@ -50,8 +54,8 @@ import { FocusSessionStatus } from "@/types/focusSession"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import MicrophonePermissionLayer from "@/components/MicrophonePermissionLayer"
 import { useMicrophoneStream, useMediaStream } from "@/hooks/useMediaStream"
-import HybridAudioPipeline from "@/components/HybridAudioPipeline"
-import WebcamAnalysisDisplay from "@/components/WebcamAnalysisDisplay"
+// import HybridAudioPipeline from "@/components/HybridAudioPipeline" // 하이브리드 오디오 파이프라인 숨김
+
 
 import { supabaseBrowser } from "@/lib/supabase/client"
 import { ReportService } from "@/lib/database/reportService"
@@ -59,10 +63,10 @@ import { useSignOut, useAuth } from "@/hooks/useAuth"
 import { useQuery } from "@tanstack/react-query"
 import { SessionEndNotification } from "@/components/SessionEndNotification"
 import ChallengeProgressCard from "@/components/social/ChallengeProgressCard"
-import RealtimeFocusChart from "@/components/RealtimeFocusChart"
+
 import { usePersonalChallenges } from "@/hooks/usePersonalChallenges"
 
-import { useStudyRoomChallenges } from "@/hooks/useSocial"
+
 
 // 실제 Zustand 스토어 사용
 import { useDashboardStore } from "@/stores/dashboardStore"
@@ -83,10 +87,8 @@ import {
 } from "@/components/dashboard/charts"
 
 // Import separated social components
-import {
-
-  DashboardTeamGoals
-} from "@/components/dashboard/social"
+import { FriendRanking } from '@/components/social/FriendRanking'
+import { useTodayStats, type DashboardStats, useUserPersonalization } from "@/hooks/useDashboardData"
 
 export default function DashboardPage() {
   return (
@@ -98,7 +100,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   // 집중세션 상태와 액션 분리
-  const sessionStateState = useFocusSessionState()
+  const sessionState = useFocusSessionState()
   const sessionActions = useFocusSessionActions()
   const sessionSync = useFocusSessionSync()
   const signOut = useSignOut()
@@ -111,6 +113,9 @@ function DashboardContent() {
   
   // 현재 사용자 정보 가져오기
   const { user } = useAuth()
+  
+  // 개인화 설정 조회
+  const { data: personalization } = useUserPersonalization()
   
 
   // 로그아웃 성공 시 홈페이지로 리다이렉트
@@ -172,11 +177,11 @@ function DashboardContent() {
   useEffect(() => {
     let interval: NodeJS.Timeout
     
-    if (sessionStateState.isRunning && !sessionStateState.isPaused) {
+    if (sessionState.isRunning && !sessionState.isPaused) {
       console.log('🕒 타이머 시작:', {
-        isRunning: sessionStateState.isRunning,
-        isPaused: sessionStateState.isPaused,
-        startTime: sessionStateState.startTime
+        isRunning: sessionState.isRunning,
+        isPaused: sessionState.isPaused,
+        startTime: sessionState.startTime
       })
       
       interval = setInterval(() => {
@@ -184,8 +189,8 @@ function DashboardContent() {
       }, 1000)
     } else {
       console.log('🛑 타이머 중지 조건:', {
-        isRunning: sessionStateState.isRunning,
-        isPaused: sessionStateState.isPaused
+        isRunning: sessionState.isRunning,
+        isPaused: sessionState.isPaused
       })
     }
     
@@ -195,7 +200,7 @@ function DashboardContent() {
         clearInterval(interval)
       }
     }
-  }, [sessionStateState.isRunning, sessionStateState.isPaused])
+  }, [sessionState.isRunning, sessionState.isPaused])
   
 
   
@@ -203,10 +208,10 @@ function DashboardContent() {
   // currentSessionId는 이제 sessionSync.currentSessionId로 대체됨
   
   const mediaStream = useFocusSessionWithGesture(
-    sessionStateState.isRunning, 
+    sessionState.isRunning, 
     sessionSync.currentSessionId || activeSession?.session_id, // 현재 세션 ID 우선 사용
     {
-      frameRate: 10, // 1초에 10번 (10fps)
+              frameRate: 5, // 1초에 5번 (5fps)
       enableGestureRecognition: true, // 제스처 인식 활성화
       gestureJpegQuality: 0.95
     }
@@ -216,19 +221,24 @@ function DashboardContent() {
   const [snapshotCollapsed, setSnapshotCollapsed] = useState(false)
   const [showCameraPermissionLayer, setShowCameraPermissionLayer] = useState(false)
   
+  // 세션 설정 상태
+  const [showSessionSetup, setShowSessionSetup] = useState(false)
+  const [sessionSetup, setSessionSetup] = useState({
+    goal_min: sessionState.sessionGoal || personalization?.default_goal_minutes || 30,
+    context_tag: sessionState.sessionContext || '',
+    session_type: (sessionState.sessionType || 'study') as 'study' | 'work' | 'reading' | 'other'
+  })
+
   // 세션 종료 알림 상태
   const [showSessionEndNotification, setShowSessionEndNotification] = useState(false)
   const [sessionStateEndData, setSessionEndData] = useState<{
     duration: number
     averageFocusScore: number
-    sampleCount: number
-    eventCount: number
-    mlFeatureCount: number
     sessionId: string
   } | null>(null)
   const [showMicrophonePermissionLayer, setShowMicrophonePermissionLayer] = useState(false)
   const [showErrorDisplay, setShowErrorDisplay] = useState(false)
-  const [showAudioPipeline, setShowAudioPipeline] = useState(false)
+  const [showAudioPipeline, setShowAudioPipeline] = useState(false) // 하이브리드 오디오 파이프라인 숨김
   const [notifications, setNotifications] = useState([
     { id: 1, message: "웹캠 연결이 성공적으로 완료되었습니다", type: "success" },
     { id: 2, message: "새로운 업데이트가 있습니다", type: "info" },
@@ -249,8 +259,24 @@ function DashboardContent() {
     }
   }, [mediaStream.lastSessionError, mediaStream.sessionStatus])
 
-  // 집중 시작 버튼 클릭 시 권한 순차 요청
+  // 집중 시작 버튼 클릭 시 세션 설정 모달 표시
   const handleStartSession = () => {
+    // 현재 스토어의 값을 기본값으로 설정
+    setSessionSetup({
+      goal_min: sessionState.sessionGoal || 25,
+      context_tag: sessionState.sessionContext || '',
+      session_type: (sessionState.sessionType || 'study') as 'study' | 'work' | 'reading' | 'other'
+    })
+    setShowSessionSetup(true)
+  }
+
+  // 세션 설정 완료 후 실제 세션 시작
+  const handleSessionSetupComplete = () => {
+    // 세션 설정을 스토어에 저장
+    sessionActions.setSessionGoal(sessionSetup.goal_min)
+    sessionActions.setSessionContext(sessionSetup.context_tag)
+    sessionActions.setSessionType(sessionSetup.session_type)
+    
     if (!mediaStream.isPermissionGranted) {
       setShowCameraPermissionLayer(true)
       return
@@ -266,12 +292,12 @@ function DashboardContent() {
   // 집중모드 시작 함수
   const startFocusSession = async () => {
     // 이미 실행 중인 세션이 있으면 중복 실행 방지
-    if (sessionStateState.isRunning) {
+    if (sessionState.isRunning) {
       console.log('⏰ 세션이 이미 실행 중입니다. 중복 시작을 방지합니다.')
       return
     }
     
-    if (!sessionStateState.isRunning) {
+    if (!sessionState.isRunning) {
       try {
         
         // 1. 로컬 세션 시작
@@ -284,9 +310,9 @@ function DashboardContent() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            goal_min: 30,
-            context_tag: '집중 세션',
-            session_type: 'study'
+            goal_min: sessionSetup.goal_min,
+            context_tag: sessionSetup.context_tag || '집중 세션',
+            session_type: sessionSetup.session_type
           })
         })
 
@@ -383,7 +409,7 @@ function DashboardContent() {
             },
             body: JSON.stringify({
               sessionId: activeSession.session_id,
-              finalFocusScore: sessionStateState.focusScore
+              finalFocusScore: sessionState.focusScore
             })
           })
 
@@ -391,21 +417,18 @@ function DashboardContent() {
             const result = await response.json()
             
             if (result.success) {
-              const sessionDuration = Math.floor(sessionStateState.elapsed / 60) // 분 단위
+              const sessionDuration = Math.floor(sessionState.elapsed / 60) // 분 단위
               
               // 세션 종료 데이터 설정
               setSessionEndData({
                 duration: sessionDuration,
-                averageFocusScore: result.data.summary.averageFocusScore || sessionStateState.focusScore,
-                sampleCount: result.data.summary.sampleCount,
-                eventCount: result.data.summary.eventCount,
-                mlFeatureCount: 0, // ML 피쳐는 더 이상 사용하지 않음
+                averageFocusScore: result.data.summary.averageFocusScore || sessionState.focusScore,
                 sessionId: activeSession.session_id
               })
               
               // 개인 챌린지 진행률 자동 업데이트
               try {
-                await syncFocusSessionProgress(sessionDuration, result.data.summary.averageFocusScore || sessionStateState.focusScore)
+                await syncFocusSessionProgress(sessionDuration, result.data.summary.averageFocusScore || sessionState.focusScore)
                 console.log('개인 챌린지 진행률 업데이트 완료')
               } catch (error) {
                 console.error('개인 챌린지 진행률 업데이트 실패:', error)
@@ -416,7 +439,7 @@ function DashboardContent() {
                 const { dispatchFocusSessionComplete } = await import('@/lib/utils/focusSessionEvents')
                 dispatchFocusSessionComplete({
                   duration: sessionDuration,
-                  focusScore: result.data.summary.averageFocusScore || sessionStateState.focusScore,
+                  focusScore: result.data.summary.averageFocusScore || sessionState.focusScore,
                   sessionType: 'focus',
                   sessionId: activeSession.session_id
                 })
@@ -447,6 +470,7 @@ function DashboardContent() {
 
     // 6. 로컬 상태 초기화 (항상 실행)
     sessionActions.stopSession()
+    sessionActions.clearSessionSettings()
     sessionSync.clearCurrentSession()
     mediaStream.stopStream()
     microphoneStream.stopStream()
@@ -492,7 +516,7 @@ function DashboardContent() {
       setShowMicrophonePermissionLayer(false)
       
       // 세션이 아직 시작되지 않았다면 시작
-      if (!sessionStateState.isRunning) {
+      if (!sessionState.isRunning) {
         console.log('🎯 권한 부여 후 세션 시작')
         sessionActions.startSession()
       } else {
@@ -528,7 +552,7 @@ function DashboardContent() {
 
   // ML 피쳐값 CSV 내보내기
   const handleMLFeaturesExport = async () => {
-    if (!sessionStateState.isRunning || !activeSession?.session_id) {
+    if (!sessionState.isRunning || !activeSession?.session_id) {
       alert('활성 집중 세션이 없습니다.');
       return;
     }
@@ -607,7 +631,7 @@ function DashboardContent() {
       setShowCameraPermissionLayer(false)
       if (!microphoneStream.isPermissionGranted) {
         setShowMicrophonePermissionLayer(true)
-      } else if (!sessionStateState.isRunning) {
+      } else if (!sessionState.isRunning) {
         console.log('🎯 카메라 권한 확보, 집중 세션 시작')
         startFocusSession()
       }
@@ -626,7 +650,7 @@ function DashboardContent() {
       setShowAudioPipeline(true)
       
       // 두 권한 모두 있고 세션이 실행 중이 아닌 경우만 시작
-      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted && !sessionStateState.isRunning) {
+      if (mediaStream.isPermissionGranted && microphoneStream.isPermissionGranted && !sessionState.isRunning) {
         console.log('🎯 모든 권한 확보, 집중 세션 시작')
         startFocusSession()
       }
@@ -634,12 +658,27 @@ function DashboardContent() {
   }, [microphoneStream.isPermissionGranted, showMicrophonePermissionLayer])
 
   // Mock data
-  const todayStats = {
-    totalTime: "2:34",
-    avgScore: 87,
-    distractions: 3,
-    lastUpdate: "2분 전",
+  // 실제 DB 데이터 사용
+  const { data: todayStatsData, isLoading: todayStatsLoading } = useTodayStats()
+  
+  // 로딩 중이거나 데이터가 없을 때 기본값 사용
+  const todayStats = todayStatsData ? {
+    totalTime: todayStatsData.focusTimeFormatted,
+    focusTime: todayStatsData.focusTime,
+    focusTimeFormatted: todayStatsData.focusTimeFormatted,
+    avgScore: todayStatsData.avgScore,
+    goalAchievement: todayStatsData.goalAchievement,
+    lastUpdate: "실시간",
+  } : {
+    totalTime: "0:00",
+    focusTime: 0,
+    focusTimeFormatted: "0:00",
+    avgScore: 0,
+    goalAchievement: 0,
+    lastUpdate: "로딩 중...",
   }
+  
+
 
   const weeklyData = [75, 82, 78, 85, 90, 87, 92]
   const challenges = [
@@ -660,21 +699,12 @@ function DashboardContent() {
     { name: "박준호", 시간: "20:45", avatar: "PJ" },
   ]
 
-  // ML 피쳐값 및 집중도 점수 데이터 상태
-  const [mlFeatures, setMlFeatures] = useState<any[]>([])
-  const [focusScores, setFocusScores] = useState<Array<{
-    ts: string
-    score: number
-    confidence: number
-    analysis: string
-  }>>([])
-  const [isLoadingFeatures, setIsLoadingFeatures] = useState(false)
+
 
   // ML 피쳐값 로드 함수
   const loadMLFeatures = useCallback(async () => {
     // ML Features API 호출 비활성화 (서버 오류로 인해)
     console.log('ML Features API 호출 비활성화됨')
-    setIsLoadingFeatures(false)
   }, [])
 
   // 활성 세션이 변경될 때마다 ML 피쳐값 로드
@@ -686,10 +716,10 @@ function DashboardContent() {
 
   // 세션 시작 시 ML 피쳐값 초기화하지 않음 (데이터 유지)
   // useEffect(() => {
-  //   if (sessionStateState.isRunning) {
+  //   if (sessionState.isRunning) {
   //     setMlFeatures([])
   //   }
-  // }, [sessionStateState.isRunning])
+  // }, [sessionState.isRunning])
 
   // WebSocket에서 실시간 집중도 점수를 받으므로 로컬 계산 불필요
   const calculateAndSaveFocusScore = useCallback(async () => {
@@ -698,13 +728,13 @@ function DashboardContent() {
 
   // WebSocket 기반 실시간 집중도 점수 사용 (세션 중일 때)
   useEffect(() => {
-    if (!sessionStateState.isRunning || !activeSession?.session_id) return
+    if (!sessionState.isRunning || !activeSession?.session_id) return
     
     // 5초마다 AI 집중도 점수 계산 및 저장 (UI 업데이트용)
     const interval = setInterval(calculateAndSaveFocusScore, 5000)
     
     return () => clearInterval(interval)
-  }, [sessionStateState.isRunning, activeSession?.session_id, calculateAndSaveFocusScore])
+  }, [sessionState.isRunning, activeSession?.session_id, calculateAndSaveFocusScore])
 
   // 페이지 언마운트 시 정리 작업
   useEffect(() => {
@@ -753,7 +783,7 @@ function DashboardContent() {
 
             <div className="flex items-center gap-4">
               {/* 웹캠 상태 표시 (세션 중일 때만) */}
-              {sessionStateState.isRunning && mediaStream.isPermissionGranted && (
+              {sessionState.isRunning && mediaStream.isPermissionGranted && (
                 <div className="flex items-center gap-2 text-sm">
                   <div className={`w-2 h-2 rounded-full ${showWebcam ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
                   <span className="text-slate-600 hidden sm:inline">
@@ -763,7 +793,7 @@ function DashboardContent() {
               )}
 
               {/* 제스처 인식 상태 표시 (세션 중일 때만) */}
-              {sessionStateState.isRunning && mediaStream.isPermissionGranted && (
+              {sessionState.isRunning && mediaStream.isPermissionGranted && (
                 <div className="flex items-center gap-2 text-sm">
                   <div className={`w-2 h-2 rounded-full ${
                     mediaStream.isGestureRecognitionActive ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
@@ -780,15 +810,15 @@ function DashboardContent() {
               )}
 
               {/* AI 집중도 점수 표시 (세션 중일 때만) */}
-              {sessionStateState.isRunning && (
+              {sessionState.isRunning && (
                 <div className="flex items-center gap-2 text-sm">
                   <div className={`w-2 h-2 rounded-full ${
-                    sessionStateState.focusScore >= 80 ? 'bg-green-500' :
-                    sessionStateState.focusScore >= 60 ? 'bg-yellow-500' :
+                    sessionState.focusScore >= 80 ? 'bg-green-500' :
+                    sessionState.focusScore >= 60 ? 'bg-yellow-500' :
                     'bg-red-500'
                   } animate-pulse`}></div>
                   <span className="text-slate-600 hidden sm:inline">
-                    AI 집중도: {sessionStateState.focusScore}점
+                    AI 집중도: {sessionState.focusScore}점
                   </span>
                   <span className="text-xs text-slate-400">
                     (실시간)
@@ -1012,7 +1042,7 @@ function DashboardContent() {
                         </div>
                         <div className="text-sm font-medium mb-1">활성 세션이 없습니다</div>
                         <div className="text-xs mb-3">집중 세션을 시작하면 데이터 다운로드가 가능합니다</div>
-                        {!sessionStateState.isRunning && (
+                        {!sessionState.isRunning && (
                           <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded">
                             💡 집중 세션을 시작해보세요
                           </div>
@@ -1037,14 +1067,14 @@ function DashboardContent() {
         )}
       </AnimatePresence>
 
-      {/* Audio Pipeline - 세션 중일 때만 표시 */}
-      <AnimatePresence>
-        {showAudioPipeline && sessionStateState.isRunning && (
+      {/* Audio Pipeline - 숨김 처리됨 */}
+      {/* <AnimatePresence>
+        {showAudioPipeline && sessionState.isRunning && (
           <div className="fixed bottom-4 right-4 z-50">
             <HybridAudioPipeline />
           </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence> */}
 
       {/* Camera Permission Layer */}
       <CameraPermissionLayer
@@ -1084,7 +1114,7 @@ function DashboardContent() {
             <CardContent className="p-6">
               <div className="flex items-center gap-6">
                 <div className="flex-1">
-                  {!sessionStateState.isRunning ? (
+                  {!sessionState.isRunning ? (
                     <div className="flex items-center gap-3">
                       <Button
                         size="lg"
@@ -1104,8 +1134,8 @@ function DashboardContent() {
                         onClick={handlePauseSession}
                         className="px-6 py-3 rounded-xl bg-transparent"
                       >
-                        {sessionStateState.isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
-                        {sessionStateState.isPaused ? "재개" : "일시정지"}
+                        {sessionState.isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
+                        {sessionState.isPaused ? "재개" : "일시정지"}
                       </Button>
                       
                       <Button
@@ -1124,16 +1154,36 @@ function DashboardContent() {
 
                 <div className="flex items-center gap-4">
                   <div className="text-center">
-                    <CircularGauge value={sessionStateState.focusScore} />
+                    <CircularGauge value={sessionState.focusScore} />
                     <div className="text-sm text-slate-600 mt-1">집중도</div>
                   </div>
                   <div className="text-center">
-                                         <div className="text-2xl font-bold text-slate-900">{sessionStateState.formatTime(sessionStateState.elapsed)}</div>
+                    <div className="text-2xl font-bold text-slate-900">{sessionState.formatTime(sessionState.elapsed)}</div>
                     <div className="text-sm text-slate-600">세션 시간</div>
+                    {sessionState.sessionGoal && (
+                      <div className="text-xs text-slate-500 mt-1">
+                        목표: {sessionState.sessionGoal}분
+                      </div>
+                    )}
                   </div>
                   
+                  {/* 세션 정보 표시 (세션 중일 때만) */}
+                  {sessionState.isRunning && (sessionState.sessionContext || sessionState.sessionType) && (
+                    <div className="text-center">
+                      <div className="text-sm font-medium text-slate-700 mb-1">
+                        {sessionState.sessionContext || '집중 세션'}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {sessionState.sessionType === 'study' && '학습'}
+                        {sessionState.sessionType === 'work' && '업무'}
+                        {sessionState.sessionType === 'reading' && '독서'}
+                        {sessionState.sessionType === 'other' && '기타'}
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* 웹캠 토글 버튼 (세션 중일 때만 표시) */}
-                  {sessionStateState.isRunning && mediaStream.isPermissionGranted && (
+                  {sessionState.isRunning && mediaStream.isPermissionGranted && (
                     <div className="text-center">
                       <Button
                         variant={showWebcam ? "default" : "outline"}
@@ -1198,14 +1248,20 @@ function DashboardContent() {
                                 <div className="text-sm font-medium text-blue-700">총 집중 시간</div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <CircularProgress value={154} max={240} color="#3B82F6" size={48} strokeWidth={4} />
+                                <CircularProgress 
+                                  value={todayStatsData ? todayStatsData.focusTime : 0} 
+                                  max={240} 
+                                  color="#3B82F6" 
+                                  size={48} 
+                                  strokeWidth={4} 
+                                />
                               </div>
                             </div>
 
                             <div className="space-y-3">
                               <div className="flex items-center justify-between text-sm">
                                 <span className="text-blue-600">목표 대비</span>
-                                <span className="font-semibold text-blue-700">64%</span>
+                                <span className="font-semibold text-blue-700">{todayStats.goalAchievement}%</span>
                               </div>
 
                               <AnimatedLineChart
@@ -1240,19 +1296,28 @@ function DashboardContent() {
                                 <div className="text-sm font-medium text-emerald-700">평균 집중도</div>
                               </div>
                               <div className="relative">
-                                <CircularProgress value={87} max={100} color="#10B981" size={48} strokeWidth={4} />
+                                <CircularProgress value={todayStats.avgScore} max={100} color="#10B981" size={48} strokeWidth={4} />
                               </div>
                             </div>
 
                             <div className="space-y-3">
                               <div className="flex items-center justify-between text-sm">
                                 <span className="text-emerald-600">성과 등급</span>
-                                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-xs">
-                                  우수
+                                <Badge variant="secondary" className={`text-xs ${
+                                  todayStats.avgScore >= 80 ? 'bg-emerald-100 text-emerald-700' :
+                                  todayStats.avgScore >= 60 ? 'bg-blue-100 text-blue-700' :
+                                  'bg-orange-100 text-orange-700'
+                                }`}>
+                                  {todayStats.avgScore >= 80 ? '우수' : todayStats.avgScore >= 60 ? '양호' : '개선 필요'}
                                 </Badge>
                               </div>
 
-                              <MiniBarChart data={[82, 85, 83, 87, 89, 91, 87]} color="#10B981" label="집중도" />
+                              <div className="w-full h-8 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-emerald-500 transition-all duration-300"
+                                  style={{ width: `${todayStats.avgScore}%` }}
+                                />
+                              </div>
 
                               <div className="flex items-center justify-between text-xs text-emerald-600">
                                 <span>최근 세션 평균</span>
@@ -1267,58 +1332,60 @@ function DashboardContent() {
                             <div className="absolute inset-0 bg-emerald-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                           </motion.div>
 
-                          {/* Distraction Events */}
+                          {/* Goal Achievement */}
                           <motion.div
-                            className="relative p-6 bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-2xl border border-orange-100 hover:shadow-lg transition-all duration-300 group cursor-pointer"
+                            className="relative p-6 bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-2xl border border-purple-100 hover:shadow-lg transition-all duration-300 group cursor-pointer"
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                           >
                             <div className="flex items-start justify-between mb-4">
                               <div>
-                                <div className="text-3xl font-bold text-orange-600 mb-1">{todayStats.distractions}</div>
-                                <div className="text-sm font-medium text-orange-700">방해 요소</div>
+                                <div className="text-3xl font-bold text-purple-600 mb-1">{todayStats.goalAchievement}%</div>
+                                <div className="text-sm font-medium text-purple-700">목표 달성률</div>
                               </div>
                               <div className="flex flex-col items-center gap-2">
-                                <PulseIndicator count={todayStats.distractions} color="#F59E0B" size={8} />
+                                <CircularProgress value={todayStats.goalAchievement} max={100} color="#8B5CF6" size={48} strokeWidth={4} />
                               </div>
                             </div>
 
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-orange-600">주요 원인</span>
-                                <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded-full">
-                                  휴대폰
-                                </span>
-                              </div>
-
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-orange-600">휴대폰 확인</span>
-                                  <span className="font-medium text-orange-700">2회</span>
+                                                          <div className="space-y-3">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-purple-600">일일 목표</span>
+                                  <span className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded-full">
+                                    4시간
+                                  </span>
                                 </div>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-orange-600">자세 변화</span>
-                                  <span className="font-medium text-orange-700">1회</span>
-                                </div>
-                              </div>
 
-                              <div className="flex items-center justify-between text-xs text-orange-600">
-                                <span>어제 대비</span>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-purple-600">현재 달성</span>
+                                    <span className="font-medium text-purple-700">{todayStats.focusTimeFormatted}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-purple-600">남은 시간</span>
+                                    <span className="font-medium text-purple-700">
+                                      {Math.max(0, 240 - todayStats.focusTime)}분
+                                    </span>
+                                  </div>
+                                </div>
+
+                              <div className="flex items-center justify-between text-xs text-purple-600">
+                                <span>주간 평균</span>
                                 <div className="flex items-center gap-1">
-                                  <TrendingUp className="w-3 h-3 rotate-180" />
-                                  <span>-2회</span>
+                                  <TrendingUp className="w-3 h-3" />
+                                  <span>+8%</span>
                                 </div>
                               </div>
                             </div>
 
                             {/* Hover overlay */}
-                            <div className="absolute inset-0 bg-orange-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <div className="absolute inset-0 bg-purple-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                           </motion.div>
                         </div>
 
                         <div className="text-center">
                           <div className="inline-flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-4 py-2 rounded-full">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <div className={`w-2 h-2 rounded-full ${todayStatsLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
                             <span>마지막 업데이트: {todayStats.lastUpdate}</span>
                           </div>
                         </div>
@@ -1334,7 +1401,12 @@ function DashboardContent() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-xl font-bold text-slate-900">주간 집중 패턴</CardTitle>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-700">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-slate-500 hover:text-slate-700"
+                        onClick={() => router.push('/report/weekly')}
+                      >
                         <TrendingUp className="w-4 h-4 mr-1" />
                         상세 보기
                       </Button>
@@ -1372,34 +1444,7 @@ function DashboardContent() {
               {/* Challenge Progress */}
               <ChallengeProgressCard className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm" />
 
-              {/* AI 집중 상태 분석 히스토리 */}
-              {sessionStateState.isRunning && (
-                <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
-                      <Brain className="w-5 h-5 text-blue-500" />
-                      AI 집중 분석
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* 실시간 집중도 차트 */}
-                    <RealtimeFocusChart
-                      focusScores={focusScores}
-                      maxDisplayPoints={30}
-                      showTrend={true}
-                      className="border-0 shadow-none bg-transparent p-0"
-                    />
-                    
-                    {/* 웹캠 분석 결과 - 집중도만 표시 */}
-                    <WebcamAnalysisDisplay
-                      analysisResult={mediaStream.webcamAnalysisResult}
-                      focusFeatures={mediaStream.focusFeatures}
-                      lastFocusScore={mediaStream.lastFocusScore}
-                      isConnected={mediaStream.gestureWebSocketConnected}
-                    />
-                  </CardContent>
-                </Card>
-              )}
+
 
               {/* Personalized Insights */}
               <Card className="rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
@@ -1429,18 +1474,7 @@ function DashboardContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="friends" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="friends">친구 랭킹</TabsTrigger>
-                  <TabsTrigger value="team">팀 목표</TabsTrigger>
-                </TabsList>
-                <TabsContent value="friends" className="mt-6">
-  
-                </TabsContent>
-                <TabsContent value="team" className="mt-6">
-                  <DashboardTeamGoals />
-                </TabsContent>
-              </Tabs>
+              <FriendRanking />
             </CardContent>
           </Card>
         </div>
@@ -1456,6 +1490,104 @@ function DashboardContent() {
         onDismissError={() => setShowErrorDisplay(false)}
         isVisible={showErrorDisplay}
       />
+
+      {/* 세션 설정 모달 */}
+      <Dialog open={showSessionSetup} onOpenChange={setShowSessionSetup}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="w-5 h-5 text-blue-500" />
+              집중 세션 설정
+            </DialogTitle>
+            <DialogDescription>
+              세션 시작 전 목표 시간과 세션 유형을 설정해주세요.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* 세션 제목 */}
+            <div className="space-y-2">
+              <Label htmlFor="session-title">세션 제목</Label>
+              <Input
+                id="session-title"
+                placeholder="예: 수학 공부, 영어 단어 암기, 코딩 연습..."
+                value={sessionSetup.context_tag}
+                onChange={(e) => setSessionSetup(prev => ({ ...prev, context_tag: e.target.value }))}
+              />
+              {sessionState.sessionContext && (
+                <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                  이전 세션: {sessionState.sessionContext}
+                </div>
+              )}
+            </div>
+
+            {/* 세션 유형 */}
+            <div className="space-y-2">
+              <Label htmlFor="session-type">세션 유형</Label>
+              <Select
+                value={sessionSetup.session_type}
+                onValueChange={(value) => setSessionSetup(prev => ({ 
+                  ...prev, 
+                  session_type: value as 'study' | 'work' | 'reading' | 'other' 
+                }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="세션 유형을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="study">학습</SelectItem>
+                  <SelectItem value="work">업무</SelectItem>
+                  <SelectItem value="reading">독서</SelectItem>
+                  <SelectItem value="other">기타</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 목표 시간 */}
+            <div className="space-y-2">
+              <Label htmlFor="goal-time">목표 시간 (분)</Label>
+              <Select
+                value={sessionSetup.goal_min.toString()}
+                onValueChange={(value) => setSessionSetup(prev => ({ 
+                  ...prev, 
+                  goal_min: parseInt(value) 
+                }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="목표 시간을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15분</SelectItem>
+                  <SelectItem value="25">25분 (뽀모도로)</SelectItem>
+                  <SelectItem value="30">30분</SelectItem>
+                  <SelectItem value="45">45분</SelectItem>
+                  <SelectItem value="60">60분</SelectItem>
+                  <SelectItem value="90">90분</SelectItem>
+                  <SelectItem value="120">120분</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowSessionSetup(false)}
+            >
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                setShowSessionSetup(false)
+                handleSessionSetupComplete()
+              }}
+              className="bg-blue-500 hover:bg-blue-600"
+            >
+              세션 시작
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 세션 종료 알림 */}
       {sessionStateEndData && (

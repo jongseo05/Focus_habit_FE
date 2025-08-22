@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           head_pose_pitch: 0,
           head_pose_yaw: 0,
           head_pose_roll: 0,
-          eye_status: 'OPEN',
+          eye_status: 0.8, // 수치값 (0.0~1.0)
           ear_value: 0.8,
           frame_number: 1
         })

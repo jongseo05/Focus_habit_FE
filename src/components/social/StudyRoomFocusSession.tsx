@@ -16,7 +16,7 @@ import { useStudyRoomPresence } from '@/hooks/useStudyRoomPresence'
 import { useSocialRealtime } from '@/hooks/useSocialRealtime'
 import { useCompetition } from '@/hooks/useCompetition'
 import { RoomPresenceIndicator } from '@/components/studyroom/RoomPresenceIndicator'
-import HybridAudioPipeline from '@/components/HybridAudioPipeline'
+// import HybridAudioPipeline from '@/components/HybridAudioPipeline' // 하이브리드 오디오 파이프라인 숨김
 import WebcamAnalysisDisplay from '@/components/WebcamAnalysisDisplay'
 import CameraPermissionLayer from '@/components/CameraPermissionLayer'
 import MicrophonePermissionLayer from '@/components/MicrophonePermissionLayer'
@@ -316,7 +316,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
 
   // UI 상태
   const [showWebcam, setShowWebcam] = useState(false)
-  const [showAudioPipeline, setShowAudioPipeline] = useState(false)
+  const [showAudioPipeline, setShowAudioPipeline] = useState(false) // 하이브리드 오디오 파이프라인 숨김
   const [goalMinutes, setGoalMinutes] = useState(30)
 
   // 권한 관리 상태
@@ -614,7 +614,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
     userId: currentUserId,
     enabled: sessionState.isRunning && isCurrentUserOnline, // WebSocket 다시 활성화
     onFocusScoreUpdate: (score: number, confidence: number) => {
-      console.log('🔥 WebSocket 집중도 분석 응답 수신:', { score, confidence, timestamp: new Date().toISOString() })
+
       updateFocusScore(score, confidence)
     },
     onError: (error: any) => {
@@ -1010,12 +1010,6 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       }
 
       // 7. WebSocket 연결
-      console.log('7. WebSocket 연결 조건 확인:', {
-        hasAllPermissions: true,
-        isCurrentUserOnline,
-        hasDirectStream: !!directMediaStream,
-        hasMicrophoneStream: !!microphoneStream.stream
-      })
       
       if (isCurrentUserOnline && (directMediaStream || microphoneStream.stream)) {
         // 미디어 스트림이 안정화될 때까지 잠시 대기
@@ -1059,10 +1053,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         
         await waitForMediaStream()
         
-        console.log('9. WebSocket 연결 시작')
         if (wsConnect) {
           wsConnect()
-          console.log('WebSocket 연결 요청 완료')
         }
       } else {
         console.warn('WebSocket 연결 조건 미충족')
@@ -1138,7 +1130,6 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
       // 2. WebSocket 연결 해제
       if (wsDisconnect) {
         wsDisconnect()
-        console.log('WebSocket 연결 해제 완료')
       }
       
       // 3. 미디어 스트림 정리
@@ -1362,8 +1353,8 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
         </Card>
       )}
 
-      {/* 오디오 분석 */}
-      {showAudioPipeline && microphoneStream.stream && (
+      {/* 오디오 분석 - 숨김 처리됨 */}
+      {/* {showAudioPipeline && microphoneStream.stream && (
         <Card>
           <CardHeader>
             <CardTitle>음성 분석</CardTitle>
@@ -1372,7 +1363,7 @@ export const StudyRoomFocusSession = React.memo(function StudyRoomFocusSession({
             <HybridAudioPipeline />
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {/* 권한 요청 레이어 */}
       {showCameraPermission && (

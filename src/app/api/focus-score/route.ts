@@ -35,13 +35,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 점수 범위 검증 (0-100)
+    // 점수 범위 검증 (0-100) 및 반올림 처리
     if (focusScore < 0 || focusScore > 100) {
       return createErrorResponse(
         '집중도 점수는 0-100 사이의 값이어야 합니다.',
         400
       )
     }
+
+    // 집중도 점수 반올림 (소수점 제거)
+    const roundedFocusScore = Math.round(focusScore)
 
     // 표준 인증 확인
     const supabase = await supabaseServer()
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
       .insert({
         session_id: sessionId,
         ts: new Date(timestamp).toISOString(),
-        score: Math.round(focusScore), // 정수로 반올림
+        score: roundedFocusScore, // 이미 반올림됨
         score_conf: confidence || 0.8,
         topic_tag: analysisMethod || 'ai_analysis',
         created_at: new Date().toISOString()
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest) {
       console.error('❌ 저장 시도한 데이터:', {
         session_id: sessionId,
         ts: new Date(timestamp).toISOString(),
-        score: Math.round(focusScore),
+        score: roundedFocusScore,
         score_conf: confidence || 0.8,
         topic_tag: analysisMethod || 'ai_analysis'
       })
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
         ts: new Date(timestamp).toISOString(),
         event_type: 'focus',
         payload: {
-          focus_score: focusScore,
+          focus_score: roundedFocusScore,
           confidence: confidence || 0.8,
           analysis_method: analysisMethod || 'ai_analysis',
           timestamp: timestamp
@@ -132,7 +135,7 @@ export async function POST(request: NextRequest) {
         ts: new Date(timestamp).toISOString(),
         event_type: 'focus',
         payload: {
-          focus_score: focusScore,
+          focus_score: roundedFocusScore,
           confidence: confidence || 0.8,
           analysis_method: analysisMethod || 'ai_analysis',
           timestamp: timestamp
@@ -168,7 +171,7 @@ export async function POST(request: NextRequest) {
       {
         sample: sampleData,
         event: eventData,
-        focusScore,
+        focusScore: roundedFocusScore,
         timestamp
       },
       '집중도 점수가 성공적으로 저장되었습니다.'

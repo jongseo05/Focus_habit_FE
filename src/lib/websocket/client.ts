@@ -141,7 +141,7 @@ export class WebSocketClient {
       // JSON 래핑 없이 raw base64 데이터만 전송
       this.ws.send(frameData)
     } catch (error) {
-      // 에러 처리
+      console.error('[WEBSOCKET] sendFrame 전송 오류:', error)
     }
   }
 

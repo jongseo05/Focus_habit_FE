@@ -69,10 +69,10 @@ export async function GET(request: NextRequest) {
       periodEnd.setHours(23, 59, 59, 999)
     }
 
-    // 1단계: 친구 ID 목록 조회
+    // 1단계: 친구 ID 목록 조회 (active 상태인 친구만)
     const { data: friendships, error: friendshipsError } = await supabase
       .from('user_friends')
-      .select('friend_id')
+      .select('friend_id, status')
       .eq('user_id', user.id)
       .eq('status', 'active')
 
@@ -87,7 +87,9 @@ export async function GET(request: NextRequest) {
       friendships: friendships 
     })
 
+    // 친구가 없거나 pending/received 상태만 있는 경우 빈 랭킹 반환
     if (!friendships || friendships.length === 0) {
+      // 친구가 없으면 빈 랭킹 반환
       const response: RankingResponse = {
         rankings: [],
         total_count: 0,
@@ -95,7 +97,8 @@ export async function GET(request: NextRequest) {
         period_start: periodStart.toISOString(),
         period_end: periodEnd.toISOString()
       }
-      return createSuccessResponse(response, '친구가 없습니다.')
+      
+      return createSuccessResponse(response, '친구가 없습니다. 친구를 추가해보세요.')
     }
 
     const friendIds = friendships.map(f => f.friend_id)
@@ -108,11 +111,10 @@ export async function GET(request: NextRequest) {
 
     // 2단계: 집중 세션 데이터 조회
     const { data: focusSessions, error: sessionsError } = await supabase
-      .from('focus_sessions')
+      .from('focus_session')
       .select(`
         user_id,
-        total_focus_score,
-        total_focus_time,
+        focus_score,
         started_at,
         ended_at
       `)
@@ -145,9 +147,14 @@ export async function GET(request: NextRequest) {
     // 통계 계산
     focusSessions?.forEach(session => {
       const stats = userStats.get(session.user_id)
-      if (stats) {
-        stats.total_focus_score += session.total_focus_score || 0
-        stats.total_focus_time += session.total_focus_time || 0
+      if (stats && session.started_at && session.ended_at) {
+        // 실제 세션 시간 계산 (분 단위)
+        const startTime = new Date(session.started_at)
+        const endTime = new Date(session.ended_at)
+        const sessionDurationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+        
+        stats.total_focus_score += session.focus_score || 0
+        stats.total_focus_time += sessionDurationMinutes
         stats.session_count += 1
       }
     })
@@ -217,6 +224,11 @@ export async function GET(request: NextRequest) {
     return createSuccessResponse(response, '랭킹 조회가 완료되었습니다.')
 
   } catch (error) {
+    console.error('친구 랭킹 조회 중 상세 오류:', {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    })
     return handleAPIError(error, '친구 랭킹 조회 중 오류가 발생했습니다.')
   }
 }

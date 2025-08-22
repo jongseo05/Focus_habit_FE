@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Trophy, Target, Clock, Users, TrendingUp, Calendar, Star, Zap, Award, Flag, Crown, Medal, Plus } from 'lucide-react'
 import { usePersonalChallenges } from '@/hooks/usePersonalChallenges'
-import type { GroupChallenge } from '@/types/social'
+import type { PersonalChallenge } from '@/types/social'
 import Link from 'next/link'
 
 interface ChallengeProgressCardProps {
@@ -15,8 +15,8 @@ interface ChallengeProgressCardProps {
 }
 
 export default function ChallengeProgressCard({ className }: ChallengeProgressCardProps) {
-  const { challenges, loading, error, updateProgress } = usePersonalChallenges()
-  const [activeChallenges, setActiveChallenges] = useState<GroupChallenge[]>([])
+  const { challenges, loading, error, updateProgress, refreshChallenges } = usePersonalChallenges()
+  const [activeChallenges, setActiveChallenges] = useState<PersonalChallenge[]>([])
 
   // 활성 챌린지 필터링
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function ChallengeProgressCard({ className }: ChallengeProgressCa
     }
   }, [challenges])
 
-  const getGoalTypeInfo = (challenge: GroupChallenge) => {
+  const getGoalTypeInfo = (challenge: PersonalChallenge) => {
     switch (challenge.type) {
       case 'focus_time':
         return {
@@ -75,7 +75,7 @@ export default function ChallengeProgressCard({ className }: ChallengeProgressCa
     }
   }
 
-  const getProgressPercentage = (challenge: GroupChallenge) => {
+  const getProgressPercentage = (challenge: PersonalChallenge) => {
     if (challenge.target_value === 0) return 0
     return Math.min((challenge.current_value / challenge.target_value) * 100, 100)
   }
@@ -143,18 +143,18 @@ export default function ChallengeProgressCard({ className }: ChallengeProgressCa
   return (
     <Card className={className}>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <Trophy className="h-5 w-5 text-yellow-500" />
             개인 챌린지
-          </CardTitle>
+          </div>
           <Link href="/social/challenge">
             <Button variant="outline" size="sm" className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
               새 챌린지
             </Button>
           </Link>
-        </div>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {activeChallenges.length === 0 ? (
@@ -177,7 +177,7 @@ export default function ChallengeProgressCard({ className }: ChallengeProgressCa
 
               return (
                 <div
-                  key={challenge.challenge_id}
+                  key={challenge.id}
                   className="p-4 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -190,8 +190,16 @@ export default function ChallengeProgressCard({ className }: ChallengeProgressCa
                         <p className="text-xs text-slate-600 mb-2">{challenge.description}</p>
                       )}
                       <div className="flex items-center gap-4 text-xs text-slate-500">
-                        <span>목표: {challenge.target_value} {goalInfo.unit}</span>
-                        <span>현재: {challenge.current_value} {goalInfo.unit}</span>
+                        <span>목표: {
+                          challenge.type === 'focus_time' && challenge.unit === '분' && challenge.target_value >= 60
+                            ? `${(challenge.target_value / 60).toFixed(1)}시간`
+                            : `${challenge.target_value} ${challenge.unit}`
+                        }</span>
+                        <span>현재: {
+                          challenge.type === 'focus_time' && challenge.unit === '분' && challenge.current_value >= 60
+                            ? `${(challenge.current_value / 60).toFixed(1)}시간`
+                            : `${challenge.current_value} ${challenge.unit}`
+                        }</span>
                       </div>
                     </div>
                     <Badge variant="outline" className="text-xs">

@@ -709,3 +709,29 @@ export function useFriendComparison(
     gcTime: 10 * 60 * 1000, // 10분 후 가비지 컬렉션
   })
 }
+
+// 친구 랭킹 조회 훅
+export function useFriendRanking(period: 'weekly' | 'monthly' = 'weekly') {
+  const { data: user } = useUser()
+  
+  return useQuery({
+    queryKey: ['friend-ranking', period],
+    queryFn: async (): Promise<any> => {
+      const params = new URLSearchParams({ period })
+      
+      const response = await fetch(`/api/social/friends/ranking?${params}`)
+      if (!response.ok) {
+        throw new Error('친구 랭킹을 불러오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      // 표준 API 응답에서 data 필드만 반환
+      return result.data || null
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5분
+    refetchInterval: false, // 자동 새로고침 비활성화
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 새로고침 비활성화
+    gcTime: 10 * 60 * 1000, // 10분 후 가비지 컬렉션
+  })
+}

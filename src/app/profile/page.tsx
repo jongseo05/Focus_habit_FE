@@ -98,6 +98,7 @@ interface PersonalizationSettings {
   language: 'ko' | 'en'
   fontSize: 'small' | 'medium' | 'large'
   colorScheme: 'default' | 'high-contrast' | 'colorblind-friendly'
+  defaultGoalMinutes: number
   notifications: {
     focusSession: boolean
     achievement: boolean
@@ -124,6 +125,7 @@ const mockPersonalizationSettings: PersonalizationSettings = {
   language: 'ko',
   fontSize: 'medium',
   colorScheme: 'default',
+  defaultGoalMinutes: 30,
   notifications: {
     focusSession: true,
     achievement: true,
@@ -150,6 +152,30 @@ export default function ProfilePage() {
   const [sharingSettings, setSharingSettings] = useState(mockSharingSettings)
   const [personalizationSettings, setPersonalizationSettings] = useState(mockPersonalizationSettings)
   const [isEditing, setIsEditing] = useState(false)
+  
+  // 개인화 설정 저장 함수
+  const savePersonalizationSettings = async (settings: PersonalizationSettings) => {
+    try {
+      const response = await fetch('/api/profile/personalization-model', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user?.id,
+          default_goal_minutes: settings.defaultGoalMinutes
+        })
+      })
+      
+      if (response.ok) {
+        console.log('개인화 설정이 저장되었습니다')
+      } else {
+        console.error('개인화 설정 저장 실패')
+      }
+    } catch (error) {
+      console.error('개인화 설정 저장 중 오류:', error)
+    }
+  }
 
   // 프로필 데이터 조회
   const { data: profile, isLoading: profileLoading, error: profileError } = useProfile(user?.id)
@@ -349,7 +375,10 @@ export default function ProfilePage() {
           <TabsContent value="settings" className="space-y-6">
             <SettingsTab 
               personalizationSettings={personalizationSettings}
-              setPersonalizationSettings={setPersonalizationSettings}
+              setPersonalizationSettings={(settings) => {
+                setPersonalizationSettings(settings)
+                savePersonalizationSettings(settings)
+              }}
               sharingSettings={sharingSettings}
               setSharingSettings={setSharingSettings}
             />

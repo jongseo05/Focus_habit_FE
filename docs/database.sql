@@ -74,9 +74,9 @@ CREATE TABLE public.challenge_history (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT challenge_history_pkey PRIMARY KEY (history_id),
   CONSTRAINT challenge_history_winner_id_fkey FOREIGN KEY (winner_id) REFERENCES auth.users(id),
-  CONSTRAINT challenge_history_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
   CONSTRAINT challenge_history_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenge(challenge_id),
-  CONSTRAINT challenge_history_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
+  CONSTRAINT challenge_history_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id),
+  CONSTRAINT challenge_history_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
 );
 CREATE TABLE public.challenge_invitation (
   invitation_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -133,8 +133,8 @@ CREATE TABLE public.competition_participants (
   rank integer,
   joined_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT competition_participants_pkey PRIMARY KEY (participant_id),
-  CONSTRAINT competition_participants_competition_id_fkey FOREIGN KEY (competition_id) REFERENCES public.focus_competitions(competition_id),
-  CONSTRAINT competition_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT competition_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT competition_participants_competition_id_fkey FOREIGN KEY (competition_id) REFERENCES public.focus_competitions(competition_id)
 );
 CREATE TABLE public.competition_results (
   result_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -148,8 +148,8 @@ CREATE TABLE public.competition_results (
   reward_badges ARRAY,
   completed_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT competition_results_pkey PRIMARY KEY (result_id),
-  CONSTRAINT competition_results_competition_id_fkey FOREIGN KEY (competition_id) REFERENCES public.focus_competitions(competition_id),
-  CONSTRAINT competition_results_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT competition_results_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT competition_results_competition_id_fkey FOREIGN KEY (competition_id) REFERENCES public.focus_competitions(competition_id)
 );
 CREATE TABLE public.encouragement_messages (
   message_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -162,8 +162,8 @@ CREATE TABLE public.encouragement_messages (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT encouragement_messages_pkey PRIMARY KEY (message_id),
   CONSTRAINT encouragement_messages_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id),
-  CONSTRAINT encouragement_messages_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id),
-  CONSTRAINT encouragement_messages_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
+  CONSTRAINT encouragement_messages_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id),
+  CONSTRAINT encouragement_messages_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.focus_competitions (
   competition_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -174,8 +174,10 @@ CREATE TABLE public.focus_competitions (
   ended_at timestamp with time zone,
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  host_id uuid,
   CONSTRAINT focus_competitions_pkey PRIMARY KEY (competition_id),
-  CONSTRAINT focus_competitions_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
+  CONSTRAINT focus_competitions_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id),
+  CONSTRAINT focus_competitions_host_id_fkey FOREIGN KEY (host_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.focus_event (
   event_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -222,8 +224,8 @@ CREATE TABLE public.focus_session (
   updated_at timestamp with time zone DEFAULT now(),
   room_id uuid,
   CONSTRAINT focus_session_pkey PRIMARY KEY (session_id),
-  CONSTRAINT focus_session_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id),
-  CONSTRAINT focus_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT focus_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT focus_session_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
 );
 CREATE TABLE public.friend_activity_status (
   status_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -234,8 +236,8 @@ CREATE TABLE public.friend_activity_status (
   current_session_id uuid,
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT friend_activity_status_pkey PRIMARY KEY (status_id),
-  CONSTRAINT friend_activity_status_current_session_id_fkey FOREIGN KEY (current_session_id) REFERENCES public.focus_session(session_id),
-  CONSTRAINT friend_activity_status_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT friend_activity_status_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT friend_activity_status_current_session_id_fkey FOREIGN KEY (current_session_id) REFERENCES public.focus_session(session_id)
 );
 CREATE TABLE public.friend_comparison_stats (
   stat_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -250,8 +252,8 @@ CREATE TABLE public.friend_comparison_stats (
   rank_position integer,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT friend_comparison_stats_pkey PRIMARY KEY (stat_id),
-  CONSTRAINT friend_comparison_stats_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT friend_comparison_stats_friend_id_fkey FOREIGN KEY (friend_id) REFERENCES auth.users(id)
+  CONSTRAINT friend_comparison_stats_friend_id_fkey FOREIGN KEY (friend_id) REFERENCES auth.users(id),
+  CONSTRAINT friend_comparison_stats_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.friend_encouragement_messages (
   message_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -262,8 +264,8 @@ CREATE TABLE public.friend_encouragement_messages (
   is_read boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT friend_encouragement_messages_pkey PRIMARY KEY (message_id),
-  CONSTRAINT friend_encouragement_messages_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id),
-  CONSTRAINT friend_encouragement_messages_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id)
+  CONSTRAINT friend_encouragement_messages_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id),
+  CONSTRAINT friend_encouragement_messages_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.friend_requests (
   request_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -274,8 +276,8 @@ CREATE TABLE public.friend_requests (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT friend_requests_pkey PRIMARY KEY (request_id),
-  CONSTRAINT friend_requests_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id),
-  CONSTRAINT friend_requests_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id)
+  CONSTRAINT friend_requests_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id),
+  CONSTRAINT friend_requests_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.group_challenge (
   challenge_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -295,8 +297,8 @@ CREATE TABLE public.group_challenge (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   challenge_type text DEFAULT 'team'::text CHECK (challenge_type = ANY (ARRAY['personal'::text, 'team'::text])),
   CONSTRAINT group_challenge_pkey PRIMARY KEY (challenge_id),
-  CONSTRAINT group_challenge_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id),
-  CONSTRAINT group_challenge_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
+  CONSTRAINT group_challenge_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
+  CONSTRAINT group_challenge_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
 );
 CREATE TABLE public.group_challenge_participant (
   participant_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -317,8 +319,8 @@ CREATE TABLE public.group_challenge_participants (
   joined_at timestamp with time zone NOT NULL DEFAULT now(),
   completed_at timestamp with time zone,
   CONSTRAINT group_challenge_participants_pkey PRIMARY KEY (participant_id),
-  CONSTRAINT group_challenge_participants_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.group_challenges(challenge_id),
-  CONSTRAINT group_challenge_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT group_challenge_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT group_challenge_participants_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.group_challenges(challenge_id)
 );
 CREATE TABLE public.group_challenges (
   challenge_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -460,6 +462,11 @@ CREATE TABLE public.room_participants (
   is_host boolean NOT NULL DEFAULT false,
   is_connected boolean NOT NULL DEFAULT true,
   last_activity timestamp with time zone NOT NULL DEFAULT now(),
+  is_video_enabled boolean DEFAULT false,
+  is_audio_enabled boolean DEFAULT false,
+  camera_updated_at timestamp with time zone DEFAULT now(),
+  is_present boolean DEFAULT false,
+  presence_updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT room_participants_pkey PRIMARY KEY (participant_id),
   CONSTRAINT room_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT room_participants_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.study_rooms(room_id)
@@ -515,8 +522,8 @@ CREATE TABLE public.study_rooms (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   linked_challenge_id uuid,
   CONSTRAINT study_rooms_pkey PRIMARY KEY (room_id),
-  CONSTRAINT study_rooms_linked_challenge_id_fkey FOREIGN KEY (linked_challenge_id) REFERENCES public.group_challenges(challenge_id),
-  CONSTRAINT study_rooms_host_id_fkey FOREIGN KEY (host_id) REFERENCES auth.users(id)
+  CONSTRAINT study_rooms_host_id_fkey FOREIGN KEY (host_id) REFERENCES auth.users(id),
+  CONSTRAINT study_rooms_linked_challenge_id_fkey FOREIGN KEY (linked_challenge_id) REFERENCES public.group_challenges(challenge_id)
 );
 CREATE TABLE public.user_achievements (
   achievement_id uuid NOT NULL DEFAULT gen_random_uuid(),

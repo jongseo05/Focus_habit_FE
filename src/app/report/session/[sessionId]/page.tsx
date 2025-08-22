@@ -294,13 +294,11 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="overview">집중력 추이</TabsTrigger>
-                  <TabsTrigger value="activities">활동 내역</TabsTrigger>
-                  <TabsTrigger value="evidence">증거 자료</TabsTrigger>
-                  <TabsTrigger value="achievements">성취도</TabsTrigger>
-                </TabsList>
+                             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                 <TabsList className="grid w-full grid-cols-2">
+                   <TabsTrigger value="overview">집중력 추이</TabsTrigger>
+                   <TabsTrigger value="activities">활동 내역</TabsTrigger>
+                 </TabsList>
 
                 <TabsContent value="overview" className="mt-6">
                   <div className="space-y-6">
@@ -377,24 +375,7 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                    </div>
                  </TabsContent>
 
-                <TabsContent value="evidence" className="mt-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">증거 스냅샷</h3>
-                                         <div className="bg-slate-50 rounded-lg p-8 text-center">
-                       <p className="text-slate-600">증거 스냅샷이 여기에 표시됩니다.</p>
-                       <p className="text-sm text-slate-500 mt-2">스냅샷 데이터: 0개</p>
-                     </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="achievements" className="mt-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">세션 성취도</h3>
-                    <div className="bg-slate-50 rounded-lg p-8 text-center">
-                      <p className="text-slate-600">이 세션에서 달성한 성취도 정보가 여기에 표시됩니다.</p>
-                    </div>
-                  </div>
-                </TabsContent>
+                
               </Tabs>
             </CardContent>
           </Card>
@@ -514,34 +495,34 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                             
                             if (avgScore >= 85) {
                               return (
-                                <div className="space-y-2">
-                                  <p>와! 정말 훌륭한 집중 세션이었네요! 🎉</p>
-                                  <p>평균 집중도 <span className="font-semibold text-emerald-600">{Math.round(avgScore)}점</span>으로 매우 높은 수준을 보여주셨습니다.</p>
-                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을 고집중 상태로 유지하셨는데, 이는 정말 놀라운 성과입니다.</p>
+                                <div className="space-y-3">
+                                  <p className="text-lg font-medium">와! 정말 훌륭한 집중 세션이었네요! 🎉</p>
+                                  <p>평균 집중도 <span className="font-semibold text-emerald-600">{Math.round(avgScore)}점</span>으로<br />매우 높은 수준을 보여주셨습니다.</p>
+                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을<br />고집중 상태로 유지하셨는데, 이는 정말 놀라운 성과입니다.</p>
                                 </div>
                               )
                             } else if (avgScore >= 70) {
                               return (
-                                <div className="space-y-2">
-                                  <p>좋은 집중 세션이었습니다! 👍</p>
-                                  <p>평균 집중도 <span className="font-semibold text-emerald-600">{Math.round(avgScore)}점</span>으로 안정적인 집중력을 보여주셨네요.</p>
-                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을 고집중 상태로 유지하셨습니다.</p>
+                                <div className="space-y-3">
+                                  <p className="text-lg font-medium">좋은 집중 세션이었습니다! 👍</p>
+                                  <p>평균 집중도 <span className="font-semibold text-emerald-600">{Math.round(avgScore)}점</span>으로<br />안정적인 집중력을 보여주셨네요.</p>
+                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을<br />고집중 상태로 유지하셨습니다.</p>
                                 </div>
                               )
                             } else if (avgScore >= 50) {
                               return (
-                                <div className="space-y-2">
-                                  <p>집중 세션을 완료하셨네요! 💪</p>
-                                  <p>평균 집중도 <span className="font-semibold text-orange-600">{Math.round(avgScore)}점</span>으로 개선의 여지가 있습니다.</p>
-                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을 고집중 상태로 유지하셨는데, 더 나은 결과를 위해 몇 가지 제안을 드릴게요.</p>
+                                <div className="space-y-3">
+                                  <p className="text-lg font-medium">집중 세션을 완료하셨네요! 💪</p>
+                                  <p>평균 집중도 <span className="font-semibold text-orange-600">{Math.round(avgScore)}점</span>으로<br />개선의 여지가 있습니다.</p>
+                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을<br />고집중 상태로 유지하셨는데, 더 나은 결과를 위해 몇 가지 제안을 드릴게요.</p>
                                 </div>
                               )
                             } else {
                               return (
-                                <div className="space-y-2">
-                                  <p>집중 세션을 완료하셨습니다! 🌱</p>
-                                  <p>평균 집중도 <span className="font-semibold text-red-600">{Math.round(avgScore)}점</span>으로 기본적인 집중력을 보여주셨네요.</p>
-                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을 고집중 상태로 유지하셨습니다.</p>
+                                <div className="space-y-3">
+                                  <p className="text-lg font-medium">집중 세션을 완료하셨습니다! 🌱</p>
+                                  <p>평균 집중도 <span className="font-semibold text-red-600">{Math.round(avgScore)}점</span>으로<br />기본적인 집중력을 보여주셨네요.</p>
+                                  <p>{Math.round(duration)}분 동안 <span className="font-semibold text-blue-600">{highFocusRatio}%</span>의 시간을<br />고집중 상태로 유지하셨습니다.</p>
                                   <p>집중력 향상을 위한 구체적인 방법을 제안해드릴게요.</p>
                                 </div>
                               )
@@ -552,8 +533,8 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                        {samples.length > 0 && (
                          <div className="space-y-3">
                            <div className="bg-white rounded-lg p-4 border border-slate-200">
-                             <h5 className="font-semibold text-slate-900 mb-2">💡 주요 인사이트</h5>
-                             <ul className="text-sm text-slate-700 space-y-1">
+                             <h5 className="font-semibold text-slate-900 mb-3">💡 주요 인사이트</h5>
+                             <ul className="text-sm text-slate-700 space-y-2">
                                {(() => {
                                  const insights = []
                                  const avgScore = samples.reduce((sum, s) => 
@@ -588,9 +569,9 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                              </ul>
                            </div>
                            
-                           <div className="bg-white rounded-lg p-4 border border-slate-200">
-                             <h5 className="font-semibold text-slate-900 mb-2">🚀 개선 제안</h5>
-                             <ul className="text-sm text-slate-700 space-y-1">
+                                                       <div className="bg-white rounded-lg p-4 border border-slate-200">
+                              <h5 className="font-semibold text-slate-900 mb-3">🚀 개선 제안</h5>
+                              <ul className="text-sm text-slate-700 space-y-2">
                                {(() => {
                                  const suggestions = []
                                  const avgScore = samples.reduce((sum, s) => 
@@ -616,21 +597,36 @@ export default function SessionReportPage({ params }: { params: Promise<{ sessio
                              </ul>
                            </div>
                            
-                           <div className="bg-white rounded-lg p-4 border border-slate-200">
-                             <h5 className="font-semibold text-slate-900 mb-2">📈 다음 목표</h5>
-                             <div className="text-sm text-slate-700">
+                                                       <div className="bg-white rounded-lg p-4 border border-slate-200">
+                              <h5 className="font-semibold text-slate-900 mb-3">📈 다음 목표</h5>
+                              <div className="text-sm text-slate-700 space-y-3">
                                {(() => {
                                  const avgScore = samples.reduce((sum, s) => 
                                    sum + (s.focus_score || s.score || 0), 0
                                  ) / samples.length
                                  
-                                 if (avgScore >= 85) {
-                                   return "현재의 뛰어난 집중력을 바탕으로 더 도전적인 학습 목표를 설정해보세요. 새로운 분야에 도전하거나 더 깊이 있는 학습을 시도해보는 것을 권장합니다."
-                                 } else if (avgScore >= 70) {
-                                   return "현재 집중도를 80점 이상으로 향상시키는 것을 목표로 해보세요. 휴식 타이밍과 학습 환경을 최적화하면 충분히 가능합니다."
-                                 } else {
-                                   return "먼저 70점 이상의 안정적인 집중도를 달성하는 것을 목표로 해보세요. 작은 개선부터 시작해서 점진적으로 향상시켜 나가세요."
-                                 }
+                                                                   if (avgScore >= 85) {
+                                    return (
+                                      <>
+                                        <p>현재의 뛰어난 집중력을 바탕으로<br />더 도전적인 학습 목표를 설정해보세요.</p>
+                                        <p>새로운 분야에 도전하거나<br />더 깊이 있는 학습을 시도해보는 것을 권장합니다.</p>
+                                      </>
+                                    )
+                                  } else if (avgScore >= 70) {
+                                    return (
+                                      <>
+                                        <p>현재 집중도를 80점 이상으로 향상시키는 것을<br />목표로 해보세요.</p>
+                                        <p>휴식 타이밍과 학습 환경을 최적화하면<br />충분히 가능합니다.</p>
+                                      </>
+                                    )
+                                  } else {
+                                    return (
+                                      <>
+                                        <p>먼저 70점 이상의 안정적인 집중도를 달성하는 것을<br />목표로 해보세요.</p>
+                                        <p>작은 개선부터 시작해서<br />점진적으로 향상시켜 나가세요.</p>
+                                      </>
+                                    )
+                                  }
                                })()}
                              </div>
                            </div>

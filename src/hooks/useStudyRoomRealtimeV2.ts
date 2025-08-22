@@ -67,7 +67,7 @@ export function useStudyRoomRealtime({
     const supabase = supabaseBrowser()
     const channelName = `room-participants-${room.room_id}`
     
-    console.log('🔌 [V2] Supabase Realtime 채널 구독 시작:', channelName)
+    
     console.log('  - 룸 ID:', room.room_id)
     console.log('  - 사용자 ID:', userId)
     
@@ -187,7 +187,7 @@ export function useStudyRoomRealtime({
         } else if (status === 'TIMED_OUT') {
           console.error('⏰ [V2] Supabase 채널 구독 타임아웃!')
         } else if (status === 'CLOSED') {
-          console.log('🔌 [V2] Supabase 채널 구독 종료')
+    
         }
       })
 

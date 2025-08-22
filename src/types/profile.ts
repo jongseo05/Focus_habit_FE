@@ -185,6 +185,9 @@ export interface PersonalizationInfo {
   completion_percentage: number
   model_version: string
   last_updated: string
+  actual_focus_time: number // 실제 수집된 집중 시간 (초)
+  actual_non_focus_time: number // 실제 수집된 비집중 시간 (초)
+  can_recollect?: boolean // 재수집 가능 여부
 }
 
 // 웨어러블/알림 설정

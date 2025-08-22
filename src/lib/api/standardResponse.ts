@@ -215,7 +215,7 @@ export function parsePaginationParams(searchParams: URLSearchParams): {
   page: number
 } {
   const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20')))
+  const limit = Math.min(1000, Math.max(1, parseInt(searchParams.get('limit') || '20')))
   const offset = parseInt(searchParams.get('offset') || String((page - 1) * limit))
   
   return { limit, offset, page }
@@ -252,7 +252,7 @@ const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 
 export function checkRateLimit(
   identifier: string,
-  limit: number = 100,
+  limit: number = 1000,
   windowMs: number = 60000
 ): { allowed: boolean; remaining: number; resetTime: number } {
   const now = Date.now()

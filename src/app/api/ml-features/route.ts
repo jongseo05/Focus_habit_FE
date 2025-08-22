@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
         head_pose_pitch: features.head_pose?.pitch || null,
         head_pose_yaw: features.head_pose?.yaw || null,
         head_pose_roll: features.head_pose?.roll || null,
-        eye_status: features.eye_status?.status || features.eye_status || null,
+        eye_status: features.eye_status?.status === 'OPEN' ? 0.8 : (features.eye_status?.status === 'CLOSED' ? 0.2 : (features.eye_status || 0.5)),
         ear_value: features.eye_status?.ear_value || features.ear_value || null,
         frame_number: features.frame_number || 0,
         focus_status: features.focus_status || null,

@@ -1,13 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabaseBrowser } from '@/lib/supabase/client'
+import { useUser } from '@/hooks/useAuth'
 
 // 대시보드 통계 타입 정의
 export interface DashboardStats {
   today: {
     focusTime: number // 분 단위
+    focusTimeFormatted: string // 포맷된 시간 (예: "2:34")
     sessions: number
     avgScore: number
     distractions: number
+    goalAchievement: number // 목표 달성률 (0-100)
+    dailyGoal: number // 일일 목표 시간 (분)
     breaks: number
   }
   weekly: {
@@ -38,8 +42,8 @@ export interface WeeklyDetailedData {
 export interface FocusSessionRecord {
   id: string
   user_id: string
-  start_time: string
-  end_time: string
+  started_at: string
+  ended_at: string
   focus_score: number
   distractions: number
   session_type: 'study' | 'work' | 'reading'
@@ -59,11 +63,41 @@ export const dashboardKeys = {
   recentSessions: (limit: number) => [...dashboardKeys.sessions(), 'recent', limit] as const,
 }
 
+// 사용자 개인화 설정 조회
+export function useUserPersonalization() {
+  const { data: user } = useUser()
+  
+  return useQuery({
+    queryKey: ['user-personalization', user?.id],
+    queryFn: async () => {
+      if (!user?.id) {
+        throw new Error('사용자 인증이 필요합니다')
+      }
+      
+      const response = await fetch(`/api/profile/personalization-model?userId=${user.id}`)
+      if (!response.ok) {
+        throw new Error('개인화 설정 조회 실패')
+      }
+      const data = await response.json()
+      return data.data
+    },
+    staleTime: 10 * 60 * 1000, // 10분
+    enabled: !!user?.id, // 사용자가 로그인한 경우에만 실행
+  })
+}
+
 // 오늘의 통계 조회
 export function useTodayStats() {
+  const { data: user } = useUser()
+  const { data: personalization } = useUserPersonalization()
+  
   return useQuery({
     queryKey: dashboardKeys.todayStats(),
     queryFn: async (): Promise<DashboardStats['today']> => {
+      if (!user?.id) {
+        throw new Error('사용자 인증이 필요합니다')
+      }
+      
       const supabase = supabaseBrowser()
       // 한국 시간대 기준으로 오늘 날짜 계산
       const today = (() => {
@@ -78,6 +112,7 @@ export function useTodayStats() {
       const { data: sessions, error } = await supabase
         .from('focus_session')
         .select('*')
+        .eq('user_id', user.id)
         .gte('started_at', `${today}T00:00:00`)
         .lt('started_at', `${today}T23:59:59`)
         .order('started_at', { ascending: false })
@@ -100,24 +135,45 @@ export function useTodayStats() {
       
       const totalDistractions = sessions?.reduce((sum, s) => sum + (s.distractions || 0), 0) || 0
       
+      // 목표 달성률 계산 (사용자 개인화 설정 사용)
+      const dailyGoal = personalization?.daily_goal_minutes || 240 // 기본 4시간
+      const goalAchievement = Math.round((totalFocusTime / dailyGoal) * 100)
+      
+      // 시간 포맷팅 함수
+      const formatTime = (minutes: number) => {
+        const hours = Math.floor(minutes / 60)
+        const mins = minutes % 60
+        return `${hours}:${mins.toString().padStart(2, '0')}`
+      }
+      
       return {
         focusTime: Math.round(totalFocusTime),
+        focusTimeFormatted: formatTime(Math.round(totalFocusTime)),
         sessions: totalSessions,
         avgScore: Math.round(avgScore),
         distractions: totalDistractions,
+        goalAchievement: Math.min(goalAchievement, 100), // 최대 100%
+        dailyGoal: dailyGoal,
         breaks: Math.floor(totalSessions * 0.8) // 예시 계산
       }
     },
     staleTime: 2 * 60 * 1000, // 2분
     refetchInterval: 5 * 60 * 1000, // 5분마다 자동 갱신
+    enabled: !!user?.id && !!personalization, // 사용자 인증과 개인화 설정이 로드된 후에만 실행
   })
 }
 
 // 주간 상세 데이터 조회
 export function useWeeklyDetailedData() {
+  const { data: user } = useUser()
+  
   return useQuery({
     queryKey: dashboardKeys.weeklyDetailed(getWeekStartDate()),
     queryFn: async (): Promise<WeeklyDetailedData[]> => {
+      if (!user?.id) {
+        throw new Error('사용자 인증이 필요합니다')
+      }
+      
       const supabase = supabaseBrowser()
       const weekStart = getWeekStartDate()
       const weekEnd = getWeekEndDate()
@@ -125,6 +181,7 @@ export function useWeeklyDetailedData() {
       const { data: sessions, error } = await supabase
         .from('focus_session')
         .select('*')
+        .eq('user_id', user.id)
         .gte('started_at', `${weekStart}T00:00:00`)
         .lt('started_at', `${weekEnd}T23:59:59`)
         .order('started_at', { ascending: true })
@@ -139,6 +196,7 @@ export function useWeeklyDetailedData() {
       return generateWeeklyData(dailyData)
     },
     staleTime: 10 * 60 * 1000, // 10분
+    enabled: !!user?.id, // 사용자 인증이 확인된 경우에만 실행
   })
 }
 
@@ -192,20 +250,28 @@ export function useDashboardInsights() {
 // 집중 세션 기록 생성
 export function useCreateFocusSession() {
   const queryClient = useQueryClient()
+  const { data: user } = useUser()
   
   return useMutation({
     mutationFn: async (sessionData: {
-      start_time: string
-      end_time: string
+      started_at: string
+      ended_at: string
       focus_score: number
       distractions: number
       session_type: 'study' | 'work' | 'reading'
       notes?: string
     }) => {
+      if (!user?.id) {
+        throw new Error('사용자 인증이 필요합니다')
+      }
+      
       const supabase = supabaseBrowser()
       const { data, error } = await supabase
         .from('focus_session')
-        .insert(sessionData)
+        .insert({
+          ...sessionData,
+          user_id: user.id
+        })
         .select()
         .single()
       
@@ -245,7 +311,7 @@ function groupSessionsByDay(sessions: FocusSessionRecord[]) {
   const grouped: Record<string, FocusSessionRecord[]> = {}
   
   sessions.forEach(session => {
-    const date = session.start_time.split('T')[0]
+    const date = session.started_at.split('T')[0]
     if (!grouped[date]) {
       grouped[date] = []
     }
@@ -271,8 +337,8 @@ function generateWeeklyData(dailyData: Record<string, FocusSessionRecord[]>): We
     const low = scores.length ? Math.min(...scores) : 0
     
     const totalMinutes = sessions.reduce((sum, session) => {
-      const start = new Date(session.start_time)
-      const end = new Date(session.end_time)
+      const start = new Date(session.started_at)
+      const end = new Date(session.ended_at)
       return sum + (end.getTime() - start.getTime()) / (1000 * 60)
     }, 0)
     

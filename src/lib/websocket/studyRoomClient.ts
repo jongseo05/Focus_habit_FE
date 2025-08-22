@@ -146,7 +146,7 @@ export class StudyRoomWebSocketClient {
 
   // 연결 성공 처리
   private handleConnect(event: Event): void {
-    console.log('스터디룸 WebSocket 연결됨')
+    
     this.reconnectAttempts = 0
     
     // 방 참가 메시지 전송
@@ -165,7 +165,7 @@ export class StudyRoomWebSocketClient {
 
   // 연결 해제 처리
   private handleDisconnect(event: CloseEvent): void {
-    console.log('스터디룸 WebSocket 연결 해제됨')
+    
     this.stopHeartbeat()
     
     // 재연결 시도

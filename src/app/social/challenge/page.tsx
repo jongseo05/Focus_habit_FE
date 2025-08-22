@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTr
 import { usePersonalChallenges } from '@/hooks/usePersonalChallenges'
 import { useAuth } from '@/hooks/useAuth'
 import { supabaseBrowser } from '@/lib/supabase/client'
-import { Plus, Trophy, Target, Brain, Bell, Settings, LogOut, BarChart3, Users, User, Watch, Menu, Database, Trash2, ArrowLeft } from 'lucide-react'
+import { Plus, Trophy, Target, Brain, Bell, Settings, LogOut, BarChart3, Users, User, Watch, Menu, Database, Trash2, ArrowLeft, CheckCircle, Calendar } from 'lucide-react'
 import Link from 'next/link'
 
 export default function PersonalChallengePage() {
@@ -24,6 +24,16 @@ export default function PersonalChallengePage() {
   
   const { user } = useAuth()
   const [selectedChallengeType, setSelectedChallengeType] = useState<string | null>(null)
+
+  // 디버깅을 위한 로그
+  useEffect(() => {
+    console.log('🎯 PersonalChallengePage 렌더링:', { 
+      challengesLength: challenges.length, 
+      loading, 
+      error, 
+      user: !!user 
+    })
+  }, [challenges, loading, error, user])
 
   // 챌린지 생성 폼이 나타날 때 자동으로 스크롤 올리기
   useEffect(() => {
@@ -49,7 +59,7 @@ export default function PersonalChallengePage() {
 
   const handleDeleteChallenge = async (challengeId: string) => {
     if (confirm('정말로 이 챌린지를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-      const success = await deleteChallenge(challengeId)
+      const success = await deleteChallenge(parseInt(challengeId))
     }
   }
 
@@ -205,7 +215,7 @@ export default function PersonalChallengePage() {
              <div className="space-y-6">
                <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-3">
                  <Trophy className="h-6 w-6 text-amber-500" />
-                 내 챌린지
+                 진행 중인 챌린지
                </h2>
                
                {loading ? (
@@ -223,7 +233,7 @@ export default function PersonalChallengePage() {
                     title="집중 시간"
                     icon="⏰"
                     color="blue"
-                    challenges={challenges.filter(c => c.type === 'focus_time')}
+                    challenges={challenges.filter(c => c.type === 'focus_time' && c.is_active && !c.is_completed)}
                     onDelete={handleDeleteChallenge}
                                          onCreate={() => {
                        setSelectedChallengeType('focus_time')
@@ -236,7 +246,7 @@ export default function PersonalChallengePage() {
                     title="공부 세션"
                     icon="📚"
                     color="green"
-                    challenges={challenges.filter(c => c.type === 'study_sessions')}
+                    challenges={challenges.filter(c => c.type === 'study_sessions' && c.is_active && !c.is_completed)}
                     onDelete={handleDeleteChallenge}
                                          onCreate={() => {
                        setSelectedChallengeType('study_sessions')
@@ -249,7 +259,7 @@ export default function PersonalChallengePage() {
                     title="연속 달성"
                     icon="🔥"
                     color="orange"
-                    challenges={challenges.filter(c => c.type === 'streak_days')}
+                    challenges={challenges.filter(c => c.type === 'streak_days' && c.is_active && !c.is_completed)}
                     onDelete={handleDeleteChallenge}
                                          onCreate={() => {
                        setSelectedChallengeType('streak_days')
@@ -262,7 +272,7 @@ export default function PersonalChallengePage() {
                     title="집중도 점수"
                     icon="🎯"
                     color="purple"
-                    challenges={challenges.filter(c => c.type === 'focus_score')}
+                    challenges={challenges.filter(c => c.type === 'focus_score' && c.is_active && !c.is_completed)}
                     onDelete={handleDeleteChallenge}
                                          onCreate={() => {
                        setSelectedChallengeType('focus_score')
@@ -271,6 +281,26 @@ export default function PersonalChallengePage() {
                 </div>
                              )}
              </div>
+
+            {/* 완료된 챌린지 섹션 */}
+            <div className="space-y-6 mt-12">
+              <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-3">
+                <CheckCircle className="h-6 w-6 text-green-500" />
+                완료된 챌린지
+              </h2>
+              
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mx-auto mb-4"></div>
+                  <p className="text-gray-600">완료된 챌린지를 불러오는 중...</p>
+                </div>
+              ) : (
+                <CompletedChallengesSection 
+                  challenges={challenges.filter(c => c.is_completed || (!c.is_active && c.current_value >= c.target_value))}
+                  onDelete={handleDeleteChallenge}
+                />
+              )}
+            </div>
         </div>
       </div>
     </div>
@@ -295,6 +325,8 @@ function ChallengeSection({
   onDelete: (id: string) => void
   onCreate: () => void 
 }) {
+  
+
   const colorClasses = {
     blue: 'border-blue-200 bg-blue-50',
     green: 'border-green-200 bg-green-50',
@@ -340,7 +372,7 @@ function ChallengeSection({
           <div className="space-y-3">
             {challenges.map((challenge) => (
               <div
-                key={challenge.challenge_id}
+                key={challenge.id}
                 className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => {
                   console.log('챌린지 상세 정보:', challenge)
@@ -365,7 +397,7 @@ function ChallengeSection({
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation()
-                      onDelete(challenge.challenge_id)
+                      onDelete(challenge.id.toString())
                     }}
                     className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
                     title="챌린지 삭제"
@@ -398,10 +430,15 @@ function ChallengeSection({
                   </div>
                 </div>
                 
-                {/* 현재 값 */}
-                <div className="text-xs text-gray-600 text-center mt-2">
-                  {challenge.current_value} / {challenge.target_value} {challenge.unit}
-                </div>
+                {/* 현재 값 - 표시용 변환된 값 사용 */}
+                {(() => {
+                  const displayValue = getDisplayValue(challenge)
+                  return (
+                    <div className="text-xs text-gray-600 text-center mt-2">
+                      {displayValue.current} / {displayValue.target} {displayValue.unit}
+                    </div>
+                  )
+                })()}
                 
                 {/* 상태 */}
                 <div className="text-center mt-2">
@@ -439,6 +476,136 @@ function ChallengeSection({
 }
 
 
+
+// 완료된 챌린지 섹션 컴포넌트
+function CompletedChallengesSection({ 
+  challenges, 
+  onDelete 
+}: { 
+  challenges: any[]
+  onDelete: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  
+  if (challenges.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+          <CheckCircle className="h-8 w-8 text-green-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-700 mb-2">완료된 챌린지가 없습니다</h3>
+        <p className="text-sm text-gray-500">
+          새로운 챌린지를 생성하고 목표를 달성해보세요!
+        </p>
+      </div>
+    )
+  }
+
+  const displayedChallenges = expanded ? challenges : challenges.slice(0, 6)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {displayedChallenges.map((challenge) => (
+          <div
+            key={challenge.id}
+            className="bg-white rounded-lg p-4 border border-green-200 hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex-1">
+                <h4 className="font-medium text-gray-900 text-sm mb-1">
+                  {challenge.title}
+                </h4>
+                <p className="text-xs text-gray-600 line-clamp-2 mb-2">
+                  {challenge.description || '설명이 없습니다.'}
+                </p>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Calendar className="h-3 w-3" />
+                  <span>
+                    {new Date(challenge.created_at).toLocaleDateString('ko-KR')} ~ 
+                    {new Date(challenge.updated_at).toLocaleDateString('ko-KR')}
+                  </span>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete(challenge.id.toString())
+                }}
+                className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="챌린지 삭제"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+            
+            {/* 달성 정보 */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>달성률</span>
+                <span className="font-medium text-green-600">100%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full bg-green-500" style={{ width: '100%' }} />
+              </div>
+              
+              {/* 달성 값 */}
+              {(() => {
+                const displayValue = getDisplayValue(challenge)
+                return (
+                  <div className="text-xs text-gray-600 text-center">
+                    {displayValue.current} / {displayValue.target} {displayValue.unit}
+                  </div>
+                )
+              })()}
+            </div>
+            
+            {/* 달성 배지 */}
+            <div className="text-center mt-3">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                <CheckCircle className="h-3 w-3" />
+                달성 완료
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* 더보기 버튼 */}
+      {challenges.length > 6 && (
+        <div className="text-center pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setExpanded(!expanded)}
+            className="text-green-600 border-green-300 hover:bg-green-50"
+          >
+            {expanded ? '접기' : `더보기 (${challenges.length - 6}개 더)`}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 표시용 값 변환 함수 (전역으로 이동)
+function getDisplayValue(challenge: any) {
+  if (challenge.type === 'focus_time') {
+    // 분을 시간으로 변환하여 표시
+    return {
+      current: Math.round((challenge.current_value / 60) * 10) / 10, // 소수점 1자리
+      target: Math.round((challenge.target_value / 60) * 10) / 10,
+      unit: '시간'
+    }
+  }
+  return {
+    current: challenge.current_value,
+    target: challenge.target_value,
+    unit: challenge.unit
+  }
+}
 
 // 개인 챌린지 생성 폼 컴포넌트
 function CreatePersonalChallengeForm({ 

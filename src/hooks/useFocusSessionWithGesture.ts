@@ -10,6 +10,7 @@ import { FocusSessionErrorType, FocusSessionStatus } from '@/types/focusSession'
 // WebSocket에서 실시간 집중도 점수를 받으므로 focusScoreEngine 불필요
 import { supabaseBrowser } from '@/lib/supabase/client'
 import type { GestureFeatures } from '@/types/focusSession'
+import { useUser } from '@/hooks/useAuth'
 
 interface FocusSessionWithGestureOptions {
   frameRate?: number
@@ -50,10 +51,13 @@ export function useFocusSessionWithGesture(
 ) {
   
   const {
-    frameRate = 10,
+    frameRate = 5,
     enableGestureRecognition = true,
     gestureJpegQuality = 0.8
   } = options
+  
+  // 현재 사용자 정보 가져오기
+  const { data: user } = useUser()
   
   // 기존 미디어 스트림 훅 사용
   const mediaStream = useMediaStream()
@@ -267,35 +271,16 @@ export function useFocusSessionWithGesture(
 
   // WebSocket 메시지 처리를 위한 직접 핸들러
   const handleWebSocketMessage = useCallback((rawData: any) => {
-    console.log('🎯 handleWebSocketMessage 호출됨!', rawData)
-    
     try {
-      console.log('📨 WebSocket 메시지 수신 시작:', {
-        type: typeof rawData,
-        isObject: typeof rawData === 'object',
-        keys: rawData && typeof rawData === 'object' ? Object.keys(rawData) : 'N/A',
-        timestamp: new Date().toISOString(),
-        hasPredictionResult: rawData && typeof rawData === 'object' && 'prediction_result' in rawData
-      })
-      
       // rawData가 문자열인 경우 JSON 파싱 시도
       let parsedData = rawData
       if (typeof rawData === 'string') {
         try {
           parsedData = JSON.parse(rawData)
-          console.log('📨 JSON 파싱 성공:', parsedData)
         } catch (parseError) {
-          console.log('📨 JSON 파싱 실패, 원본 데이터:', rawData)
           return
         }
       }
-      
-      console.log('📨 파싱된 데이터:', parsedData)
-      console.log('📨 조건 확인:', {
-        hasTimestamp: 'timestamp' in parsedData,
-        hasPredictionResult: 'prediction_result' in parsedData,
-        keys: Object.keys(parsedData)
-      })
       
               // 새로운 웹캠 프레임 분석 결과 처리 (prediction_result가 있는 경우)
         if (parsedData && typeof parsedData === 'object' && 'timestamp' in parsedData && 'prediction_result' in parsedData) {
@@ -304,12 +289,12 @@ export function useFocusSessionWithGesture(
           // 분석 결과 저장
           setWebcamAnalysisResult(parsedData as WebcamFrameAnalysisResult)
           
-          // 집중도 점수 추출 및 변환 (실제 서버
+          // 집중도 점수 추출 및 변환
           const rawFocusScore = parsedData.prediction_result.prediction
           const confidence = parsedData.prediction_result.confidence
           
-          // 0~1 범위를 0~100 범위로 변환
-          const focusScore = Math.round(rawFocusScore * 100)
+          // 점수가 이미 0-100 범위인지 확인하고 반올림 (소수점 제거)
+          const focusScore = Math.round(Math.max(0, Math.min(100, rawFocusScore)))
           
           console.log('📊 집중도 점수 추출:', {
             rawFocusScore,
@@ -520,7 +505,7 @@ export function useFocusSessionWithGesture(
           confidence = parsedData.analysis.confidence || 0.8
         }
         
-        console.log('📊 WebSocket 응답 기반 집중도 사용:', actualFocusScore)
+        
         
         // 집중도 점수 업데이트 (대시보드 스토어)
         updateFocusScore(actualFocusScore)
@@ -564,15 +549,15 @@ export function useFocusSessionWithGesture(
 
   // 제스처 인식을 위한 WebSocket - 웹캠 분석용 URL 사용 (사용자 ID 포함)
   const { sendRawText, isConnected, connect, disconnect } = useWebSocket({
-    url: `wss://focushabit.site/ws/analysis?user_id=${sessionId}`
+    url: user?.id ? `wss://focushabit.site/ws/analysis?user_id=${user.id}` : undefined,
+    reconnectInterval: 5000,
+    maxReconnectAttempts: 2
   }, {
     onMessage: handleWebSocketMessage,
-    onOpen: () => {
-      console.log('🔗 WebSocket 연결 성공')
-    },
-    onClose: () => {
-      console.log('🔌 WebSocket 연결 종료')
-    },
+          onOpen: () => {
+      },
+      onClose: () => {
+      },
     onError: (error) => {
       console.error('❌ WebSocket 오류:', error)
       // WebSocket 오류를 에러 핸들러에 전달
@@ -585,31 +570,31 @@ export function useFocusSessionWithGesture(
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
-  // WebSocket 연결 상태 로깅 및 자동 연결
+  // user.id 변경 시 WebSocket 연결 재설정
   useEffect(() => {
-    console.log('🔗 WebSocket 연결 상태:', { 
-      isConnected,
-      sessionId,
-      isRunning,
-      enableGestureRecognition
-    })
-    
-    // enableGestureRecognition이 true이고 연결되지 않았으면 연결 시도
-    // sessionId가 없어도 연결 시도 (세션 ID는 나중에 설정됨)
-    if (enableGestureRecognition && !isConnected) {
-      console.log('🔗 WebSocket 연결 시도')
-      connect()
+    if (user?.id && isConnected) {
+
+      disconnect()
     }
-  }, [isConnected, sessionId, isRunning, enableGestureRecognition, connect])
+  }, [user?.id, disconnect])
+
+
   
   // 제스처 인식 시작
   const startGestureRecognition = useCallback(() => {
     console.log('🎯 제스처 인식 시작 시도:', {
+      isRunning,
       hasStream: !!mediaStream.stream,
       enableGestureRecognition,
       isConnected,
       isGestureActive
     })
+    
+    // 집중 세션이 실행 중이 아니면 제스처 인식을 시작하지 않음
+    if (!isRunning) {
+      console.log('❌ 집중 세션이 실행 중이 아니므로 제스처 인식 시작하지 않음')
+      return
+    }
     
     if (!mediaStream.stream || !enableGestureRecognition) {
       console.log('❌ 제스처 인식 시작 조건 미충족')
@@ -667,18 +652,10 @@ export function useFocusSessionWithGesture(
             // 최신 연결 상태 확인
             const currentConnectionStatus = isConnectedRef.current
             
-            console.log('📤 프레임 전송 시도:', { 
-              isConnected: currentConnectionStatus, 
-              base64Length: base64.length,
-              frameCount: gestureFramesSent + 1
-            })
-            
             // WebSocket이 연결된 경우에만 전송
             if (currentConnectionStatus) {
               sendRawText(base64)
               setGestureFramesSent((prev) => prev + 1)
-            } else {
-              console.warn('⚠️ WebSocket 연결되지 않음, 프레임 전송 건너뜀')
             }
           },
         (error) => {
@@ -718,6 +695,7 @@ export function useFocusSessionWithGesture(
       handleError(cameraError)
     }
      }, [
+     isRunning,
      mediaStream.stream, 
      enableGestureRecognition, 
      frameRate, 
@@ -760,7 +738,7 @@ export function useFocusSessionWithGesture(
     setGestureFramesSent(0)
   }, [])
   
-  // 세션 상태에 따른 자동 제어
+  // 세션 상태에 따른 자동 제어 (WebSocket 연결 및 제스처 인식 관리)
   useEffect(() => {
     console.log('🔄 세션 상태 변화:', {
       isRunning,
@@ -770,15 +748,16 @@ export function useFocusSessionWithGesture(
     })
     
     if (isRunning && mediaStream.stream && mediaStream.isPermissionGranted) {
-      console.log('🔗 WebSocket 연결 시작')
-      // WebSocket 연결 시작
-      connect()
+      // 집중 세션이 실행 중이고 미디어 스트림이 준비되면 WebSocket 연결 시작
+      if (!isConnected) {
+        console.log('🔗 WebSocket 연결 시도 (집중 세션 실행 중)')
+        connect()
+      }
     } else {
-      console.log('🛑 제스처 인식 중지')
+      // 집중 세션이 종료되거나 미디어 스트림이 없으면 정리
       stopGestureRecognition()
-      // 세션이 끝났으면 WebSocket 연결 해제
-      if (!isRunning) {
-        console.log('🔌 세션 종료로 인한 WebSocket 연결 해제')
+      if (isConnected) {
+        console.log('🔌 WebSocket 연결 해제 (집중 세션 종료)')
         disconnect()
       }
     }
@@ -786,7 +765,10 @@ export function useFocusSessionWithGesture(
     isRunning, 
     mediaStream.stream, 
     mediaStream.isPermissionGranted,
-    sessionId
+    sessionId,
+    isConnected,
+    connect,
+    disconnect
   ])
 
   // WebSocket 연결 완료 시 제스처 인식 시작 (안정화된 연결만 처리)
@@ -794,16 +776,6 @@ export function useFocusSessionWithGesture(
   const connectionStableTimerRef = useRef<NodeJS.Timeout | null>(null)
   
   useEffect(() => {
-    console.log('🔗 WebSocket 연결 상태 변화:', {
-      isRunning,
-      hasStream: !!mediaStream.stream,
-      isPermissionGranted: mediaStream.isPermissionGranted,
-      enableGestureRecognition,
-      isConnected,
-      isGestureActive,
-      stableConnection
-    })
-    
     // 이전 타이머 정리
     if (connectionStableTimerRef.current) {
       clearTimeout(connectionStableTimerRef.current)
@@ -814,13 +786,11 @@ export function useFocusSessionWithGesture(
       // 연결이 되면 3초 후에 안정화된 것으로 간주
       connectionStableTimerRef.current = setTimeout(() => {
         setStableConnection(true)
-        console.log('✅ WebSocket 연결 안정화 완료')
       }, 3000)
     } else {
       setStableConnection(false)
       // 연결이 끊어지면 제스처 인식도 중지
       if (isGestureActive) {
-        console.log('🔌 WebSocket 연결 끊어짐, 제스처 인식 중지')
         stopGestureRecognition()
       }
     }
@@ -843,7 +813,6 @@ export function useFocusSessionWithGesture(
       stableConnection &&
       !isGestureActive
     ) {
-      console.log('🎯 안정화된 WebSocket 연결에서 제스처 인식 시작')
       const timer = setTimeout(() => {
         startGestureRecognition()
       }, 1000)

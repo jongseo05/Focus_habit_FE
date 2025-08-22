@@ -2,234 +2,373 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
-import { Brain, RefreshCw, TrendingUp, Activity } from "lucide-react"
-
-// Personalization Model Interface
-interface PersonalizationModelInfo {
-  focus_samples_collected: number
-  non_focus_samples_collected: number
-  total_samples_needed: number
-  completion_percentage: number
-  model_version: string
-  last_updated: string
-  model_accuracy: number
-  training_status: 'idle' | 'collecting' | 'training' | 'completed' | 'error'
-  next_training_date: string
-}
-
-// Mock personalization model data
-const mockPersonalizationModel: PersonalizationModelInfo = {
-  focus_samples_collected: 45,
-  non_focus_samples_collected: 38,
-  total_samples_needed: 100,
-  completion_percentage: 83,
-  model_version: "1.2.0",
-  last_updated: "2024-12-01T00:00:00Z",
-  model_accuracy: 87.5,
-  training_status: 'completed',
-  next_training_date: "2024-12-08T00:00:00Z"
-}
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { 
+  Brain, 
+  RefreshCw, 
+  TrendingUp, 
+  Play, 
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+  Database
+} from "lucide-react"
+import { usePersonalizationModel } from "@/hooks/usePersonalizationModel"
+import { PersonalizationDataCollection } from "@/components/social/PersonalizationDataCollection"
 
 export const PersonalizationTab = () => {
+  const {
+    modelInfo,
+    isLoading,
+    error,
+    startDataCollection,
+    isDataCollectionVisible,
+    handleDataCollectionComplete,
+    handleDataCollectionCancel,
+    dataCollectionProgress,
+    updateDataCollectionProgress,
+    recollectData,
+    isRecollecting,
+    recollectError,
+    retrainModel,
+    isRetraining,
+    retrainError,
+    deleteAllData,
+    isDeleting,
+    deleteError
+  } = usePersonalizationModel()
+
+  // 시간 표시 형식 (00:00 ~ 05:00)
+  const formatTimeDisplay = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // 샘플 수를 시간으로 변환 (2초마다 1개 샘플 가정)
+  const samplesToTime = (samples: number) => {
+    return Math.min(samples * 2, 3600) // 최대 약 60분(3600초) - 1000개 기준
+  }
+
+  // 실제 수집된 시간 사용 (API에서 계산된 시간)
+  const getActualTime = (type: 'focus' | 'nonfocus') => {
+    if (modelInfo) {
+      return type === 'focus' ? modelInfo.actual_focus_time : modelInfo.actual_non_focus_time
+    }
+    return 0
+  }
+
+  // 실시간 진행상황 데이터 계산
+  const getRealTimeProgress = () => {
+    if (dataCollectionProgress.isCollecting) {
+      // 데이터 수집 중일 때는 실시간 진행상황 사용
+      const focusTime = samplesToTime(dataCollectionProgress.focusSamplesCollected)
+      const nonFocusTime = samplesToTime(dataCollectionProgress.nonFocusSamplesCollected)
+      
+      return {
+        focusSamples: dataCollectionProgress.focusSamplesCollected,
+        nonFocusSamples: dataCollectionProgress.nonFocusSamplesCollected,
+        focusTime,
+        nonFocusTime,
+        focusProgress: Math.min((focusTime / 300) * 100, 100), // 5분(300초) 기준
+        nonFocusProgress: Math.min((nonFocusTime / 300) * 100, 100), // 5분(300초) 기준
+        completionPercentage: Math.round((Math.min((focusTime / 300) * 100, 100) + Math.min((nonFocusTime / 300) * 100, 100)) / 2),
+        status: 'collecting' as const
+      }
+    } else {
+      // 데이터 수집 중이 아닐 때는 저장된 모델 정보 사용
+      const focusTime = getActualTime('focus') || samplesToTime(modelInfo?.focus_samples_collected || 0)
+      const nonFocusTime = getActualTime('nonfocus') || samplesToTime(modelInfo?.non_focus_samples_collected || 0)
+      
+      return {
+        focusSamples: modelInfo?.focus_samples_collected || 0,
+        nonFocusSamples: modelInfo?.non_focus_samples_collected || 0,
+        focusTime,
+        nonFocusTime,
+        focusProgress: Math.min((focusTime / 300) * 100, 100), // 5분(300초) 기준
+        nonFocusProgress: Math.min((nonFocusTime / 300) * 100, 100), // 5분(300초) 기준
+        completionPercentage: Math.round((Math.min((focusTime / 300) * 100, 100) + Math.min((nonFocusTime / 300) * 100, 100)) / 2),
+        status: modelInfo?.training_status || 'idle'
+      }
+    }
+  }
+
+  const realTimeProgress = getRealTimeProgress()
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+        <span className="ml-2 text-gray-600">모델 정보를 불러오는 중...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          개인화 모델 정보를 불러올 수 없습니다: {error.message}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  const hasCollectedData = modelInfo && (modelInfo.focus_samples_collected > 0 || modelInfo.non_focus_samples_collected > 0)
+  const canRetrain = hasCollectedData && modelInfo?.data_collection_session_id
+  
+  // 상태에 따른 배지 색상
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'idle': return { text: '대기중', variant: 'secondary' as const }
+      case 'collecting': return { text: '수집중', variant: 'default' as const }
+      case 'training': return { text: '학습중', variant: 'default' as const }
+      case 'completed': return { text: '완료', variant: 'default' as const }
+      case 'error': return { text: '오류', variant: 'destructive' as const }
+      default: return { text: status, variant: 'secondary' as const }
+    }
+  }
+
+  const statusBadge = getStatusBadge(modelInfo?.training_status || 'idle')
+  
   return (
-    <div className="space-y-6">
-      {/* Model Status Card */}
-      <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-semibold text-purple-900 flex items-center gap-2">
-            <Brain className="w-5 h-5" />
-            개인화 모델 상태
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-3 bg-white/60 rounded-lg">
-              <div className="text-2xl font-bold text-purple-900">
-                {mockPersonalizationModel.model_accuracy}%
+    <>
+      <div className="space-y-6">
+        {/* 에러 메시지 표시 */}
+        {(recollectError || retrainError || deleteError) && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {recollectError?.message || retrainError?.message || deleteError?.message}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Model Status Card */}
+        <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold text-purple-900 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="w-5 h-5" />
+                개인화 모델 상태
               </div>
-              <div className="text-sm text-purple-700">모델 정확도</div>
-            </div>
-            <div className="text-center p-3 bg-white/60 rounded-lg">
-              <div className="text-2xl font-bold text-purple-900">
-                v{mockPersonalizationModel.model_version}
+              <Badge variant={statusBadge.variant}>
+                {statusBadge.text}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-center p-4 bg-white/60 rounded-lg">
+              <div className="text-3xl font-bold text-purple-900 mb-2">
+                {realTimeProgress.completionPercentage || 0}%
               </div>
-              <div className="text-sm text-purple-700">모델 버전</div>
+              <div className="text-sm text-purple-700">데이터 수집 완료율</div>
+              <div className="text-xs text-purple-600 mt-1">
+                집중: {formatTimeDisplay(realTimeProgress.focusTime || 0)} / 
+                비집중: {formatTimeDisplay(realTimeProgress.nonFocusTime || 0)}
+              </div>
             </div>
-          </div>
 
-          <Separator />
+            <Separator />
 
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-purple-700">집중 샘플 수집</span>
-              <span className="text-sm font-medium text-purple-900">
-                {mockPersonalizationModel.focus_samples_collected} / {mockPersonalizationModel.total_samples_needed}
-              </span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-purple-700">집중 샘플 수집</span>
+                <span className="text-sm font-medium text-purple-900">
+                  {formatTimeDisplay(realTimeProgress.focusTime || 0)} / 60:00
+                </span>
+              </div>
+              <Progress 
+                value={realTimeProgress.focusProgress || 0} 
+                className="h-2 bg-purple-200"
+              />
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-purple-700">비집중 샘플 수집</span>
+                <span className="text-sm font-medium text-purple-900">
+                  {formatTimeDisplay(realTimeProgress.nonFocusTime || 0)} / 60:00
+                </span>
+              </div>
+              <Progress 
+                value={realTimeProgress.nonFocusProgress || 0} 
+                className="h-2 bg-purple-200"
+              />
             </div>
-            <Progress 
-              value={(mockPersonalizationModel.focus_samples_collected / mockPersonalizationModel.total_samples_needed) * 100} 
-              className="h-2 bg-purple-200"
-            />
-            
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-purple-700">비집중 샘플 수집</span>
-              <span className="text-sm font-medium text-purple-900">
-                {mockPersonalizationModel.non_focus_samples_collected} / {mockPersonalizationModel.total_samples_needed}
-              </span>
-            </div>
-            <Progress 
-              value={(mockPersonalizationModel.non_focus_samples_collected / mockPersonalizationModel.total_samples_needed) * 100} 
-              className="h-2 bg-purple-200"
-            />
-          </div>
 
-          <Separator />
-          
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-900">
-              {mockPersonalizationModel.completion_percentage}%
-            </div>
-            <div className="text-sm text-purple-600">전체 완료율</div>
-          </div>
+            <Separator />
 
-          <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="text-center">
               <div className="font-medium text-purple-900">
-                {new Date(mockPersonalizationModel.last_updated).toLocaleDateString('ko-KR')}
+                {modelInfo?.last_updated 
+                  ? new Date(modelInfo.last_updated).toLocaleDateString('ko-KR')
+                  : '--'
+                }
               </div>
-              <div className="text-purple-600">마지막 업데이트</div>
+              <div className="text-sm text-purple-600">마지막 업데이트</div>
+              
+              {modelInfo?.last_training_date && (
+                <div className="mt-2">
+                  <div className="font-medium text-purple-900">
+                    {new Date(modelInfo.last_training_date).toLocaleDateString('ko-KR')}
+                  </div>
+                  <div className="text-sm text-purple-600">마지막 학습일</div>
+                </div>
+              )}
             </div>
-            <div className="text-center">
-              <div className="font-medium text-purple-900">
-                {new Date(mockPersonalizationModel.next_training_date).toLocaleDateString('ko-KR')}
-              </div>
-              <div className="text-purple-600">다음 학습 예정</div>
-            </div>
-          </div>
 
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              샘플 재수집
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1">
-              <Brain className="w-4 h-4 mr-2" />
-              모델 재학습
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            {/* 액션 버튼들 */}
+            <div className="space-y-2">
+              {!hasCollectedData ? (
+                <Button 
+                  onClick={startDataCollection}
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                  disabled={isRecollecting || isRetraining || isDeleting}
+                >
+                  <Play className="w-4 h-4 mr-2" />
+                  데이터 수집 시작
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => {
+                        if (confirm('정말로 모든 개인화 데이터를 삭제하고 재수집하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없으며, 기존에 수집된 모든 데이터가 삭제됩니다.')) {
+                          recollectData()
+                        }
+                      }}
+                      disabled={isRecollecting || isRetraining || isDeleting}
+                    >
+                      {isRecollecting ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      데이터 재수집
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => retrainModel()}
+                      disabled={!canRetrain || isRecollecting || isRetraining || isDeleting}
+                    >
+                      {isRetraining ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Brain className="w-4 h-4 mr-2" />
+                      )}
+                      모델 재학습
+                    </Button>
+                  </div>
+                  
+                  {/* 개인화 데이터 삭제 버튼 */}
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={() => {
+                      if (confirm('⚠️ 경고: 수집된 모든 개인화 데이터를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 다음 데이터가 삭제됩니다:\n• 수집된 모든 개인화 데이터 (음성, 제스처, 시선 등)\n• 모델 학습을 위한 원본 데이터\n\n모델 설정 정보는 유지되며, 새로운 데이터 수집을 시작할 수 있습니다.\n\n정말로 삭제하시겠습니까?')) {
+                        deleteAllData()
+                      }
+                    }}
+                    disabled={isRecollecting || isRetraining || isDeleting}
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Database className="w-4 h-4 mr-2" />
+                    )}
+                    수집된 데이터 삭제
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Model Training History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            모델 학습 기록
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <div>
-                  <div className="font-medium">v1.2.0 학습 완료</div>
-                  <div className="text-sm text-gray-600">정확도: 87.5%</div>
-                </div>
+        {/* 데이터 수집 안내 카드 */}
+        {!hasCollectedData && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="w-5 h-5" />
+                데이터 수집 안내
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">개인화 모델 학습 과정</h4>
+                <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                  <li>약 60분간 집중 상태로 화면을 응시합니다 (1000개 샘플 수집)</li>
+                  <li>약 60분간 비집중 상태 (자유롭게 행동)를 유지합니다 (1000개 샘플 수집)</li>
+                  <li>수집된 데이터가 자동으로 분석되어 개인화 모델을 생성합니다</li>
+                  <li>개인화된 집중도 분석이 가능해집니다</li>
+                </ol>
               </div>
-              <div className="text-sm text-gray-500">
-                {new Date(mockPersonalizationModel.last_updated).toLocaleDateString('ko-KR')}
+              
+              <div className="text-sm text-gray-600">
+                <strong>수집되는 데이터:</strong> 음성 특성, 제스처, 시선 방향, 자세 등의 집중도 관련 정보만 수집되며, 
+                개인을 식별할 수 있는 정보는 수집하지 않습니다.
               </div>
-            </div>
-            
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                <div>
-                  <div className="font-medium">v1.1.0 학습 완료</div>
-                  <div className="text-sm text-gray-600">정확도: 82.3%</div>
-                </div>
-              </div>
-              <div className="text-sm text-gray-500">2024-11-15</div>
-            </div>
-            
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
-                <div>
-                  <div className="font-medium">v1.0.0 초기 모델</div>
-                  <div className="text-sm text-gray-600">정확도: 75.1%</div>
-                </div>
-              </div>
-              <div className="text-sm text-gray-500">2024-10-01</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Model Performance Metrics */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            모델 성능 지표
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <h4 className="font-medium text-gray-900">집중 상태 감지</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>정확도</span>
-                  <span className="font-medium">89.2%</span>
+        {/* Model Training History */}
+        {hasCollectedData && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                모델 학습 기록
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {modelInfo?.last_training_date ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${
+                        modelInfo.training_status === 'completed' ? 'bg-green-500' :
+                        modelInfo.training_status === 'training' ? 'bg-blue-500' :
+                        modelInfo.training_status === 'error' ? 'bg-red-500' : 'bg-gray-500'
+                      }`}></div>
+                      <div>
+                        <div className="font-medium">개인화 모델 학습</div>
+                        <div className="text-sm text-gray-600">
+                          {modelInfo.training_status === 'completed' ? '학습 완료' : '학습 중...'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {new Date(modelInfo.last_training_date).toLocaleDateString('ko-KR')}
+                    </div>
+                  </div>
                 </div>
-                <Progress value={89.2} className="h-2" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>재현율</span>
-                  <span className="font-medium">87.8%</span>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  아직 학습 기록이 없습니다
                 </div>
-                <Progress value={87.8} className="h-2" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>정밀도</span>
-                  <span className="font-medium">91.5%</span>
-                </div>
-                <Progress value={91.5} className="h-2" />
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="font-medium text-gray-900">비집중 상태 감지</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>정확도</span>
-                  <span className="font-medium">85.8%</span>
-                </div>
-                <Progress value={85.8} className="h-2" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>재현율</span>
-                  <span className="font-medium">83.2%</span>
-                </div>
-                <Progress value={83.2} className="h-2" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>정밀도</span>
-                  <span className="font-medium">88.7%</span>
-                </div>
-                <Progress value={88.7} className="h-2" />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+
+      </div>
+
+      {/* 데이터 수집 모달 */}
+      <PersonalizationDataCollection
+        isVisible={isDataCollectionVisible}
+        onComplete={handleDataCollectionComplete}
+        onCancel={handleDataCollectionCancel}
+        onProgressUpdate={updateDataCollectionProgress}
+      />
+    </>
   )
 }

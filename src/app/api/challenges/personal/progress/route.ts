@@ -5,48 +5,62 @@ import { supabaseServer } from '@/lib/supabase/server'
 export async function POST(request: NextRequest) {
   try {
     const supabase = await supabaseServer()
-    
-    // 사용자 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
     if (authError || !user) {
-      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { challenge_id, progress_value } = body
-
-    // 필수 필드 검증
+    const { challenge_id, progress_value, completion_percentage, is_completed } = await request.json()
+    
     if (!challenge_id || progress_value === undefined) {
-      return NextResponse.json({ error: '챌린지 ID와 진행 상황 값이 필요합니다.' }, { status: 400 })
+      return NextResponse.json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 })
     }
 
-    // 챌린지 존재 확인 및 권한 확인 (개인 챌린지 테이블에서 조회)
+    // 챌린지 존재 여부 및 소유권 확인
     const { data: challenge, error: challengeError } = await supabase
       .from('personal_challenge')
       .select('*')
-      .eq('challenge_id', challenge_id)
-      .eq('user_id', user.id) // user_id로 권한 확인
+      .eq('id', challenge_id)
+      .eq('user_id', user.id)
       .single()
 
     if (challengeError || !challenge) {
-      return NextResponse.json({ error: '챌린지를 찾을 수 없거나 권한이 없습니다.' }, { status: 404 })
+      return NextResponse.json({ error: '챌린지를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // 진행 상황 업데이트
-    const newProgress = (challenge.current_progress || 0) + progress_value
-    const completionPercentage = Math.min((newProgress / challenge.target_value) * 100, 100)
-    const isCompleted = newProgress >= challenge.target_value
+    // 진행률 업데이트 데이터 준비
+    const updateData: any = {
+      current_value: progress_value
+    }
+
+    // completion_percentage가 제공된 경우 사용
+    if (completion_percentage !== undefined) {
+      updateData.completion_percentage = completion_percentage
+    } else {
+      // 자동 계산
+      updateData.completion_percentage = Math.min((progress_value / challenge.target_value) * 100, 100)
+    }
+
+    // is_completed가 제공된 경우 사용
+    if (is_completed !== undefined) {
+      updateData.is_completed = is_completed
+      if (is_completed) {
+        updateData.completed_at = new Date().toISOString()
+      }
+    } else {
+      // 자동 계산
+      const autoCompleted = progress_value >= challenge.target_value
+      updateData.is_completed = autoCompleted
+      if (autoCompleted) {
+        updateData.completed_at = new Date().toISOString()
+      }
+    }
 
     const { data: updatedChallenge, error: updateError } = await supabase
       .from('personal_challenge')
-      .update({
-        current_progress: newProgress,
-        completion_percentage: completionPercentage,
-        is_completed: isCompleted,
-        completed_at: isCompleted ? new Date().toISOString() : null,
-        last_updated: new Date().toISOString()
-      })
-      .eq('challenge_id', challenge_id)
+      .update(updateData)
+      .eq('id', challenge_id)
       .select()
       .single()
 

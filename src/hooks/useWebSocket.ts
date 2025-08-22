@@ -51,6 +51,9 @@ export function useWebSocket(
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const [connectionStable, setConnectionStable] = useState(false)
   
+  // 자동 연결 플래그 (개인화 데이터 수집용)
+  const autoConnectRef = useRef(false)
+  
   const wsClientRef = useRef<WebSocketClient | null>(null)
   const configRef = useRef<WebSocketConfig>({ ...defaultConfig, ...customConfig })
   const connectionStartTime = useRef<number | null>(null)
@@ -59,12 +62,23 @@ export function useWebSocket(
   
   // customConfig가 변경될 때마다 configRef 업데이트
   useEffect(() => {
+    const previousUrl = configRef.current.url
     configRef.current = { ...defaultConfig, ...customConfig }
+    
     console.log('🔧 configRef 업데이트:', {
       defaultUrl: defaultConfig.url,
       customUrl: customConfig?.url,
-      finalUrl: configRef.current.url
+      finalUrl: configRef.current.url,
+      previousUrl
     })
+    
+    // URL이 변경되었고 현재 연결되어 있다면 재연결
+    if (previousUrl !== configRef.current.url && wsClientRef.current?.isConnected()) {
+      
+      wsClientRef.current.disconnect()
+      wsClientRef.current = null
+      setStatus(WebSocketStatus.DISCONNECTED)
+    }
   }, [customConfig])
   
   // eventHandlers를 ref로 저장하여 최신 값을 유지
@@ -86,7 +100,7 @@ export function useWebSocket(
     // WebSocket 클라이언트가 연결되어 있으면 이벤트 핸들러 업데이트
     if (wsClientRef.current && eventHandlers) {
       if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 WebSocket 클라이언트 이벤트 핸들러 업데이트')
+    
       }
       wsClientRef.current.updateEventHandlers(eventHandlers)
     }
@@ -131,17 +145,8 @@ export function useWebSocket(
     if (isComponentMounted.current) {
       setLastMessage(message)
       // raw 데이터를 그대로 전달 (WebSocketMessage 타입이 아닌 실제 데이터)
-      console.log('📨 useWebSocket handleMessage 호출:', {
-        message,
-        hasEventHandlers: !!eventHandlersRef.current,
-        hasOnMessage: !!eventHandlersRef.current?.onMessage,
-        eventHandlersKeys: eventHandlersRef.current ? Object.keys(eventHandlersRef.current) : []
-      })
       if (eventHandlersRef.current?.onMessage) {
-        console.log('✅ eventHandlersRef.current.onMessage 호출')
         eventHandlersRef.current.onMessage(message as any)
-      } else {
-        console.warn('❌ eventHandlersRef.current?.onMessage가 없음')
       }
     }
   }, [])
@@ -184,32 +189,25 @@ export function useWebSocket(
 
       // 사용자 UID가 없으면 연결하지 않음
       if (!user?.id) {
+        console.warn('⚠️ 사용자 ID가 없어 WebSocket 연결을 시도하지 않습니다.')
         return null
       }
 
-             // URL을 그대로 사용 (user_id는 이미 포함되어 있음)
-       let urlWithUserId = configRef.current.url
-       
-       // URL에 user_id가 없으면 추가
-       if (!urlWithUserId.includes('user_id=')) {
-         urlWithUserId = `${urlWithUserId}${urlWithUserId.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(user.id)}`
-         console.log('URL에 user_id 추가:', { original: configRef.current.url, final: urlWithUserId })
-       }
+      // URL 검증
+      if (!configRef.current.url) {
+        console.warn('⚠️ WebSocket URL이 설정되지 않았습니다.')
+        return null
+      }
+
+            // URL에 이미 user_id가 포함되어 있는지 확인
+      let finalUrl = configRef.current.url
       
-      // 디버깅을 위한 로그 추가
-      console.log('useWebSocket - user 정보:', {
-        hasUser: !!user,
-        userId: user?.id,
-        userObject: user
-      })
-      
-             console.log('🔗 WebSocket URL 생성:', {
-         baseUrl: configRef.current.url,
-         userId: user.id,
-         urlWithUserId,
-         hasUserId: !!user.id,
-         configUrl: configRef.current.url
-       })
+      // 개인화 데이터 수집용 WebSocket은 user_id를 추가하지 않음
+      // (wss://focushabit.site/ws/analysis)
+      if (!finalUrl.includes('user_id=') && !finalUrl.includes('/ws/analysis')) {
+        // user_id가 없고 개인화 데이터 수집용이 아니면 추가
+        finalUrl = `${finalUrl}${finalUrl.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(user.id)}`
+      }
       
       // 전역 클라이언트가 있고 같은 사용자 UID로 연결되어 있으면 재사용
       if (globalWebSocketClient && globalWebSocketClient.isConnected()) {
@@ -241,10 +239,10 @@ export function useWebSocket(
         }
       }
 
-      // 새 클라이언트 생성 (동적 URL 사용)
+      // 새 클라이언트 생성 (최종 URL 사용)
       const client = new WebSocketClient({
         ...configRef.current,
-        url: urlWithUserId
+        url: finalUrl
       }, {
         onMessage: handleMessage,
         onOpen: handleOpen,
@@ -265,12 +263,20 @@ export function useWebSocket(
 
       return client
     } catch (error) {
+      console.error('❌ WebSocket 클라이언트 생성 실패:', error)
       return null
     }
   }, [getAuthToken, handleMessage, handleOpen, handleClose, handleError, user?.id])
 
   // 연결
   const connect = useCallback(async () => {
+    // URL 검증
+    if (!configRef.current.url) {
+      console.warn('⚠️ WebSocket URL이 설정되지 않아 연결을 시도하지 않습니다.')
+      setStatus(WebSocketStatus.ERROR)
+      return
+    }
+
     // 실제 연결 상태를 더 정확하게 확인
     if (wsClientRef.current?.isConnected() && status === WebSocketStatus.CONNECTED) {
       return
@@ -355,10 +361,7 @@ export function useWebSocket(
     if (wsClientRef.current?.isConnected()) {
       // 순수한 base64 데이터만 전송
       wsClientRef.current.sendFrame(frameData)
-      console.log('useWebSocket 프레임 전송:', {
-        dataLength: frameData.length,
-        timestamp: new Date().toISOString()
-      })
+      
     } else {
       console.warn('WebSocket이 연결되지 않아 프레임을 전송할 수 없습니다.')
     }
@@ -366,40 +369,17 @@ export function useWebSocket(
 
   // 원시 텍스트 전송 (제스처 인식용)
   const sendRawText = useCallback((text: string) => {
-    console.log('📤 sendRawText 호출:', {
-      hasClient: !!wsClientRef.current,
-      isConnected: wsClientRef.current?.isConnected(),
-      textLength: text.length
-    })
-    
     if (!wsClientRef.current?.isConnected()) {
-      console.warn('❌ WebSocket 클라이언트가 연결되지 않음')
       return
     }
 
     try {
       // WebSocket 클라이언트에 직접 접근해서 원시 텍스트 전송
       const ws = (wsClientRef.current as any).ws
-      console.log('📤 WebSocket 상태:', {
-        hasWs: !!ws,
-        readyState: ws?.readyState,
-        isOpen: ws?.readyState === WebSocket.OPEN
-      })
       
-             if (ws && ws.readyState === WebSocket.OPEN) {
-         console.log('📤 서버로 전송되는 데이터:', {
-           dataType: typeof text,
-           dataLength: text.length,
-           dataPreview: text.substring(0, 100) + '...',
-           dataStart: text.substring(0, 50),
-           dataEnd: text.substring(text.length - 50),
-           timestamp: new Date().toISOString()
-         })
-         ws.send(text)
-         console.log('✅ WebSocket으로 데이터 전송 완료')
-       } else {
-         console.warn('❌ WebSocket이 OPEN 상태가 아님')
-       }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(text)
+      }
     } catch (error) {
       console.error('❌ WebSocket 전송 오류:', error)
     }

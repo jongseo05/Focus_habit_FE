@@ -14,7 +14,8 @@ import {
   Edit3, 
   Key, 
   Trash2, 
-  Smartphone 
+  Smartphone,
+  Clock
 } from "lucide-react"
 import { 
   ThemeToggle, 
@@ -30,6 +31,7 @@ interface PersonalizationSettings {
   language: 'ko' | 'en'
   fontSize: 'small' | 'medium' | 'large'
   colorScheme: 'default' | 'high-contrast' | 'colorblind-friendly'
+  defaultGoalMinutes: number
   notifications: {
     focusSession: boolean
     achievement: boolean
@@ -130,6 +132,46 @@ export const SettingsTab = ({
                 <SelectItem value="default">기본</SelectItem>
                 <SelectItem value="high-contrast">고대비</SelectItem>
                 <SelectItem value="colorblind-friendly">색맹 친화적</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Focus Goal Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="w-5 h-5" />
+            집중 목표 설정
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="default-goal-time" className="text-base font-medium">
+              기본 목표 시간
+            </Label>
+            <p className="text-sm text-gray-600">
+              새로운 집중 세션을 시작할 때 기본으로 설정되는 목표 시간입니다
+            </p>
+            <Select
+              value={personalizationSettings.defaultGoalMinutes.toString()}
+              onValueChange={(value) => setPersonalizationSettings({ 
+                ...personalizationSettings, 
+                defaultGoalMinutes: parseInt(value) 
+              })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="기본 목표 시간을 선택하세요" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="15">15분</SelectItem>
+                <SelectItem value="25">25분 (뽀모도로)</SelectItem>
+                <SelectItem value="30">30분</SelectItem>
+                <SelectItem value="45">45분</SelectItem>
+                <SelectItem value="60">60분</SelectItem>
+                <SelectItem value="90">90분</SelectItem>
+                <SelectItem value="120">120분</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -44,7 +44,7 @@ export function useGestureRecognition(
   options: UseGestureRecognitionOptions = {}
 ): UseGestureRecognitionReturn {
   const {
-    frameRate = 10,
+    frameRate = 5,
     videoConstraints = { width: 640, height: 480 },
     autoStart = false
   } = options
@@ -69,12 +69,12 @@ export function useGestureRecognition(
   const frameStreamerRef = useRef<FrameStreamer | null>(null)
 
   // WebSocket 연결 - 웹캠 분석용 URL 사용 (사용자 ID 포함)
-  const { sendFrame, isConnected } = useWebSocket({
+  const { sendFrame, isConnected, connect } = useWebSocket({
     url: 'wss://focushabit.site/ws/analysis'
   }, {
     onMessage: (message: any) => {
       try {
-        console.log('📨 제스처 인식 WebSocket 메시지 수신:', message)
+  
         
         // 프레임 분석 결과 처리
         if (message.type === 'frame_analysis_result') {
@@ -250,6 +250,30 @@ export function useGestureRecognition(
 
   // 스트리밍 시작
   const startStreaming = useCallback(() => {
+    // WebSocket 연결이 안 되어 있으면 먼저 연결 시도
+    if (!isConnected) {
+      console.log('[STREAMING] WebSocket not connected, attempting to connect...')
+      connect()
+      // 연결 시도 후 잠시 대기
+      setTimeout(() => {
+        if (videoRef.current && isVideoReady) {
+          console.log('[STREAMING] WebSocket connection attempt completed, starting streaming...')
+          startStreamingInternal()
+        }
+      }, 1000)
+      return
+    }
+
+    if (!videoRef.current || !isVideoReady) {
+      console.warn('[STREAMING] Cannot start streaming: video not ready')
+      return
+    }
+
+    startStreamingInternal()
+  }, [isConnected, isVideoReady, connect])
+
+  // 내부 스트리밍 시작 함수
+  const startStreamingInternal = useCallback(() => {
     if (!videoRef.current || !isVideoReady || !isConnected) {
       console.warn('[STREAMING] Cannot start streaming: video not ready or WebSocket not connected')
       return

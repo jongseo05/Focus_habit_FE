@@ -267,7 +267,7 @@ class AdaptiveCompressionManager {
 export class FrameStreamer {
   private intervalId: NodeJS.Timeout | null = null
   private isStreaming = false
-  private frameRate = 10 // 초당 10프레임 (기본값)
+  private frameRate = 5 // 초당 5프레임 (기본값)
   private quality = 0.9 // JPEG 품질
   
   // 고급 최적화 관리자들
@@ -460,7 +460,14 @@ export class FrameStreamer {
     this.consecutiveFailures++
     
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-      console.error('[FRAME_STREAMING] 연속', this.consecutiveFailures, '회 실패. 스트리밍 중단:', reason)
+      // "Video not ready" 오류는 세션 종료 과정에서 자연스럽게 발생할 수 있으므로 
+      // 콘솔 오류 메시지를 억제하고 로그로만 출력
+      if (reason === 'Video not ready') {
+        console.log('[FRAME_STREAMING] 세션 종료로 인한 자연스러운 스트리밍 중단:', reason)
+      } else {
+        console.error('[FRAME_STREAMING] 연속', this.consecutiveFailures, '회 실패. 스트리밍 중단:', reason)
+      }
+      
       this.stop()
       
       // "Video not ready" 오류는 세션 종료 과정에서 자연스럽게 발생할 수 있으므로 

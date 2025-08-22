@@ -148,7 +148,7 @@ export function useCompetition({ roomId, isHost }: UseCompetitionProps) {
   useEffect(() => {
     if (!roomId) return
 
-    console.log('🔗 경쟁 실시간 채널 구독 시작:', `competition-${roomId}`, { isActive, competitionId })
+    
 
     const channel = supabaseBrowser().channel(`competition-${roomId}`)
       .on('broadcast', { event: 'competition_update' }, (payload: any) => {
@@ -207,7 +207,7 @@ export function useCompetition({ roomId, isHost }: UseCompetitionProps) {
     realtimeChannelRef.current = channel
 
     return () => {
-      console.log('🔌 경쟁 실시간 채널 구독 해제:', `competition-${roomId}`)
+
       supabaseBrowser().removeChannel(channel)
     }
   }, [roomId, isActive, competitionId, updateTimeLeft, setParticipants, updateRankings, setWinner, updateParticipant])

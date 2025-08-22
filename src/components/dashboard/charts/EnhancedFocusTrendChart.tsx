@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useWeeklyDetailedData } from "@/hooks/useDashboardData"
+import { useRouter } from "next/navigation"
 
 interface WeeklyData {
   day: string
@@ -16,27 +18,52 @@ interface WeeklyData {
 export const EnhancedFocusTrendChart = () => {
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
   const [chartType, setChartType] = useState<"area" | "line">("area")
+  const router = useRouter()
+  
+  // DB에서 주간 데이터 가져오기
+  const { data: weeklyData, isLoading, error } = useWeeklyDetailedData()
 
-  // Enhanced mock data with more details
-  const weeklyDetailedData: WeeklyData[] = [
-    { day: "월", date: "12/16", score: 75, sessionStates: 3, totalTime: "2:30", peak: 85, low: 65 },
-    { day: "화", date: "12/17", score: 82, sessionStates: 4, totalTime: "3:15", peak: 92, low: 72 },
-    { day: "수", date: "12/18", score: 78, sessionStates: 2, totalTime: "2:45", peak: 88, low: 68 },
-    { day: "목", date: "12/19", score: 85, sessionStates: 5, totalTime: "4:20", peak: 95, low: 75 },
-    { day: "금", date: "12/20", score: 90, sessionStates: 4, totalTime: "3:50", peak: 98, low: 82 },
-    { day: "토", date: "12/21", score: 87, sessionStates: 3, totalTime: "3:10", peak: 94, low: 80 },
-    { day: "일", date: "12/22", score: 92, sessionStates: 2, totalTime: "2:20", peak: 96, low: 88 },
+  // 데이터가 로딩 중이거나 에러가 있으면 기본 데이터 사용
+  const weeklyDetailedData: WeeklyData[] = weeklyData?.map(item => ({
+    day: item.day,
+    date: item.date,
+    score: item.score,
+    sessionStates: item.sessions,
+    totalTime: item.totalTime,
+    peak: item.peak,
+    low: item.low
+  })) || [
+    { day: "월", date: "12/16", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "화", date: "12/17", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "수", date: "12/18", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "목", date: "12/19", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "금", date: "12/20", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "토", date: "12/21", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
+    { day: "일", date: "12/22", score: 0, sessionStates: 0, totalTime: "0:00", peak: 0, low: 0 },
   ]
+
+  const handleViewDetails = () => {
+    router.push('/report/weekly')
+  }
 
   const maxScore = Math.max(...weeklyDetailedData.map((d) => d.score))
   const minScore = Math.min(...weeklyDetailedData.map((d) => d.score))
+  const scoreRange = maxScore - minScore || 1 // 0으로 나누기 방지
+  
+  // 모든 점수가 0인 경우 처리
+  const hasData = maxScore > 0
 
   // Generate smooth curve points for area/line chart
   const generateSmoothPath = (data: WeeklyData[], width: number, height: number) => {
-    const points = data.map((item, index) => ({
-      x: (index / (data.length - 1)) * width,
-      y: height - ((item.score - minScore) / (maxScore - minScore)) * height,
-    }))
+    const points = data.map((item, index) => {
+      const normalizedScore = (item.score - minScore) / scoreRange
+      const y = height - (normalizedScore * height)
+      
+      return {
+        x: (index / (data.length - 1)) * width,
+        y: isNaN(y) ? height : Math.max(0, Math.min(height, y)), // NaN 방지 및 범위 제한
+      }
+    })
 
     // Create smooth curve using quadratic bezier curves
     let path = `M ${points[0].x} ${points[0].y}`
@@ -54,6 +81,66 @@ export const EnhancedFocusTrendChart = () => {
   const chartWidth = 400
   const chartHeight = 120
   const { path, points } = generateSmoothPath(weeklyDetailedData, chartWidth, chartHeight)
+
+  // 로딩 상태 처리
+  if (isLoading) {
+    return (
+      <div className="relative">
+        {/* Chart Type Toggle Skeleton */}
+        <div className="flex justify-end mb-4">
+          <div className="flex bg-slate-100 rounded-lg p-1">
+            <div className="w-16 h-6 bg-slate-200 rounded-md animate-pulse"></div>
+            <div className="w-16 h-6 bg-slate-200 rounded-md animate-pulse ml-1"></div>
+          </div>
+        </div>
+
+        {/* Chart Skeleton */}
+        <div className="relative bg-gradient-to-br from-slate-50 to-white rounded-xl p-6 border border-slate-100">
+          <div className="h-40 bg-slate-100 rounded-lg animate-pulse mb-4"></div>
+          
+          {/* Chart insights skeleton */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="h-6 bg-slate-200 rounded animate-pulse mb-1"></div>
+              <div className="h-3 bg-slate-200 rounded animate-pulse w-16 mx-auto"></div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="h-6 bg-slate-200 rounded animate-pulse mb-1"></div>
+              <div className="h-3 bg-slate-200 rounded animate-pulse w-16 mx-auto"></div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="h-6 bg-slate-200 rounded animate-pulse mb-1"></div>
+              <div className="h-3 bg-slate-200 rounded animate-pulse w-16 mx-auto"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 에러 상태 처리
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-64 bg-gradient-to-br from-slate-50 to-white rounded-xl border border-slate-100">
+        <div className="text-center text-slate-500">
+          <p>데이터를 불러오는 중 오류가 발생했습니다</p>
+          <p className="text-sm mt-2">잠시 후 다시 시도해주세요</p>
+        </div>
+      </div>
+    )
+  }
+
+  // 데이터가 없는 경우 처리
+  if (!hasData) {
+    return (
+      <div className="flex justify-center items-center h-64 bg-gradient-to-br from-slate-50 to-white rounded-xl border border-slate-100">
+        <div className="text-center text-slate-500">
+          <p>이번 주 집중 세션 데이터가 없습니다</p>
+          <p className="text-sm mt-2">집중 세션을 시작하여 데이터를 생성해보세요</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative">
@@ -153,6 +240,11 @@ export const EnhancedFocusTrendChart = () => {
             {points.map((point, index) => {
               const data = weeklyDetailedData[index]
               const isHovered = hoveredPoint === index
+
+              // NaN 체크
+              if (isNaN(point.x) || isNaN(point.y)) {
+                return null
+              }
 
               return (
                 <g key={index}>
@@ -284,28 +376,44 @@ export const EnhancedFocusTrendChart = () => {
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
           <div className="bg-emerald-50 rounded-lg p-3">
             <div className="text-lg font-bold text-emerald-600">
-              {Math.max(...weeklyDetailedData.map((d) => d.score))}점
+              {Math.max(...weeklyDetailedData.map((d) => d.score)) || 0}점
             </div>
             <div className="text-xs text-emerald-700">주간 최고점</div>
           </div>
           <div className="bg-blue-50 rounded-lg p-3">
             <div className="text-lg font-bold text-blue-600">
-              {Math.round(weeklyDetailedData.reduce((sum, d) => sum + d.score, 0) / weeklyDetailedData.length)}점
+              {Math.round(weeklyDetailedData.reduce((sum, d) => sum + d.score, 0) / weeklyDetailedData.length) || 0}점
             </div>
             <div className="text-xs text-blue-700">주간 평균</div>
           </div>
-          <div className="bg-purple-50 rounded-lg p-3">
-            <div className="text-lg font-bold text-purple-600">
-              +
-              {Math.round(
-                ((weeklyDetailedData[weeklyDetailedData.length - 1].score - weeklyDetailedData[0].score) /
-                  weeklyDetailedData[0].score) *
-                  100,
-              )}
-              %
-            </div>
-            <div className="text-xs text-purple-700">주간 개선율</div>
-          </div>
+                     <div className="bg-purple-50 rounded-lg p-3">
+             <div className="text-lg font-bold text-purple-600">
+               {(() => {
+                 // 유효한 데이터가 있는 날짜들만 필터링
+                 const validData = weeklyDetailedData.filter(d => d.score > 0)
+                 
+                 if (validData.length < 2) {
+                   return "N/A"
+                 }
+                 
+                 // 첫 번째와 마지막 유효한 데이터 비교
+                 const firstValidScore = validData[0].score
+                 const lastValidScore = validData[validData.length - 1].score
+                 
+                 // 첫 번째 점수가 너무 작으면 계산하지 않음
+                 if (firstValidScore < 10) {
+                   return "N/A"
+                 }
+                 
+                 const improvement = ((lastValidScore - firstValidScore) / firstValidScore) * 100
+                 const roundedImprovement = Math.round(improvement)
+                 
+                 // 부호에 따라 + 또는 - 표시
+                 return roundedImprovement >= 0 ? `+${roundedImprovement}%` : `${roundedImprovement}%`
+               })()}
+             </div>
+             <div className="text-xs text-purple-700">주간 개선율</div>
+           </div>
         </div>
       </div>
     </div>

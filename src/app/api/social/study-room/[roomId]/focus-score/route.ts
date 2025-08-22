@@ -21,14 +21,17 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { focus_score } = body
+    const { focus_score: rawFocusScore } = body
 
-    if (typeof focus_score !== 'number' || focus_score < 0 || focus_score > 100) {
+    if (typeof rawFocusScore !== 'number' || rawFocusScore < 0 || rawFocusScore > 100) {
       return NextResponse.json(
         { error: '유효하지 않은 집중도 값입니다.' },
         { status: 400 }
       )
     }
+
+    // 집중도 점수 반올림 (소수점 제거)
+    const focus_score = Math.round(rawFocusScore)
 
     // 🚀 최적화: 참가자 정보 업데이트와 활성 경쟁 확인을 병렬로 처리
     const now = new Date().toISOString()

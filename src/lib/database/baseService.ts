@@ -114,7 +114,7 @@ export abstract class BaseService {
     offset?: number
   ): { limit: number; offset: number } {
     return {
-      limit: Math.min(100, Math.max(1, limit || 20)),
+      limit: Math.min(1000, Math.max(1, limit || 20)),
       offset: Math.max(0, offset || 0)
     }
   }

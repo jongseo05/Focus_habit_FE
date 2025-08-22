@@ -28,6 +28,11 @@ interface FocusSessionState {
   focusScore: number
   startTime: number | null
   
+  // === 세션 설정 ===
+  sessionGoal: number | null // 목표 시간 (분)
+  sessionContext: string | null // 세션 제목
+  sessionType: 'study' | 'work' | 'reading' | 'other' | null // 세션 유형
+  
   // === 서버 세션 정보 ===
   currentSessionId: string | null
   serverSessionData: FocusSessionData | null
@@ -51,6 +56,12 @@ interface FocusSessionActions {
   updateElapsed: () => void
   setElapsed: (seconds: number) => void
   updateFocusScore: (score: number) => void
+  
+  // === 세션 설정 관리 ===
+  setSessionGoal: (goal: number) => void
+  setSessionContext: (context: string) => void
+  setSessionType: (type: 'study' | 'work' | 'reading' | 'other') => void
+  clearSessionSettings: () => void
   
   // === 서버 세션 관리 ===
   setCurrentSession: (sessionId: string, sessionData: FocusSessionData) => void
@@ -87,6 +98,11 @@ const initialState: FocusSessionState = {
   elapsed: 0,
   focusScore: 85,
   startTime: null,
+  
+  // 세션 설정
+  sessionGoal: null,
+  sessionContext: null,
+  sessionType: null,
   
   // 서버 세션 정보
   currentSessionId: null,
@@ -245,6 +261,27 @@ export const useFocusSessionStore = create<FocusSessionStore>()(
       
       updateFocusScore: (score: number) => {
         set({ focusScore: Math.max(0, Math.min(100, score)) })
+      },
+      
+      // === 세션 설정 관리 ===
+      setSessionGoal: (goal: number) => {
+        set({ sessionGoal: goal })
+      },
+      
+      setSessionContext: (context: string) => {
+        set({ sessionContext: context })
+      },
+      
+      setSessionType: (type: 'study' | 'work' | 'reading' | 'other') => {
+        set({ sessionType: type })
+      },
+      
+      clearSessionSettings: () => {
+        set({ 
+          sessionGoal: null, 
+          sessionContext: null, 
+          sessionType: null 
+        })
       },
       
       // === 서버 세션 관리 ===
@@ -409,6 +446,9 @@ export const useFocusSessionState = () => ({
   elapsed: useFocusSessionStore((state) => state.elapsed),
   focusScore: useFocusSessionStore((state) => state.focusScore),
   startTime: useFocusSessionStore((state) => state.startTime),
+  sessionGoal: useFocusSessionStore((state) => state.sessionGoal),
+  sessionContext: useFocusSessionStore((state) => state.sessionContext),
+  sessionType: useFocusSessionStore((state) => state.sessionType),
   currentSessionId: useFocusSessionStore((state) => state.currentSessionId),
   formatTime: useFocusSessionStore((state) => state.formatTime),
   getDuration: useFocusSessionStore((state) => state.getDuration),
@@ -422,7 +462,11 @@ export const useFocusSessionActions = () => ({
   stopSession: useFocusSessionStore((state) => state.stopSession),
   updateElapsed: useFocusSessionStore((state) => state.updateElapsed),
   setElapsed: useFocusSessionStore((state) => state.setElapsed),
-  updateFocusScore: useFocusSessionStore((state) => state.updateFocusScore)
+  updateFocusScore: useFocusSessionStore((state) => state.updateFocusScore),
+  setSessionGoal: useFocusSessionStore((state) => state.setSessionGoal),
+  setSessionContext: useFocusSessionStore((state) => state.setSessionContext),
+  setSessionType: useFocusSessionStore((state) => state.setSessionType),
+  clearSessionSettings: useFocusSessionStore((state) => state.clearSessionSettings)
 })
 
 export const useFocusSessionSync = () => ({

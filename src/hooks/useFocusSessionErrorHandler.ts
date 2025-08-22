@@ -296,7 +296,7 @@ export const useFocusSessionErrorHandler = (
   const recoverWebSocket = useCallback(async (): Promise<boolean> => {
     try {
       // WebSocket 재연결 로직 (실제 구현은 useWebSocket 훅에서 처리)
-      console.log('[WEBSOCKET] WebSocket 복구 시도')
+
       return true
     } catch (error) {
       console.error('[WEBSOCKET] WebSocket 복구 실패:', error)
