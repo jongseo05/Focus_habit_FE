@@ -10,7 +10,13 @@ export const signUp = async (
 ): Promise<AuthResponse> => {
   try {
     const supabase = supabaseBrowser()
-    
+
+    console.log('📧 회원가입 시도:', {
+      email: formData.email,
+      redirectUrl: options?.emailRedirectTo || process.env.NEXT_PUBLIC_EMAIL_CONFIRM_URL || `${window.location.origin}/auth/confirm`,
+      siteUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+    })
+
     const { data, error } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
@@ -22,6 +28,29 @@ export const signUp = async (
         }
       }
     })
+
+    console.log('📧 Supabase 회원가입 응답:', {
+      hasUser: !!data.user,
+      hasSession: !!data.session,
+      error: error?.message,
+      userEmail: data.user?.email,
+      emailConfirmed: data.user?.email_confirmed_at,
+      userId: data.user?.id,
+      fullResponse: data
+    })
+
+    // 환경에 따른 이메일 확인 안내
+    if (data.user && !error) {
+      const isProduction = process.env.NODE_ENV === 'production'
+      if (isProduction) {
+        console.log('✅ 프로덕션 환경: 실제 이메일이 발송되었습니다!')
+        console.log('📧 스팸함도 확인해보세요')
+      } else {
+        console.log('✅ 로컬 환경: Inbucket에서 이메일을 확인하세요:')
+        console.log('🌐 Inbucket URL: http://127.0.0.1:54324/')
+      }
+      console.log('📧 확인 이메일: 3-5분 내로 도착 예정')
+    }
 
     if (error) {
       return {

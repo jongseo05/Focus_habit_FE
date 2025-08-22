@@ -51,15 +51,43 @@ function SignUpForm() {
     }
 
     try {
+      console.log('🚀 회원가입 시작:', {
+        name: formData.name,
+        email: formData.email,
+        hasPassword: !!formData.password,
+        confirmPasswordMatch: formData.password === formData.confirmPassword
+      })
+
       // Supabase 회원가입 실행
       const result = await signUp(formData as SignUpFormData)
 
       if (result.success) {
-        setSuccessMessage(result.message || "메일이 발송되었습니다! 메일을 통해 회원가입을 완료하세요")
-        
+        console.log('🎉 회원가입 성공:', result)
+        const isProduction = process.env.NODE_ENV === 'production'
+        const successMsg = isProduction
+          ? `✅ 회원가입이 완료되었습니다!
+
+📧 실제 이메일로 확인 메일이 발송되었습니다.
+📬 스팸함과 정크 메일함도 확인해주세요.
+⏰ 이메일이 5분 내로 도착하지 않으면 고객지원팀에 문의해주세요.
+
+💡 이메일이 도착하지 않으면 다음을 확인하세요:
+• 스팸/정크 메일함
+• 이메일 주소 오타
+• 메일 서버 문제 (잠시 후 다시 시도)`
+
+          : `✅ 회원가입이 완료되었습니다!
+
+📧 확인 이메일이 발송되었습니다.
+🔍 http://127.0.0.1:54324/ 에서 이메일을 확인하세요.
+
+💡 이메일이 보이지 않으면 새로고침해보세요.`
+
+        setSuccessMessage(result.message || successMsg)
+
         // warning 메시지가 있으면 함께 표시
         if (result.warning) {
-          setSuccessMessage(prev => prev + "\n\n" + result.warning)
+          setSuccessMessage(prev => prev + "\n\n⚠️ " + result.warning)
         }
 
         setTimeout(() => {
